@@ -12,16 +12,16 @@
 //   'draw'    — phreak the line: (reserved; hooks into hand size later)
 
 export const CARDS = {
-  BRUTE:     { id: 'BRUTE',     name: 'BRUTE +3',   kind: 'add',       value: 3 },
-  ADD5:      { id: 'ADD5',      name: 'ADD +5',     kind: 'add',       value: 5 },
-  XOR:       { id: 'XOR',       name: 'XOR x2',     kind: 'mult',      value: 2 },
-  SHL:       { id: 'SHL',       name: 'SHL x3',     kind: 'mult',      value: 3 },
-  NOP:       { id: 'NOP',       name: 'NOP',        kind: 'nop',       value: 0 },
-  GOTO:      { id: 'GOTO',      name: 'GOTO ^',     kind: 'goto',      value: 0 },
-  FORK:      { id: 'FORK',      name: 'FORK()',     kind: 'fork',      value: 0 },
-  INTERRUPT: { id: 'INTERRUPT', name: 'INTERRUPT',  kind: 'interrupt', value: 0 },
-  PUNCH:     { id: 'PUNCH',     name: 'PUNCHCARD',  kind: 'add',       value: 12, oneshot: true },
-  PHREAK:    { id: 'PHREAK',    name: '2600Hz',     kind: 'nop',       value: 0, note: 'phreak' },
+  BRUTE:     { id: 'BRUTE',     name: 'BRUTE +3',   kind: 'add',       value: 3,  desc: 'add 3 to the accumulator' },
+  ADD5:      { id: 'ADD5',      name: 'ADD +5',     kind: 'add',       value: 5,  desc: 'add 5 to the accumulator' },
+  XOR:       { id: 'XOR',       name: 'XOR x2',     kind: 'mult',      value: 2,  desc: 'multiply accum x2; wider spread' },
+  SHL:       { id: 'SHL',       name: 'SHL x3',     kind: 'mult',      value: 3,  desc: 'multiply accum x3; wider spread' },
+  NOP:       { id: 'NOP',       name: 'NOP',        kind: 'nop',       value: 0,  desc: 'nothing; two in a row doubles next' },
+  GOTO:      { id: 'GOTO',      name: 'GOTO ^',     kind: 'goto',      value: 0,  desc: 're-run the previous card' },
+  FORK:      { id: 'FORK',      name: 'FORK()',     kind: 'fork',      value: 0,  desc: 'open a 2nd front; +crack, board seed' },
+  INTERRUPT: { id: 'INTERRUPT', name: 'INTERRUPT',  kind: 'interrupt', value: 0,  desc: 'freeze ICE this pass; less drain' },
+  PUNCH:     { id: 'PUNCH',     name: 'PUNCHCARD',  kind: 'add',       value: 12, desc: 'add 12; a heavy payload' },
+  PHREAK:    { id: 'PHREAK',    name: '2600Hz',     kind: 'nop',       value: 0,  desc: 'phreak the line (flavor)' },
 };
 
 // Tier-1 starting deck (10 cards).

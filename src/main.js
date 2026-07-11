@@ -47,7 +47,7 @@ function newAssemble() {
   game.playhead = -1;
   game.message = '';
   game.phase = 'assemble';
-  game.prompt = `NODE ${r.node}/3 — assemble your intrusion. order is everything.`;
+  game.prompt = '';
   draw();
 }
 
@@ -142,7 +142,7 @@ function startDraft() {
   const rng = mulberry32((game.seed ^ (game.run.node * 777)) >>> 0);
   game.draft = shuffle(DRAFT_POOL, rng).slice(0, 3);
   game.phase = 'draft';
-  game.prompt = 'DRAFT — bank a new instruction into your deck.';
+  game.prompt = '';
   draw();
 }
 
