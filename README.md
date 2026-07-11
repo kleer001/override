@@ -19,9 +19,39 @@ the number-station audio bed carry forward.
 - [`AUDIO-APPENDIX.md`](AUDIO-APPENDIX.md) — synth-vs-sample plan and a vetted
   CC0 / public-domain source list.
 
+## Run the MVP
+
+No build step. Serve the folder and open it (ES modules need HTTP, not `file://`):
+
+```sh
+cd override
+python3 -m http.server 8099
+# open http://localhost:8099/index.html
+```
+
+**Play:** `1`–`5` load a card into the next program slot · `Backspace` undo ·
+`Enter` runs `EXEC` (then watch) · `Enter` again to continue past a result.
+Order is everything — adds early, multipliers late.
+
+**Test:** `node --test` (pure-logic suite: accumulator, win/lose, determinism,
+CA well-formedness).
+
+## Code layout (`src/`)
+
+- `rng.js` — seeded mulberry32 (+ shuffle).
+- `cards.js` — card defs + the accumulator interpreter (`evalProgram`).
+- `board.js` — the 3-faction cellular automaton (worm / ice / neutral, firewalls, links).
+- `battle.js` — pass resolution: CRACK meter (accumulator-driven win) + board spectacle.
+- `render.js` — composes the 80×40 monochrome screen buffer.
+- `audio.js` — procedural WebAudio chiptune SFX (no samples).
+- `main.js` — phase state machine (assemble → exec → result → draft), input, loop.
+
 ## Status
 
-Design locked (banked): format, seven fractal tiers + fail skins, the 5-draw /
-3-slot loop, dawn-of-computing instruction cards on a CPU accumulator, the
-cellular-automata living board, the audio plan, and the 80×40 grid. Next step is
-the MVP vertical slice (Tier 1).
+Design banked and a **playable Tier-1 vertical slice is built**: the 5-draw /
+3-slot loop, the accumulator, the cellular-automata living board, procedural
+audio, node advance, the draft, and persistent ROOT. Verified end-to-end in a
+headless browser (assemble → breach) with a passing `node --test` suite.
+
+Not yet built: Tiers 2–7, the DEFCON two-clock set piece, richer card pool,
+the WebGL CRT shader port from `finding_numbers` (MVP uses a CSS approximation).
