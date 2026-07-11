@@ -4,6 +4,8 @@ import { mulberry32, shuffle, randInt } from './rng.js';
 import { startingDeck, DRAFT_POOL } from './cards.js';
 import { createBattle, setProgram, runPass, LOCKDOWN } from './battle.js';
 import { buildScreen } from './render.js';
+import { installPointer } from './input.js';
+import { HAND_CARDS, DRAFT_CARDS, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, inRect } from './layout.js';
 import { sfx, resumeAudio } from './audio.js';
 
 const screen = document.getElementById('screen');
@@ -166,7 +168,28 @@ function tierClear() {
   draw();
 }
 
-// --- input ---
+// --- input: pointer (mouse + touch) ---
+function onTapCell(col, row) {
+  resumeAudio();
+  if (game.phase === 'assemble') {
+    for (let i = 0; i < HAND_CARDS.length; i++) {
+      if (inRect(col, row, HAND_CARDS[i])) return loadSlot(i);
+    }
+    if (inRect(col, row, BTN_UNDO)) return undoSlot();
+    if (inRect(col, row, BTN_EXEC)) return void startExec();
+  } else if (game.phase === 'draft') {
+    for (let i = 0; i < DRAFT_CARDS.length; i++) {
+      if (inRect(col, row, DRAFT_CARDS[i])) return pickDraft(i);
+    }
+  } else if (game.phase === 'result') {
+    if (inRect(col, row, BTN_CONTINUE)) return advance();
+  } else if (game.phase === 'tierclear' || game.phase === 'gameover') {
+    if (inRect(col, row, BTN_CONTINUE)) return startRun();
+  }
+}
+installPointer(screen, onTapCell);
+
+// --- input: keyboard (desktop convenience) ---
 window.addEventListener('keydown', (e) => {
   resumeAudio();
   const key = e.key;

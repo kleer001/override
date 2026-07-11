@@ -8,9 +8,9 @@
 import { FIELD_W, FIELD_H, WALL_COLS, LINK_ROWS, NONE, WORM, ICE, WALL } from './board.js';
 import { LOCKDOWN, CODE_DIGITS, crackPct } from './battle.js';
 import { evalProgram } from './cards.js';
+import { COLS, ROWS, HAND_CARDS, DRAFT_CARDS, BTN_UNDO, BTN_EXEC, BTN_CONTINUE } from './layout.js';
 
-export const COLS = 80;
-export const ROWS = 40;
+export { COLS, ROWS };
 const FIELD_TOP = 3;
 
 const WORM_G = ['·', '·', '·', ':', '=', '+', '*', '@', '%', '%'];
@@ -68,6 +68,16 @@ function drawCard(g, x, y, keyLabel, card, spent) {
   stamp(g, x + 2, y + h - 2, card.kind.toUpperCase());
 }
 
+// a tappable button drawn as a 3-row box with a centered label
+function drawButton(g, rect, dim) {
+  const { x, y, w, label } = rect;
+  stamp(g, x, y, '┌' + '─'.repeat(w - 2) + '┐');
+  stamp(g, x, y + 1, '│' + ' '.repeat(w - 2) + '│');
+  stamp(g, x, y + 2, '└' + '─'.repeat(w - 2) + '┘');
+  const text = dim ? label.replace('▶', '·') : label;
+  stamp(g, x + Math.max(1, Math.floor((w - text.length) / 2)), y + 1, text);
+}
+
 // live accumulator readout, e.g. "0 +3 +3 x2 = 12"
 function accPreview(program) {
   const loaded = program.filter(Boolean);
@@ -88,8 +98,9 @@ function drawAssemble(g, game) {
   center(g, 3, 'ASSEMBLE INTRUSION');
   center(g, 4, 'instructions run left→right on a CPU accumulator — adds early, x late');
 
-  // 5 hand cards across (15 wide each, start x=2)
-  game.hand.forEach((h, i) => drawCard(g, 2 + i * 15, 7, String(i + 1), h.card, h.used));
+  // 5 hand cards across
+  game.hand.forEach((h, i) =>
+    drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, String(i + 1), h.card, h.used));
 
   // program-in-progress
   stamp(g, 6, 17, 'PROGRAM');
@@ -103,19 +114,18 @@ function drawAssemble(g, game) {
   stamp(g, 6, 19, 'ACCUMULATOR');
   stamp(g, 18, 19, `${p.expr}   =  ${p.value}  crack/pass`);
 
-  const n = game.selection.length;
-  center(g, 22, n < 3
-    ? `slot ${n}/3 — press 1-5 to load, [BACKSPACE] to undo`
-    : 'ready — press [ENTER] to EXEC and watch it run');
+  const ready = game.selection.length >= 3;
+  center(g, 22, 'tap a card to load · tap a loaded slot to unload');
+  drawButton(g, BTN_UNDO, false);
+  drawButton(g, BTN_EXEC, !ready);
 
   // lower third intentionally open for future art / animation
 }
 
 function drawDraft(g, game) {
   center(g, 3, 'DRAFT — bank an instruction into your deck');
-  const startX = Math.floor((COLS - (3 * 15 + 2 * 2)) / 2);
-  game.draft.forEach((c, i) => drawCard(g, startX + i * 17, 9, String(i + 1), c, false));
-  center(g, 19, 'press 1-3 to keep a card');
+  game.draft.forEach((c, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1), c, false));
+  center(g, 19, 'tap a card to keep it');
 }
 
 function glyphFor(owner, s, x, y) {
@@ -177,8 +187,9 @@ export function buildScreen(game) {
   else if (phase === 'draft') drawDraft(g, game);
   else if (battle) drawBoard(g, game);
 
-  // result / end messages get the bottom line even over a panel
+  // result / end messages get the bottom line + a tappable CONTINUE button
   if (phase === 'result' || phase === 'tierclear' || phase === 'gameover') {
+    drawButton(g, BTN_CONTINUE, false);
     stamp(g, 0, 39, (game.message || '').slice(0, COLS));
   }
 

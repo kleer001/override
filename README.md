@@ -29,9 +29,10 @@ python3 -m http.server 8099
 # open http://localhost:8099/index.html
 ```
 
-**Play:** `1`–`5` load a card into the next program slot · `Backspace` undo ·
-`Enter` runs `EXEC` (then watch) · `Enter` again to continue past a result.
-Order is everything — adds early, multipliers late.
+**Play (mouse / touch / keyboard):** tap a hand card to load it, tap **UNDO** /
+**EXEC** buttons, tap a draft card to keep it, tap **CONTINUE** past a result.
+Keyboard also works: `1`–`5` load · `Backspace` undo · `Enter` EXEC / continue.
+Order is everything — adds early, multipliers late. Fits mobile (best in landscape).
 
 **Test:** `node --test` (pure-logic suite: accumulator, win/lose, determinism,
 CA well-formedness).
@@ -39,6 +40,8 @@ CA well-formedness).
 ## Code layout (`src/`)
 
 - `rng.js` — seeded mulberry32 (+ shuffle).
+- `layout.js` — shared screen geometry (card/button rects) used by render + input.
+- `input.js` — unified pointer input (mouse + touch via Pointer Events), à la finding_numbers.
 - `cards.js` — card defs + the accumulator interpreter (`evalProgram`).
 - `board.js` — the 3-faction cellular automaton (worm / ice / neutral, firewalls, links).
 - `battle.js` — pass resolution: CRACK meter (accumulator-driven win) + board spectacle.
