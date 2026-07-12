@@ -155,9 +155,10 @@ export function buildScreen(game) {
   const g = blank();
   const { phase, run, node } = game;
 
-  const lockPct = node ? (node.pass / LOCKDOWN) * 100 : 0;
+  const effPass = node ? node.pass + (node.penalty || 0) : 0;
+  const lockPct = node ? (effPass / LOCKDOWN) * 100 : 0;
   stamp(g, 0, 0, `TIER ${run.tier}: THE MACHINE   CONQUERED ${run.conquered}/3   ROOT:${run.root}`);
-  if (node) stamp(g, 54, 0, `LOCKDOWN${bar(lockPct, 8)} ${node.pass}/${LOCKDOWN}`);
+  if (node) stamp(g, 54, 0, `LOCKDOWN${bar(lockPct, 8)} ${effPass}/${LOCKDOWN}`);
 
   let code = 'CODE  ';
   for (let i = 0; i < CODE_DIGITS; i++) code += (run.locked[i] ? String(run.code[i]) : '_') + ' ';

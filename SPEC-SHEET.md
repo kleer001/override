@@ -236,8 +236,12 @@ surface-area tools, not just flat bonuses.
   (big low-freq seas), HARD (finer veins) and OPEN, so the types decorrelate.
 - **Land islands in a sea of firewall, bridged by bus links** — but only a couple
   of *nearby* islands link, so distant islands stay stranded.
-- **Horizontal shear** — bands of 1–4 rows shifted **3–15 columns** for a
-  stair-stepped, digital look.
+- **Horizontal shear** — thin bands of 1–2 rows shifted a big **4–18 columns**
+  for an aggressive, torn, digital look.
+- **Honeypots bite:** burning a HONEY cell trips the trace — each newly-burned
+  honeypot adds +2 to a trace penalty that counts against LOCKDOWN (surfaced in
+  the lockdown meter). Honey sits in open reachable ground, so honey-dense
+  sectors cost you time.
 - **All six terrain types in every sector** (OPEN, HARD, WALL, BUS, VAULT, HONEY),
   guaranteed — verified 120/120 sectors.
 

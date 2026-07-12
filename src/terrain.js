@@ -44,12 +44,13 @@ function makeNoise(rng, step1, step2) {
   return (x, y) => 0.65 * sample(L1, x, y) + 0.35 * sample(L2, x, y);
 }
 
-// shift bands of 1-4 rows horizontally by 3-15 columns (wrapped in the sector)
+// shift thin bands of 1-2 rows horizontally by a big 4-18 columns (wrapped in
+// the sector) — aggressive, frequent displacement for a hard digital tear.
 function shear(t, x0, x1, rng) {
   const w = x1 - x0 + 1;
   for (let y = 0; y < FIELD_H;) {
-    const band = 1 + Math.floor(rng() * 4);
-    const off = (3 + Math.floor(rng() * 13)) * (rng() < 0.5 ? 1 : -1);
+    const band = 1 + Math.floor(rng() * 2);
+    const off = (4 + Math.floor(rng() * 15)) * (rng() < 0.5 ? 1 : -1);
     for (let yy = y; yy < Math.min(FIELD_H, y + band); yy++) {
       const row = [];
       for (let x = x0; x <= x1; x++) row.push(t[idx(x, yy)]);
@@ -255,12 +256,13 @@ export function burnStep(machine, s, heat) {
 }
 export function sectorStats(machine, s) {
   const { t, burned } = machine;
-  let claim = 0, burn = 0, vaultsBurned = true;
+  let claim = 0, burn = 0, honeyBurned = 0, vaultsBurned = true;
   for (let y = 0; y < FIELD_H; y++) for (let x = s.x0; x <= s.x1; x++) {
     const c = idx(x, y);
     if (t[c] === WALL) continue;
-    claim++; if (burned[c]) burn++;
+    claim++;
+    if (burned[c]) { burn++; if (t[c] === HONEY) honeyBurned++; }
   }
   for (const v of s.vaults) if (!burned[v]) vaultsBurned = false;
-  return { claim, burn, pct: claim ? (burn / claim) * 100 : 0, vaultsBurned };
+  return { claim, burn, honeyBurned, pct: claim ? (burn / claim) * 100 : 0, vaultsBurned };
 }

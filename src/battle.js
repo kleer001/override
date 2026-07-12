@@ -25,6 +25,7 @@ export function createNode(machine, secIdx, embers) {
     machine, secIdx, sector,
     embers: embers && embers.length ? embers : [{ x: sector.entry.x, y: sector.entry.y }],
     pass: 0, heat: 0, crack: 0, ignited: false, outcome: null,
+    penalty: 0, honeyHit: 0,
     log: [`> jacked into ${sector.id}. terrain: ${sector.difficulty}.`],
   };
 }
@@ -79,13 +80,22 @@ export function runPass(node, program) {
   const st = sectorStats(machine, sector);
   node.crack = st.pct;
 
+  // HONEYPOT: burning bait trips the trace — each newly-burned honey costs time
+  const newHoney = st.honeyBurned - node.honeyHit;
+  if (newHoney > 0) {
+    node.honeyHit = st.honeyBurned;
+    node.penalty += newHoney * 2;
+    push(node, `> HONEYPOT TRIPPED x${newHoney}! trace +${newHoney * 2}.`);
+  }
+  const effPass = node.pass + node.penalty;
+
   push(node, `> pass ${node.pass}: acc ${ev.value} -> heat ${heat}. burned ${st.pct.toFixed(0)}% of ${sector.id} (need ${WIN_COVERAGE}%).`);
 
   if (st.pct >= WIN_COVERAGE) {
     node.outcome = 'win';
     sector.conquered = true;
     push(node, `> ${WIN_COVERAGE}% breached. ${sector.id} is yours.`);
-  } else if (node.pass >= LOCKDOWN) {
+  } else if (effPass >= LOCKDOWN) {
     node.outcome = 'lose';
     push(node, node.heat <= 5
       ? `> LOCKDOWN. your program ran too cold to spread through ${sector.id}.`
