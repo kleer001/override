@@ -10,6 +10,7 @@ export { generateMachine };
 export const LOCKDOWN = 10;
 export const CODE_DIGITS = 8;
 export const STEPS_PER_PASS = 3;
+export const REDRAW_COST = 10; // points spent to reshuffle the hand in assemble
 
 export function newCode(rng) {
   return Array.from({ length: CODE_DIGITS }, () => Math.floor(rng() * 10));
@@ -53,7 +54,10 @@ export function jackEmbers(machine, sector, lx, ly, ch) {
 
 export function crackPct(node) { return Math.min(100, node.crack); }
 
-export function runPass(node, program) {
+// Set up a pass (accumulator, heat, ignition, fork embers) and stash the number
+// of burn-steps it earns on the node. Callers then spread that many steps — the
+// UI does it one at a time (animated); runPass does them in a batch.
+export function beginPass(node, program) {
   const ev = evalProgram(program);
   node.pass++;
   const { machine, sector } = node;
@@ -74,9 +78,22 @@ export function runPass(node, program) {
 
   // spread rate scales with the accumulator: a hotter program burns faster,
   // so a bigger number both unlocks harder terrain AND conquers in fewer passes
-  const steps = Math.max(1, Math.min(5, 1 + Math.floor(ev.value / 6)));
-  for (let s = 0; s < steps; s++) burnStep(machine, sector, heat);
+  node.steps = Math.max(1, Math.min(5, 1 + Math.floor(ev.value / 6)));
+  return ev;
+}
 
+// One spread tick: advance the fire a single frontier layer and refresh crack%.
+// Used both for the animated pass and the post-win burn-to-completion.
+export function burnMore(node) {
+  const added = burnStep(node.machine, node.sector, node.heat);
+  node.crack = sectorStats(node.machine, node.sector).pct;
+  return added;
+}
+
+// Tally the pass: crack%, honeypot penalty, win/lose. Win fires the instant
+// coverage crosses WIN_COVERAGE (bonus burn happens after, outside lockdown).
+export function endPass(node, ev) {
+  const { machine, sector } = node;
   const st = sectorStats(machine, sector);
   node.crack = st.pct;
 
@@ -89,7 +106,7 @@ export function runPass(node, program) {
   }
   const effPass = node.pass + node.penalty;
 
-  push(node, `> pass ${node.pass}: acc ${ev.value} -> heat ${heat}. burned ${st.pct.toFixed(0)}% of ${sector.id} (need ${WIN_COVERAGE}%).`);
+  push(node, `> pass ${node.pass}: acc ${ev.value} -> heat ${node.heat}. burned ${st.pct.toFixed(0)}% of ${sector.id} (need ${WIN_COVERAGE}%).`);
 
   if (st.pct >= WIN_COVERAGE) {
     node.outcome = 'win';
@@ -102,6 +119,12 @@ export function runPass(node, program) {
       : `> LOCKDOWN. couldn't cover enough of ${sector.id} in time.`);
   }
   return ev;
+}
+
+export function runPass(node, program) {
+  const ev = beginPass(node, program);
+  for (let s = 0; s < node.steps; s++) burnStep(node.machine, node.sector, node.heat);
+  return endPass(node, ev);
 }
 
 function push(node, line) {

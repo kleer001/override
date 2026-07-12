@@ -3,6 +3,7 @@
 // All coordinates are in character-grid cells (col, row) on the 80x40 screen.
 
 import { SECTORS } from './terrain.js';
+import { REDRAW_COST } from './battle.js';
 
 export const COLS = 80;
 export const ROWS = 40;
@@ -19,6 +20,7 @@ export const HAND_CARDS = Array.from({ length: 5 }, (_, i) => ({
 }));
 
 // assemble action buttons
+export const BTN_REDRAW = { x: 2, y: 24, w: 14, h: 3, label: `REDRAW -${REDRAW_COST}` };
 export const BTN_UNDO = { x: 18, y: 24, w: 14, h: 3, label: 'UNDO' };
 export const BTN_EXEC = { x: 46, y: 24, w: 16, h: 3, label: 'TARGET ▶' };
 

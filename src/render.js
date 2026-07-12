@@ -3,9 +3,9 @@
 //   exec / result    -> the sector burning.
 
 import { FIELD_W, FIELD_H, WALL, VAULT, idx, SECTORS, heatToClear, WIN_COVERAGE } from './terrain.js';
-import { LOCKDOWN, CODE_DIGITS, crackPct, heatOf } from './battle.js';
+import { LOCKDOWN, CODE_DIGITS, crackPct, heatOf, REDRAW_COST } from './battle.js';
 import { evalProgram } from './cards.js';
-import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_UNDO, BTN_EXEC, BTN_CONTINUE } from './layout.js';
+import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE } from './layout.js';
 import { CHARACTERS } from './characters.js';
 
 export { COLS, ROWS };
@@ -57,13 +57,19 @@ function accPreview(program) {
 function drawAssemble(g, game) {
   center(g, 3, 'ASSEMBLE INTRUSION');
   center(g, 4, 'instructions run left→right on a CPU accumulator — adds early, x late');
-  game.hand.forEach((h, i) => drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, String(i + 1), h.card, h.used));
+  stamp(g, 2, 5, `DECK: ${game.run.deck.length} cards    PTS: ${game.run.points}`);
+  // badge shows how many copies of this card the deck holds
+  game.hand.forEach((h, i) => {
+    const n = game.run.deck.filter((c) => c.id === h.card.id).length;
+    drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, `x${n}`, h.card, h.used);
+  });
   stamp(g, 6, 17, 'PROGRAM');
   stamp(g, 16, 17, [0, 1, 2].map((i) => `[ ${(game.program[i] ? game.program[i].name : '......').padEnd(9).slice(0, 9)} ]`).join(' → '));
   const p = accPreview(game.program);
   stamp(g, 6, 19, 'ACCUMULATOR');
   stamp(g, 18, 19, `${p.expr}   =  ${p.value}   (heat ${p.value ? heatOf({ value: p.value, flags: {} }) : '–'})`);
   center(g, 22, 'tap a card to load · then choose which sector to hit');
+  drawButton(g, BTN_REDRAW, game.run.points < REDRAW_COST);
   drawButton(g, BTN_UNDO, false);
   drawButton(g, BTN_EXEC, game.selection.length < 3);
 }

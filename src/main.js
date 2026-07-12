@@ -3,34 +3,44 @@
 // blind loadout, see all three terrains, and choose which to assault.
 
 import { mulberry32, shuffle } from './rng.js';
-import { startingDeck, DRAFT_POOL } from './cards.js';
-import { generateMachine, newCode, createNode, runPass, jackEmbers } from './battle.js';
+import { startingDeck, DRAFT_POOL, CARDS } from './cards.js';
+import { generateMachine, newCode, createNode, beginPass, endPass, burnMore, jackEmbers, REDRAW_COST } from './battle.js';
 import { buildScreen } from './render.js';
 import { installPointer } from './input.js';
-import { HAND_CARDS, DRAFT_CARDS, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, inRect } from './layout.js';
+import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, inRect } from './layout.js';
 import { CHARACTERS } from './characters.js';
-import { FIELD_H } from './terrain.js';
+import { FIELD_H, WIN_COVERAGE } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
 const screen = document.getElementById('screen');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const BURN_MS = 70; // per burn-step frame — every spread layer is drawn
 const ROOT_KEY = 'override.root';
+const DECK_KEY = 'override.deck';     // persistent deck: card ids, survives runs
+const POINTS_KEY = 'override.points'; // persistent points bank
 
 const game = {
   phase: 'assemble', run: null, node: null,
   program: [null, null, null], selection: [], hand: [], draft: [],
-  playhead: -1, prompt: '', message: '', seed: 0,
+  playhead: -1, prompt: '', message: '', seed: 0, redrawCount: 0,
 };
 
 const loadRoot = () => parseInt(localStorage.getItem(ROOT_KEY) || '120', 10) || 120;
 const saveRoot = (v) => localStorage.setItem(ROOT_KEY, String(v));
+const loadDeck = () => {
+  const raw = localStorage.getItem(DECK_KEY);
+  return raw ? JSON.parse(raw).map((id) => ({ ...CARDS[id] })) : startingDeck();
+};
+const saveDeck = (deck) => localStorage.setItem(DECK_KEY, JSON.stringify(deck.map((c) => c.id)));
+const loadPoints = () => parseInt(localStorage.getItem(POINTS_KEY) || '0', 10) || 0;
+const savePoints = (v) => localStorage.setItem(POINTS_KEY, String(v));
 const draw = () => { screen.textContent = buildScreen(game); };
 
 function startRun() {
   game.seed = (Date.now() ^ 0x9e3779b9) >>> 0;
   const machine = generateMachine(game.seed);
   game.run = {
-    tier: 1, node: 1, root: loadRoot(), deck: startingDeck(),
+    tier: 1, node: 1, root: loadRoot(), points: loadPoints(), deck: loadDeck(),
     machine, code: newCode(mulberry32((game.seed ^ 12345) >>> 0)),
     locked: new Array(8).fill(false), conquered: 0, char: null,
   };
@@ -47,17 +57,35 @@ function pickChar(i) {
   newAssemble();
 }
 
-function newAssemble() {
+// draw five cards off the deck; redrawCount varies the shuffle per redraw
+function dealHand() {
   const r = game.run;
-  game.node = null;
-  const rng = mulberry32((game.seed ^ (r.node * 40503) ^ (r.conquered * 2654435761)) >>> 0);
+  const rng = mulberry32((game.seed ^ (r.node * 40503) ^ (r.conquered * 2654435761) ^ (game.redrawCount * 2246822519)) >>> 0);
   game.hand = shuffle(r.deck, rng).slice(0, 5).map((c) => ({ name: c.name, card: c, used: false }));
   game.program = [null, null, null];
   game.selection = [];
+}
+
+function newAssemble() {
+  game.node = null;
+  game.redrawCount = 0;
+  dealHand();
   game.playhead = -1;
   game.message = '';
   game.prompt = '';
   game.phase = 'assemble';
+  draw();
+}
+
+function redraw() {
+  if (game.phase !== 'assemble') return;
+  const r = game.run;
+  if (r.points < REDRAW_COST) { game.message = `need ${REDRAW_COST} PTS to redraw (have ${r.points}).`; draw(); return; }
+  r.points -= REDRAW_COST; savePoints(r.points);
+  game.redrawCount++;
+  dealHand();
+  game.message = '';
+  sfx.ui();
   draw();
 }
 
@@ -152,14 +180,34 @@ async function startExec() {
       draw();
       await sleep(190);
     }
-    const before = node.crack;
-    runPass(node, game.program.slice());
-    if (node.crack > before) sfx.crack();
     game.playhead = -1;
+    const before = node.crack;
+    const ev = beginPass(node, game.program.slice());
+    for (let s = 0; s < node.steps; s++) { // draw every spread layer
+      const added = burnMore(node);
+      draw();
+      await sleep(BURN_MS);
+      if (added === 0) break;
+    }
+    endPass(node, ev);
+    if (node.crack > before) sfx.crack();
     draw();
-    await sleep(400);
+    await sleep(260);
   }
+  if (node.outcome === 'win') await burnToCompletion(node);
   showResult();
+}
+
+// Win is already secured; keep spreading the fire to its natural limit so
+// coverage past WIN_COVERAGE can bank as points. Lockdown no longer applies.
+async function burnToCompletion(node) {
+  game.prompt = `${node.sector.id} BREACHED — burning to completion for bonus…`;
+  for (let guard = 0; guard < 300; guard++) {
+    const added = burnMore(node);
+    draw();
+    await sleep(BURN_MS);
+    if (added === 0) break;
+  }
 }
 
 function showResult() {
@@ -170,8 +218,10 @@ function showResult() {
     for (const d of node.sector.digits) r.locked[d] = true;
     const reward = 40 + r.conquered * 10;
     r.root += reward; saveRoot(r.root);
+    const bonus = Math.max(0, Math.round(node.crack - WIN_COVERAGE));
+    r.points += bonus; savePoints(r.points);
     sfx.lock(); sfx.win();
-    game.message = `>> ${node.sector.id} BREACHED. +${reward} ROOT. [ENTER] to continue.`;
+    game.message = `>> ${node.sector.id} BREACHED. +${reward} ROOT, +${bonus} PTS (${node.crack.toFixed(0)}% burned). [ENTER] to continue.`;
     game.prompt = `${node.sector.id} cracked — its codes fall.`;
   } else {
     sfx.lose();
@@ -199,6 +249,7 @@ function startDraft() {
 function pickDraft(i) {
   if (game.phase !== 'draft' || !game.draft[i]) return;
   game.run.deck.push({ ...game.draft[i] });
+  saveDeck(game.run.deck);
   game.run.node += 1;
   sfx.lock();
   newAssemble();
@@ -222,6 +273,7 @@ function onTapCell(col, row) {
     return lockJackin(); // any tap locks the moving gnomon (timing skill)
   } else if (game.phase === 'assemble') {
     for (let i = 0; i < HAND_CARDS.length; i++) if (inRect(col, row, HAND_CARDS[i])) return loadSlot(i);
+    if (inRect(col, row, BTN_REDRAW)) return redraw();
     if (inRect(col, row, BTN_UNDO)) return undoSlot();
     if (inRect(col, row, BTN_EXEC)) return gotoTarget();
   } else if (game.phase === 'target') {
@@ -246,6 +298,7 @@ window.addEventListener('keydown', (e) => {
     if (k === ' ' || k === 'Enter') { e.preventDefault(); lockJackin(); }
   } else if (game.phase === 'assemble') {
     if (k >= '1' && k <= '5') loadSlot(+k - 1);
+    else if (k === 'r' || k === 'R') redraw();
     else if (k === 'Backspace') { e.preventDefault(); undoSlot(); }
     else if (k === 'Enter') gotoTarget();
   } else if (game.phase === 'target') {
