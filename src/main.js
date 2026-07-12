@@ -4,10 +4,12 @@
 
 import { mulberry32, shuffle } from './rng.js';
 import { startingDeck, DRAFT_POOL } from './cards.js';
-import { generateMachine, newCode, createNode, runPass } from './battle.js';
+import { generateMachine, newCode, createNode, runPass, jackEmbers } from './battle.js';
 import { buildScreen } from './render.js';
 import { installPointer } from './input.js';
 import { HAND_CARDS, DRAFT_CARDS, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, inRect } from './layout.js';
+import { CHARACTERS } from './characters.js';
+import { FIELD_H } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
 const screen = document.getElementById('screen');
@@ -30,8 +32,18 @@ function startRun() {
   game.run = {
     tier: 1, node: 1, root: loadRoot(), deck: startingDeck(),
     machine, code: newCode(mulberry32((game.seed ^ 12345) >>> 0)),
-    locked: new Array(8).fill(false), conquered: 0,
+    locked: new Array(8).fill(false), conquered: 0, char: null,
   };
+  game.node = null;
+  game.phase = 'charselect';
+  game.prompt = '';
+  draw();
+}
+
+function pickChar(i) {
+  if (game.phase !== 'charselect' || !CHARACTERS[i]) return;
+  game.run.char = CHARACTERS[i];
+  sfx.lock();
   newAssemble();
 }
 
@@ -80,9 +92,48 @@ function chooseSector(si) {
   const s = game.run.machine.sectors[si];
   if (!s || s.conquered) return;
   game.node = createNode(game.run.machine, si);
-  game.phase = 'exec';
-  game.prompt = '';
-  startExec();
+  startJackin();
+}
+
+// --- jack-in targeting: oscillating gnomons, lock X then Y ---
+let jackRAF = null;
+function startJackin() {
+  game.phase = 'jackin';
+  game.jack = { step: 'x', pos: 0, col: null, row: null, lockedX: null };
+  game.jackStart = performance.now();
+  resumeAudio();
+  sfx.exec();
+  loopJackin();
+}
+function loopJackin() {
+  if (game.phase !== 'jackin') return;
+  const j = game.jack, s = game.node.sector, ch = game.run.char;
+  const phase = ((performance.now() - game.jackStart) / ch.period) % 1;
+  const tri = phase < 0.5 ? phase * 2 : 2 - phase * 2; // 0..1..0 ping-pong
+  if (j.step === 'x') {
+    const lo = ch.deep ? s.x0 + Math.floor((s.x1 - s.x0) * 0.45) : s.x0;
+    j.col = lo + Math.round(tri * (s.x1 - lo));
+  } else {
+    j.row = Math.round(tri * (FIELD_H - 1));
+  }
+  draw();
+  jackRAF = requestAnimationFrame(loopJackin);
+}
+function lockJackin() {
+  if (game.phase !== 'jackin') return;
+  const j = game.jack;
+  if (j.step === 'x') {
+    j.lockedX = j.col;
+    j.step = 'y';
+    game.jackStart = performance.now();
+    sfx.load();
+  } else {
+    if (jackRAF) cancelAnimationFrame(jackRAF);
+    sfx.lock();
+    game.node.embers = jackEmbers(game.run.machine, game.node.sector, j.lockedX, j.row, game.run.char);
+    game.phase = 'exec';
+    startExec();
+  }
 }
 
 async function startExec() {
@@ -165,7 +216,11 @@ function tierClear() {
 // --- pointer input (mouse + touch) ---
 function onTapCell(col, row) {
   resumeAudio();
-  if (game.phase === 'assemble') {
+  if (game.phase === 'charselect') {
+    for (let i = 0; i < CHARACTERS.length; i++) if (inRect(col, row, DRAFT_CARDS[i])) return pickChar(i);
+  } else if (game.phase === 'jackin') {
+    return lockJackin(); // any tap locks the moving gnomon (timing skill)
+  } else if (game.phase === 'assemble') {
     for (let i = 0; i < HAND_CARDS.length; i++) if (inRect(col, row, HAND_CARDS[i])) return loadSlot(i);
     if (inRect(col, row, BTN_UNDO)) return undoSlot();
     if (inRect(col, row, BTN_EXEC)) return gotoTarget();
@@ -185,7 +240,11 @@ installPointer(screen, onTapCell);
 window.addEventListener('keydown', (e) => {
   resumeAudio();
   const k = e.key;
-  if (game.phase === 'assemble') {
+  if (game.phase === 'charselect') {
+    if (k >= '1' && k <= '3') pickChar(+k - 1);
+  } else if (game.phase === 'jackin') {
+    if (k === ' ' || k === 'Enter') { e.preventDefault(); lockJackin(); }
+  } else if (game.phase === 'assemble') {
     if (k >= '1' && k <= '5') loadSlot(+k - 1);
     else if (k === 'Backspace') { e.preventDefault(); undoSlot(); }
     else if (k === 'Enter') gotoTarget();

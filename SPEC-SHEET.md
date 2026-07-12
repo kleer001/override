@@ -249,11 +249,14 @@ any heat). **Runs are not guaranteed winnable** — ~1 in 8 machines has a BRUTA
 sector, making that run impossible to fully clear (Candy-Crush rules). Difficulty
 is randomized per sector, not positional.
 
-**Jack-in (planned).** Ignition is currently a fixed ember at the sector entry.
-Planned: an oscillating-gnomon targeting minigame — a vertical gnomon sweeps
-left↔right (tap to lock X), then a horizontal gnomon sweeps up↕down (tap Y); the
-intersection is your ember. Jack-in *characters* tune it — War-dialer (slow,
-precise), Shotgunner (fast + 3–5 scattered embers), Catapultist (biases deep).
+**Jack-in (built).** You pick a **character** at run start, then aim each
+ignition with an **oscillating-gnomon** minigame: a vertical gnomon sweeps
+left↔right (tap/SPACE to lock X), then a horizontal gnomon sweeps up↕down (lock
+Y); your ember(s) land at the intersection (settled off walls) and the burn
+begins. Characters (`src/characters.js`) tune sweep speed + ember pattern:
+War-dialer (slow/precise, 1 ember), Shotgunner (fast, 5 scattered), Catapultist
+(medium, 1 ember, aim limited to the far half — lob deep). Wired through
+`createNode(…embers)` → `jackEmbers()`.
 
 The `preview/` archetypes remain a tuning sandbox; the live game uses the
 generator above.

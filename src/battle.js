@@ -19,22 +19,38 @@ export function heatOf(ev) {
   return Math.max(4, Math.min(9, 4 + Math.floor(ev.value / 4) + (ev.flags.interrupt ? 1 : 0)));
 }
 
-export function createNode(machine, secIdx) {
+export function createNode(machine, secIdx, embers) {
   const sector = machine.sectors[secIdx];
   return {
     machine, secIdx, sector,
+    embers: embers && embers.length ? embers : [{ x: sector.entry.x, y: sector.entry.y }],
     pass: 0, heat: 0, crack: 0, ignited: false, outcome: null,
     log: [`> jacked into ${sector.id}. terrain: ${sector.difficulty}.`],
   };
 }
 
-export function crackPct(node) { return Math.min(100, node.crack); }
-
-// war-dial ignition (single ember at the sector entry). Character-based ember
-// patterns (shotgun / catapult) plug in here later.
-function embersFor(machine, sector) {
-  return [{ x: sector.entry.x, y: sector.entry.y }];
+// settle a point off any WALL onto the nearest passable cell
+function settle(t, x, y) {
+  for (let r = 0; r < 8; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const nx = x + dx, ny = y + dy;
+    if (nx >= 0 && nx < FIELD_W && ny >= 0 && ny < FIELD_H && t[idx(nx, ny)] !== WALL) return { x: nx, y: ny };
+  }
+  return { x, y };
 }
+
+// embers that land from a locked (lx, ly) mark, per the jack-in character
+export function jackEmbers(machine, sector, lx, ly, ch) {
+  const t = machine.t;
+  const clampX = (x) => Math.max(sector.x0, Math.min(sector.x1, x));
+  const clampY = (y) => Math.max(0, Math.min(FIELD_H - 1, y));
+  const out = [settle(t, clampX(lx), clampY(ly))];
+  for (let i = 0; i < (ch.scatter || 0); i++) {
+    out.push(settle(t, clampX(out[0].x + randInt(machine.rng, -3, 3)), clampY(out[0].y + randInt(machine.rng, -3, 3))));
+  }
+  return out;
+}
+
+export function crackPct(node) { return Math.min(100, node.crack); }
 
 export function runPass(node, program) {
   const ev = evalProgram(program);
@@ -44,7 +60,7 @@ export function runPass(node, program) {
   node.heat = heat;
 
   if (!node.ignited) {
-    ignite(machine, sector, embersFor(machine, sector));
+    ignite(machine, sector, node.embers);
     node.ignited = true;
   }
   // FORK lobs an extra ember deep in the sector (a fresh front)

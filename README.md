@@ -29,12 +29,14 @@ python3 -m http.server 8099
 # open http://localhost:8099/index.html
 ```
 
-**Play (mouse / touch / keyboard):** build a 3-card program (tap hand cards),
-tap **TARGET**, then tap one of the three sectors to assault — matching your
-program's **heat** to the sector's terrain (KERNEL easy, SWAP a fortress).
-Conquer all three to crack THE MACHINE. Keyboard also works: `1`–`5` load ·
-`Backspace` undo · `Enter` target · `1`–`3` pick sector/draft · `Enter` continue.
-Order is everything — adds early, multipliers late. Fits mobile (best in landscape).
+**Play (mouse / touch / keyboard):** pick a **jack-in character** (sets your
+ignition style), build a 3-card program (tap hand cards), tap **TARGET**, tap a
+sector — matching your program's **heat** to the terrain — then **aim your
+jack-in**: an oscillating gnomon sweeps for X (tap/SPACE to lock), then for Y;
+your ember(s) land at the mark and the burn begins. Breach ≥50% of a sector to
+take it; conquer all three to crack THE MACHINE. Keys: `1`–`5` load · `Backspace`
+undo · `Enter` target · `1`–`3` pick character/sector/draft · `SPACE` lock aim ·
+`Enter` continue. Order is everything — adds early, multipliers late.
 
 **Strategy:** you see all three terrains and draw a blind loadout each node, so
 plan the order — take the fortress when you draw a hot hand, save easy KERNEL for

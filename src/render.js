@@ -6,6 +6,7 @@ import { FIELD_W, FIELD_H, WALL, VAULT, idx, SECTORS, heatToClear, WIN_COVERAGE 
 import { LOCKDOWN, CODE_DIGITS, crackPct, heatOf } from './battle.js';
 import { evalProgram } from './cards.js';
 import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_UNDO, BTN_EXEC, BTN_CONTINUE } from './layout.js';
+import { CHARACTERS } from './characters.js';
 
 export { COLS, ROWS };
 
@@ -73,6 +74,32 @@ function drawDraft(g, game) {
   center(g, 19, 'tap a card to keep it');
 }
 
+function drawCharSelect(g, game) {
+  center(g, 3, 'SELECT YOUR JACK-IN');
+  center(g, 4, 'how you break in — your ignition style for this whole run');
+  CHARACTERS.forEach((ch, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1),
+    { name: ch.name, desc: ch.desc, kind: 'jack-in' }, false));
+  center(g, 19, 'tap a jack-in to begin');
+}
+
+function drawJackin(g, game) {
+  const { machine } = game.run;
+  const s = game.node.sector;
+  const j = game.jack;
+  drawMachineBoard(g, machine);
+  // vertical gnomon (X axis): moving while aiming X, locked while aiming Y
+  const xcol = j.step === 'x' ? j.col : j.lockedX;
+  if (xcol != null) for (let y = 0; y < FIELD_H; y++) g[FIELD_TOP + y][xcol] = '║';
+  // horizontal gnomon (Y axis)
+  if (j.step === 'y' && j.row != null) {
+    for (let x = s.x0; x <= s.x1; x++) g[FIELD_TOP + j.row][x] = '═';
+    if (xcol != null) g[FIELD_TOP + j.row][xcol] = '╬';
+  }
+  machine.sectors.forEach((sec) => stamp(g, sec.x0 + 1, FIELD_TOP,
+    (sec === s ? `${sec.id} «TARGET»` : sec.id).slice(0, sec.x1 - sec.x0)));
+  center(g, 38, `JACK-IN: ${game.run.char.name}  ·  AIM ${j.step.toUpperCase()} axis  ·  tap / SPACE to lock`);
+}
+
 function frontier(machine, x, y) {
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const nx = x + dx, ny = y + dy;
@@ -137,9 +164,11 @@ export function buildScreen(game) {
   stamp(g, 0, 1, code);
   stamp(g, 0, 2, game.prompt || '');
 
-  if (phase === 'assemble') drawAssemble(g, game);
+  if (phase === 'charselect') drawCharSelect(g, game);
+  else if (phase === 'assemble') drawAssemble(g, game);
   else if (phase === 'draft') drawDraft(g, game);
   else if (phase === 'target') drawTarget(g, game);
+  else if (phase === 'jackin') drawJackin(g, game);
   else if (node) drawBurning(g, game);
 
   if (phase === 'result' || phase === 'tierclear' || phase === 'gameover') {
