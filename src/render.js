@@ -2,7 +2,7 @@
 //   assemble / draft -> card panels · target -> the machine (pick a sector) ·
 //   exec / result    -> the sector burning.
 
-import { FIELD_W, FIELD_H, WALL, VAULT, idx, SECTORS, heatToClear } from './terrain.js';
+import { FIELD_W, FIELD_H, WALL, VAULT, idx, SECTORS, heatToClear, WIN_COVERAGE } from './terrain.js';
 import { LOCKDOWN, CODE_DIGITS, crackPct, heatOf } from './battle.js';
 import { evalProgram } from './cards.js';
 import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_UNDO, BTN_EXEC, BTN_CONTINUE } from './layout.js';
@@ -98,10 +98,11 @@ function drawTarget(g, game) {
   drawMachineBoard(g, machine);
   const heat = heatOf(evalProgram(game.program));
   machine.sectors.forEach((s) => {
-    const label = s.conquered ? `${s.id} ·OWNED·` : `${s.id} ${s.difficulty} h≥${heatToClear(machine, s)}`;
+    const h = heatToClear(machine, s);
+    const label = s.conquered ? `${s.id} ·OWNED·` : `${s.id} ${s.difficulty} h${h === 99 ? '✕' : '≥' + h}`;
     stamp(g, s.x0 + 1, FIELD_TOP, label.slice(0, s.x1 - s.x0));
   });
-  center(g, 38, `YOUR HEAT ${heat}  —  tap an un-owned sector to assault  (higher heat burns hotter & faster)`);
+  center(g, 38, `YOUR HEAT ${heat}  —  tap a sector · burn ${WIN_COVERAGE}% to breach it (BRUTAL = maybe impossible)`);
 }
 
 function drawBurning(g, game) {
@@ -117,7 +118,7 @@ function drawBurning(g, game) {
     return game.phase === 'exec' && game.playhead === i ? `[>${name}<]` : `[ ${name} ]`;
   }).join(''));
   const cp = crackPct(node);
-  stamp(g, 0, 37, `CRACK ${bar(cp, 34)} ${cp.toFixed(0)}%   heat ${node.heat}   ${node.sector.id}`);
+  stamp(g, 0, 37, `CRACK ${bar(cp, 34)} ${cp.toFixed(0)}%/${WIN_COVERAGE}%  heat ${node.heat}  ${node.sector.id}`);
   const log = node.log.slice(-2);
   stamp(g, 0, 38, (log[0] || '').slice(0, COLS));
   stamp(g, 0, 39, (log[1] || game.message || '').slice(0, COLS));

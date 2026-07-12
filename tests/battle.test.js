@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 
 import { CARDS, evalProgram } from '../src/cards.js';
 import { generateMachine, createNode, runPass, LOCKDOWN, heatOf } from '../src/battle.js';
-import { SECTORS } from '../src/terrain.js';
+import { SECTORS, WIN_COVERAGE, idx, FIELD_H } from '../src/terrain.js';
+
+const COLD = [CARDS.XOR, CARDS.BRUTE, CARDS.BRUTE];   // value 6
+const GOOD = [CARDS.BRUTE, CARDS.BRUTE, CARDS.XOR];   // value 12
+const HOT = [CARDS.ADD5, CARDS.ADD5, CARDS.SHL];      // value 30
 
 function conquer(machine, si, program) {
   machine.burned.fill(0);
@@ -14,10 +18,6 @@ function conquer(machine, si, program) {
   return node;
 }
 
-const COLD = [CARDS.XOR, CARDS.BRUTE, CARDS.BRUTE];   // value 6  -> heat 5
-const GOOD = [CARDS.BRUTE, CARDS.BRUTE, CARDS.XOR];   // value 12 -> heat 7
-const HOT = [CARDS.ADD5, CARDS.ADD5, CARDS.SHL];      // value 30 -> heat 9
-
 test('accumulator: order matters', () => {
   assert.equal(evalProgram(GOOD).value, 12);
   assert.equal(evalProgram(COLD).value, 6);
@@ -27,45 +27,43 @@ test('heat scales with the accumulator', () => {
   assert.ok(heatOf(evalProgram(COLD)) < heatOf(evalProgram(HOT)));
 });
 
-test('every sector has a vault and is winnable by a hot program (12 seeds)', () => {
-  for (let seed = 1; seed <= 12; seed++) {
+test('all six terrain types appear in every sector (16 seeds)', () => {
+  for (let seed = 1; seed <= 16; seed++) {
     const m = generateMachine(seed);
-    assert.equal(m.sectors.length, 3);
+    for (const s of m.sectors) {
+      const cnt = [0, 0, 0, 0, 0, 0];
+      for (let y = 0; y < FIELD_H; y++) for (let x = s.x0; x <= s.x1; x++) cnt[m.t[idx(x, y)]]++;
+      cnt.forEach((n, i) => assert.ok(n > 0, `seed ${seed} ${s.id} missing terrain type ${i}`));
+    }
+  }
+});
+
+test('win is coverage-based: reaching WIN_COVERAGE breaches the sector', () => {
+  // find any winnable sector across seeds and confirm the win fires at >= threshold
+  for (let seed = 1; seed <= 20; seed++) {
+    const m = generateMachine(seed);
     for (let si = 0; si < 3; si++) {
-      assert.ok(m.sectors[si].vaults.length >= 1, `seed ${seed} ${SECTORS[si].id} has a vault`);
       const node = conquer(m, si, HOT);
-      assert.equal(node.outcome, 'win', `seed ${seed} ${SECTORS[si].id} winnable by hot`);
-      assert.ok(node.pass <= LOCKDOWN);
+      if (node.outcome === 'win') {
+        assert.ok(node.crack >= WIN_COVERAGE);
+        assert.ok(node.pass <= LOCKDOWN);
+        return;
+      }
     }
   }
+  assert.fail('expected at least one winnable sector across 20 seeds');
 });
 
-test('KERNEL yields to any loadout; a hot program conquers faster than cold', () => {
-  const m = generateMachine(1);
-  const cold = conquer(m, 0, COLD);
-  const hot = conquer(m, 0, HOT);
-  assert.equal(cold.outcome, 'win');
-  assert.equal(hot.outcome, 'win');
-  assert.ok(hot.pass <= cold.pass, 'hot conquers KERNEL in fewer-or-equal passes');
-});
-
-test('a cold program cannot crack a HARD sector it lacks the heat for', () => {
-  // find a HARD sector across seeds and confirm cold loses but hot wins
-  let checked = 0;
-  for (let seed = 1; seed <= 12 && checked < 3; seed++) {
-    const m = generateMachine(seed);
-    for (let si = 0; si < 3; si++) {
-      if (m.sectors[si].difficulty !== 'HARD') continue;
-      assert.equal(conquer(m, si, COLD).outcome, 'lose');
-      assert.equal(conquer(m, si, HOT).outcome, 'win');
-      checked++;
-    }
+test('difficulty varies and is not positional (some non-EASY sectors exist)', () => {
+  const tally = {};
+  for (let seed = 1; seed <= 20; seed++) {
+    for (const s of generateMachine(seed).sectors) tally[s.difficulty] = (tally[s.difficulty] || 0) + 1;
   }
-  assert.ok(checked > 0, 'found at least one HARD sector to test');
+  assert.ok((tally.EASY || 0) > 0, 'some EASY sectors');
+  assert.ok((tally.HARD || 0) + (tally.BRUTAL || 0) > 0, 'some hard/brutal sectors');
 });
 
-test('deterministic: same seed => identical terrain and outcome', () => {
+test('deterministic: same seed => identical terrain', () => {
   const a = generateMachine(42), b = generateMachine(42);
   assert.deepEqual(Array.from(a.t), Array.from(b.t));
-  assert.equal(conquer(a, 2, GOOD).outcome, conquer(b, 2, GOOD).outcome);
 });

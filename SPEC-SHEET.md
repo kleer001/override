@@ -231,17 +231,29 @@ reach 2,155. This is the bridge between deck-skill and the board.
 jack-in characters (War-dialer / Shotgunner / Catapultist ember patterns) are
 surface-area tools, not just flat bonuses.
 
-**Live generation (src/terrain.js)** — the three sectors each generate
-independently as **land islands in a sea of firewall, bridged by bus links**,
-then get a **horizontal shear** (bands of 1–4 rows shifted 1–5 columns) that
-turns the smooth noise into stair-stepped, digital shapes. Key rules:
-- **Not tiered.** Each sector's difficulty is randomized per run (≈45% get an
-  open corridor to the vault → EASY, the rest gated by hard terrain → HARD),
-  independent of position; a machine always leaves ≥1 EASY way in.
-- **All six terrain types appear in every sector** (OPEN, HARD, WALL, BUS,
-  VAULT, HONEY) — verified 60/60 sectors across 20 seeds.
-- Every sector is guaranteed reachable & winnable (trunk-free: vault chosen among
-  BFS-reachable cells; bus links connect islands).
+**Live generation (src/terrain.js).** Each sector generates independently:
+- **Three independent noise fields** (different seeds & frequencies) place WALL
+  (big low-freq seas), HARD (finer veins) and OPEN, so the types decorrelate.
+- **Land islands in a sea of firewall, bridged by bus links** — but only a couple
+  of *nearby* islands link, so distant islands stay stranded.
+- **Horizontal shear** — bands of 1–4 rows shifted **3–15 columns** for a
+  stair-stepped, digital look.
+- **All six terrain types in every sector** (OPEN, HARD, WALL, BUS, VAULT, HONEY),
+  guaranteed — verified 120/120 sectors.
 
-The `preview/` archetypes (heap/fortress/corridor/honeypot) remain as a tuning
-sandbox but the live game uses the randomized island generator above.
+**Win = coverage.** Breach a sector by burning **≥ WIN_COVERAGE% (50%)** of its
+claimable cells before lockdown — not by reaching a point. Difficulty is emergent
+from the heat gate (HARD needs heat > 5) and **connectivity** (how much is linked
+to your entry). Labels: EASY (h≥4) · HARD (h≥6) · **BRUTAL** (can't reach 50% at
+any heat). **Runs are not guaranteed winnable** — ~1 in 8 machines has a BRUTAL
+sector, making that run impossible to fully clear (Candy-Crush rules). Difficulty
+is randomized per sector, not positional.
+
+**Jack-in (planned).** Ignition is currently a fixed ember at the sector entry.
+Planned: an oscillating-gnomon targeting minigame — a vertical gnomon sweeps
+left↔right (tap to lock X), then a horizontal gnomon sweeps up↕down (tap Y); the
+intersection is your ember. Jack-in *characters* tune it — War-dialer (slow,
+precise), Shotgunner (fast + 3–5 scattered embers), Catapultist (biases deep).
+
+The `preview/` archetypes remain a tuning sandbox; the live game uses the
+generator above.

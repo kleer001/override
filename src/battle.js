@@ -2,7 +2,7 @@
 // across the run, so conquered sectors stay burned and the board fills up. Your
 // program's accumulator sets the fire's HEAT; terrain decides what it can burn.
 
-import { generateMachine, ignite, burnStep, sectorStats, idx, FIELD_W, FIELD_H, OPEN, WALL } from './terrain.js';
+import { generateMachine, ignite, burnStep, sectorStats, idx, FIELD_W, FIELD_H, OPEN, WALL, WIN_COVERAGE } from './terrain.js';
 import { evalProgram } from './cards.js';
 import { randInt } from './rng.js';
 
@@ -63,17 +63,17 @@ export function runPass(node, program) {
   const st = sectorStats(machine, sector);
   node.crack = st.pct;
 
-  push(node, `> pass ${node.pass}: acc ${ev.value} -> heat ${heat}. burned ${st.pct.toFixed(0)}% of ${sector.id}.`);
+  push(node, `> pass ${node.pass}: acc ${ev.value} -> heat ${heat}. burned ${st.pct.toFixed(0)}% of ${sector.id} (need ${WIN_COVERAGE}%).`);
 
-  if (st.vaultsBurned) {
+  if (st.pct >= WIN_COVERAGE) {
     node.outcome = 'win';
     sector.conquered = true;
-    push(node, `> VAULT cracked. ${sector.id} is yours.`);
+    push(node, `> ${WIN_COVERAGE}% breached. ${sector.id} is yours.`);
   } else if (node.pass >= LOCKDOWN) {
     node.outcome = 'lose';
     push(node, node.heat <= 5
-      ? `> LOCKDOWN. your program ran too cold for ${sector.id}.`
-      : `> LOCKDOWN. ran out of time in ${sector.id}.`);
+      ? `> LOCKDOWN. your program ran too cold to spread through ${sector.id}.`
+      : `> LOCKDOWN. couldn't cover enough of ${sector.id} in time.`);
   }
   return ev;
 }
