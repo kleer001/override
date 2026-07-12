@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OVERRIDE — terrain / burn preview</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+  <div class="crt">
+    <pre id="screen" aria-label="terrain preview"></pre>
+    <div class="scanlines" aria-hidden="true"></div>
+    <div class="vignette" aria-hidden="true"></div>
+  </div>
+  <p class="caption">
+    design prototype · params: <b>arch</b>=heap|fortress|corridor|honeypot ·
+    <b>ign</b>=wardial|shotgun|catapult · <b>seed</b> · <b>heat</b> 5–9 ·
+    <b>fill</b> 0–1 · <b>steps</b> N
+  </p>
+  <script type="module" src="preview.js"></script>
+</body>
+</html>

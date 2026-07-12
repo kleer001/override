@@ -198,3 +198,38 @@ RNG for reproducible draws, boards, and runs.
 6. Draft-between-nodes + ROOT meta.
 
 → Steps 1–6 = a complete Tier-1 vertical slice.
+
+---
+
+## Living board v2 — terrain & burn (prototyped in `preview/`)
+
+The MVP board is homogeneous, so a point ignition spreads as a Manhattan-distance
+diamond. v2 replaces the uniform field with a generated **memory terrain** the
+fire must burn *through*. Prototype: `preview/terrain.js`, `ignite.js`, `burn.js`
+(open `preview/index.html?arch=fortress&heat=8`).
+
+**Layered generation** — each technique does its one job:
+1. base fuel = 1–2 octave value noise → open / hard / wall bands (organic slow &
+   fast spots, ragged fronts);
+2. structure = partition walls (with gap chokepoints) + straight **bus corridors**
+   (fast lanes);
+3. objectives = vaults placed at BFS-deepest reachable cells (routing matters);
+4. fairness = flood-fill guard so a vault is never fully walled off.
+
+**Terrain resistance** (`RESIST` by type): OPEN 0 · VAULT 1 · BUS −2 (accelerant)
+· HARD 5 (needs a hot program) · WALL 99 (firebreak, never) · HONEY 0 (bait that
+triggers ICE). A per-burn ±1 jitter keeps fronts fingered, not round.
+
+**Heat = the accumulator.** A cell ignites when `heat > terrainResist`. So a cold
+program (low accumulator) creeps through open memory and **stalls at every
+encrypted block**; a hot one burns through. Verified in the prototype: on one
+fortress node a cold fire (heat 5) maxes at 116 cells; a hot fire (heat 8) can
+reach 2,155. This is the bridge between deck-skill and the board.
+
+**Surface area = spread rate.** Growth ∝ (ignition points) × (front perimeter) ×
+(heat vs. resistance). Hence `FORK` (an extra ember = a whole new front) and the
+jack-in characters (War-dialer / Shotgunner / Catapultist ember patterns) are
+surface-area tools, not just flat bonuses.
+
+**Archetypes** fall out of the generation mix: heap (open), fortress (walled
+vault), corridor (bus-heavy warren), honeypot (bait pockets).

@@ -84,6 +84,22 @@ got. Pure comedy, zero real stakes.
 
 ---
 
+## Jack-in characters (run-start meta)
+
+You pick *how you break in* at the start of a run — a character with an upgrade
+tree, defined by its **ignition pattern** (where embers land on the memory
+field):
+
+- **War-dialer** — one precise ember at your chosen edge point. Safe, small
+  starting surface area. Upgrades: pick-your-entry, hotter first ember.
+- **Shotgunner** — 3–5 embers scattered in a cone; big initial surface area but
+  you don't pick where (may hit hard terrain or a honeypot). Upgrades: +embers,
+  wider spread, tighter grouping.
+- **Catapultist** — lobs one ember deep into the field; gamble for depth (lands
+  near a vault, or in a dead-end). Upgrades: +lobs, aim assist, deeper throw.
+
+Ignition patterns are prototyped in `preview/` — see the terrain screenshots.
+
 ## Look & feel
 
 - Monochrome amber-phosphor, an **80×40 character grid**, WebGL CRT filter — all
