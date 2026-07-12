@@ -231,5 +231,17 @@ reach 2,155. This is the bridge between deck-skill and the board.
 jack-in characters (War-dialer / Shotgunner / Catapultist ember patterns) are
 surface-area tools, not just flat bonuses.
 
-**Archetypes** fall out of the generation mix: heap (open), fortress (walled
-vault), corridor (bus-heavy warren), honeypot (bait pockets).
+**Live generation (src/terrain.js)** — the three sectors each generate
+independently as **land islands in a sea of firewall, bridged by bus links**,
+then get a **horizontal shear** (bands of 1–4 rows shifted 1–5 columns) that
+turns the smooth noise into stair-stepped, digital shapes. Key rules:
+- **Not tiered.** Each sector's difficulty is randomized per run (≈45% get an
+  open corridor to the vault → EASY, the rest gated by hard terrain → HARD),
+  independent of position; a machine always leaves ≥1 EASY way in.
+- **All six terrain types appear in every sector** (OPEN, HARD, WALL, BUS,
+  VAULT, HONEY) — verified 60/60 sectors across 20 seeds.
+- Every sector is guaranteed reachable & winnable (trunk-free: vault chosen among
+  BFS-reachable cells; bus links connect islands).
+
+The `preview/` archetypes (heap/fortress/corridor/honeypot) remain as a tuning
+sandbox but the live game uses the randomized island generator above.

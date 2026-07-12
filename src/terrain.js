@@ -1,8 +1,8 @@
 // Production terrain: one 80x33 memory field split into three sectors
-// (KERNEL / IO.SYS / SWAP), each generated with its own archetype and density.
-// The three sectors are the three nodes of the machine — you conquer one at a
-// time, choosing which fits your blind loadout. Fire is heat-gated: a cell
-// ignites only when the program's heat exceeds its terrain resistance.
+// (KERNEL / IO.SYS / SWAP) by firewalls. Each sector is generated independently
+// with a RANDOMIZED profile (no fixed difficulty ramp) as land islands in a sea
+// of firewall, bridged by bus links, sheared into a digital look. Fire is
+// heat-gated: a cell ignites only when program heat > terrain resistance.
 
 import { mulberry32, randInt } from './rng.js';
 
@@ -10,20 +10,13 @@ export const FIELD_W = 80, FIELD_H = 33;
 export const OPEN = 0, HARD = 1, WALL = 2, BUS = 3, VAULT = 4, HONEY = 5;
 export const RESIST = [0, 5, 99, -2, 1, 0];
 export const idx = (x, y) => y * FIELD_W + x;
-const inb = (x, y) => x >= 0 && x < FIELD_W && y >= 0 && y < FIELD_H;
 
 export const FIREWALLS = [26, 53];
 export const SECTORS = [
-  { id: 'KERNEL', x0: 0,  x1: 25, arch: 'heap',     digits: [0, 1] },
-  { id: 'IO.SYS', x0: 27, x1: 52, arch: 'corridor', digits: [2, 3, 4] },
-  { id: 'SWAP',   x0: 54, x1: 79, arch: 'fortress', digits: [5, 6, 7] },
+  { id: 'KERNEL', x0: 0,  x1: 25, digits: [0, 1] },
+  { id: 'IO.SYS', x0: 27, x1: 52, digits: [2, 3, 4] },
+  { id: 'SWAP',   x0: 54, x1: 79, digits: [5, 6, 7] },
 ];
-
-const ARCH = {
-  heap:     { hard: 0.82, wall: 0.94, walls: 1, buses: 1 },
-  corridor: { hard: 0.50, wall: 0.72, walls: 3, buses: 1 },
-  fortress: { hard: 0.40, wall: 0.60, walls: 5, buses: 1 },
-};
 
 function fractalNoise(rng) {
   const lattice = (step) => {
@@ -38,107 +31,206 @@ function fractalNoise(rng) {
     const x0 = Math.floor(gx), y0 = Math.floor(gy), fx = gx - x0, fy = gy - y0;
     const a = L.v[y0 * L.gw + x0], b = L.v[y0 * L.gw + x0 + 1];
     const c = L.v[(y0 + 1) * L.gw + x0], d = L.v[(y0 + 1) * L.gw + x0 + 1];
-    return (a + (b - a) * fx) + ((c + (d - c) * fx) - (a + (b - a) * fx)) * fy;
+    const top = a + (b - a) * fx, bot = c + (d - c) * fx;
+    return top + (bot - top) * fy;
   };
   return (x, y) => 0.65 * sample(L1, x, y) + 0.35 * sample(L2, x, y);
 }
 
-function bfsSector(t, entry, x0, x1) {
-  const dist = new Int16Array(FIELD_W * FIELD_H).fill(-1);
-  const start = idx(entry.x, entry.y);
-  dist[start] = 0;
-  const q = [start];
+// shift bands of 1-4 rows horizontally by 1-5 columns (wrapped within the
+// sector) — turns smooth noise blobs into stair-stepped, digital shapes.
+function shear(t, x0, x1, rng) {
+  const w = x1 - x0 + 1;
+  for (let y = 0; y < FIELD_H;) {
+    const band = 1 + Math.floor(rng() * 4);
+    const off = (1 + Math.floor(rng() * 5)) * (rng() < 0.5 ? 1 : -1);
+    for (let yy = y; yy < Math.min(FIELD_H, y + band); yy++) {
+      const row = [];
+      for (let x = x0; x <= x1; x++) row.push(t[idx(x, yy)]);
+      for (let i = 0; i < w; i++) t[idx(x0 + (((i + off) % w) + w) % w, yy)] = row[i];
+    }
+    y += band;
+  }
+}
+
+function floodFrom(t, start, x0, x1, blockWall = true) {
+  const seen = new Uint8Array(FIELD_W * FIELD_H);
+  const q = [start]; seen[start] = 1;
+  const cells = [];
   for (let h = 0; h < q.length; h++) {
-    const c = q[h], cx = c % FIELD_W, cy = (c / FIELD_W) | 0;
+    const c = q[h]; cells.push(c);
+    const cx = c % FIELD_W, cy = (c / FIELD_W) | 0;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = cx + dx, ny = cy + dy;
       if (nx < x0 || nx > x1 || ny < 0 || ny >= FIELD_H) continue;
       const n = idx(nx, ny);
+      if (seen[n] || (blockWall && t[n] === WALL)) continue;
+      seen[n] = 1; q.push(n);
+    }
+  }
+  return { seen, cells };
+}
+
+function components(t, x0, x1) {
+  const seen = new Uint8Array(FIELD_W * FIELD_H);
+  const comps = [];
+  for (let y = 0; y < FIELD_H; y++) for (let x = x0; x <= x1; x++) {
+    const c = idx(x, y);
+    if (t[c] === WALL || seen[c]) continue;
+    const f = floodFrom(t, c, x0, x1);
+    f.cells.forEach((cc) => (seen[cc] = 1));
+    comps.push(f.cells);
+  }
+  return comps;
+}
+
+const cx = (c) => c % FIELD_W, cy = (c) => (c / FIELD_W) | 0;
+function carveBus(t, a, b, x0, x1) {
+  const ax = cx(a), ay = cy(a), bx = cx(b), by = cy(b);
+  for (let x = Math.min(ax, bx); x <= Math.max(ax, bx); x++) if (x >= x0 && x <= x1 && t[idx(x, ay)] === WALL) t[idx(x, ay)] = BUS;
+  for (let y = Math.min(ay, by); y <= Math.max(ay, by); y++) if (t[idx(bx, y)] === WALL) t[idx(bx, y)] = BUS;
+}
+
+// carve an OPEN corridor from entry to a goal (HARD -> OPEN along the path),
+// making the goal reachable at low heat (an EASY sector).
+function openPath(t, start, goal, x0, x1) {
+  const parent = new Int32Array(FIELD_W * FIELD_H).fill(-2);
+  parent[start] = -1; const q = [start];
+  for (let h = 0; h < q.length; h++) {
+    const c = q[h]; if (c === goal) break;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cx(c) + dx, ny = cy(c) + dy;
+      if (nx < x0 || nx > x1 || ny < 0 || ny >= FIELD_H) continue;
+      const n = idx(nx, ny);
+      if (parent[n] !== -2 || t[n] === WALL) continue;
+      parent[n] = c; q.push(n);
+    }
+  }
+  if (parent[goal] === -2) return false;
+  let c = parent[goal];
+  while (c !== -1) { if (t[c] === HARD) t[c] = OPEN; c = parent[c]; }
+  return true;
+}
+
+function bfs(t, start, x0, x1) {
+  const dist = new Int16Array(FIELD_W * FIELD_H).fill(-1);
+  dist[start] = 0; const q = [start];
+  for (let h = 0; h < q.length; h++) {
+    const c = q[h];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cx(c) + dx, ny = cy(c) + dy;
+      if (nx < x0 || nx > x1 || ny < 0 || ny >= FIELD_H) continue;
+      const n = idx(nx, ny);
       if (dist[n] !== -1 || t[n] === WALL) continue;
-      dist[n] = dist[c] + 1;
-      q.push(n);
+      dist[n] = dist[c] + 1; q.push(n);
     }
   }
   return dist;
+}
+
+function genSector(t, s, rng, noise) {
+  const { x0, x1 } = s;
+  // randomized profile — NO fixed difficulty. sea level sets island size/count;
+  // shore band sets how much hard terrain gates the interiors.
+  const sea = 0.28 + rng() * 0.20;      // 0.28..0.48
+  const shore = 0.10 + rng() * 0.12;    // hard shoreline width
+  for (let y = 0; y < FIELD_H; y++) for (let x = x0; x <= x1; x++) {
+    const n = noise(x, y);
+    t[idx(x, y)] = n < sea ? WALL : n < sea + shore ? HARD : OPEN;
+  }
+  shear(t, x0, x1, rng);
+
+  // entry pocket (guaranteed land)
+  const entry = { x: x0 + 1, y: FIELD_H >> 1 };
+  for (let dy = -1; dy <= 1; dy++) for (let dx = 0; dx <= 2; dx++) {
+    const yy = entry.y + dy, xx = entry.x + dx;
+    if (xx <= x1 && yy >= 0 && yy < FIELD_H) t[idx(xx, yy)] = OPEN;
+  }
+
+  // islands & links: bridge other big islands to the entry island with bus lines
+  const entryComp = floodFrom(t, idx(entry.x, entry.y), x0, x1);
+  const connected = new Uint8Array(FIELD_W * FIELD_H);
+  entryComp.cells.forEach((c) => (connected[c] = 1));
+  let connectedCells = entryComp.cells.slice();
+  const comps = components(t, x0, x1).filter((c) => c.length >= 8 && !connected[c[0]]);
+  comps.sort((a, b) => b.length - a.length);
+  let links = 0;
+  for (const comp of comps.slice(0, 4)) {
+    let best = null, bestD = 1e9;
+    const sa = connectedCells.filter((_, i) => i % 5 === 0);
+    const sb = comp.filter((_, i) => i % 5 === 0);
+    for (const a of sa) for (const b of sb) {
+      const d = Math.abs(cx(a) - cx(b)) + Math.abs(cy(a) - cy(b));
+      if (d < bestD) { bestD = d; best = [a, b]; }
+    }
+    if (best) { carveBus(t, best[0], best[1], x0, x1); comp.forEach((c) => (connected[c] = 1)); connectedCells = connectedCells.concat(comp); links++; }
+  }
+  if (links === 0) { const ly = randInt(rng, 3, FIELD_H - 3); for (let x = x0; x <= x1; x++) if (t[idx(x, ly)] === WALL) t[idx(x, ly)] = BUS; }
+
+  // vault at a target depth (guaranteed reachable, never trivial)
+  const dist = bfs(t, idx(entry.x, entry.y), x0, x1);
+  const target = 12 + Math.floor(rng() * 10);
+  let vault = -1, vBest = Infinity;
+  for (let y = 0; y < FIELD_H; y++) for (let x = x0; x <= x1; x++) {
+    const c = idx(x, y);
+    if (dist[c] < 4 || (t[c] !== OPEN && t[c] !== HARD)) continue;
+    const score = Math.abs(dist[c] - target);
+    if (score < vBest) { vBest = score; vault = c; }
+  }
+  if (vault < 0) for (let i = 0; i < t.length; i++) if (dist[i] >= 4 && (t[i] === OPEN || t[i] === HARD)) { vault = i; break; }
+  if (vault >= 0) t[vault] = VAULT;
+
+  // per-sector difficulty is RANDOM, not positional: ~45% of sectors get an
+  // open corridor to the vault (EASY), the rest stay gated by hard terrain.
+  if (vault >= 0 && rng() < 0.45) openPath(t, idx(entry.x, entry.y), vault, x0, x1);
+
+  // honeypots (bait) — guarantee at least one so all six types appear
+  let honey = 0;
+  const wantHoney = 1 + Math.floor(rng() * 2);
+  const cand = [];
+  for (let y = 0; y < FIELD_H; y++) for (let x = x0; x <= x1; x++) {
+    const c = idx(x, y);
+    if (dist[c] >= 6 && t[c] === OPEN && c !== vault) cand.push(c);
+  }
+  for (let k = 0; k < wantHoney && cand.length; k++) {
+    const c = cand[randInt(rng, 0, cand.length - 1)];
+    t[c] = HONEY; honey++;
+  }
+  if (honey === 0 && cand.length === 0) { // fallback: force one near entry
+    const c = idx(Math.min(x1, entry.x + 3), entry.y);
+    if (t[c] !== VAULT) t[c] = HONEY;
+  }
+
+  // guarantee at least one BUS link exists (islands that touched carve none)
+  let busN = 0;
+  for (let y = 0; y < FIELD_H; y++) for (let x = x0; x <= x1; x++) if (t[idx(x, y)] === BUS) busN++;
+  if (busN === 0) {
+    const bx = randInt(rng, x0 + 1, x1 - 1), by = randInt(rng, 2, FIELD_H - 8);
+    for (let y = by; y < by + 6 && y < FIELD_H; y++) { const c = idx(bx, y); if (t[c] !== VAULT) t[c] = BUS; }
+  }
+
+  return { ...s, entry, vaults: vault >= 0 ? [vault] : [], difficulty: null };
 }
 
 export function generateMachine(seed) {
   const rng = mulberry32(seed >>> 0);
   const noise = fractalNoise(rng);
   const t = new Uint8Array(FIELD_W * FIELD_H);
-
   for (const wx of FIREWALLS) for (let y = 0; y < FIELD_H; y++) t[idx(wx, y)] = WALL;
-
-  const sectors = SECTORS.map((s) => {
-    const p = ARCH[s.arch];
-    for (let y = 0; y < FIELD_H; y++) for (let x = s.x0; x <= s.x1; x++) {
-      if (FIREWALLS.includes(x)) continue;
-      const n = noise(x, y);
-      t[idx(x, y)] = n < p.hard ? OPEN : n < p.wall ? HARD : WALL;
-    }
-    // partition walls with a gap (chokepoints / dead-ends)
-    for (let i = 0; i < p.walls; i++) {
-      const cx = randInt(rng, s.x0 + 4, s.x1 - 4);
-      const y0 = randInt(rng, 0, FIELD_H - 10), len = randInt(rng, 8, FIELD_H);
-      const gap = randInt(rng, y0 + 1, y0 + len - 2);
-      for (let y = y0; y < Math.min(FIELD_H, y0 + len); y++) {
-        if (Math.abs(y - gap) > 1 && !FIREWALLS.includes(cx)) t[idx(cx, y)] = WALL;
-      }
-    }
-    // bus lanes (fast)
-    for (let i = 0; i < p.buses; i++) {
-      const cy = randInt(rng, 2, FIELD_H - 2);
-      for (let x = s.x0; x <= s.x1; x++) if (!FIREWALLS.includes(x)) t[idx(x, cy)] = BUS;
-    }
-    const entry = { x: s.x0 + 1, y: FIELD_H >> 1 };
-    t[idx(entry.x, entry.y)] = OPEN;
-    // guaranteed trunk from entry across the sector: convert blocking WALLs to
-    // HARD so the sector is always connected & winnable, but keep its heat gate
-    // (fortress trunk = HARD -> needs a hot program; heap trunk stays open).
-    const my = FIELD_H >> 1;
-    for (let x = s.x0 + 1; x <= s.x1 - 1; x++) {
-      if (FIREWALLS.includes(x)) continue;
-      const c = idx(x, my);
-      if (t[c] === WALL) t[c] = HARD;
-    }
-    for (let k = 0; k < 3; k++) {
-      const sx = randInt(rng, s.x0 + 2, s.x1 - 2);
-      const dir = rng() < 0.5 ? 1 : -1, len = randInt(rng, 3, 11);
-      for (let j = 0; j < len; j++) {
-        const yy = my + dir * j;
-        if (yy < 0 || yy >= FIELD_H || FIREWALLS.includes(sx)) break;
-        if (t[idx(sx, yy)] === WALL) t[idx(sx, yy)] = HARD;
-      }
-    }
-    // vault (holds this sector's CODE digits) placed at a TARGET depth from
-    // entry — guaranteed reachable in time, never trivial. Difficulty then
-    // comes from the terrain the path crosses, not from luck.
-    const TARGET_DEPTH = { heap: 10, corridor: 16, fortress: 22 };
-    const dist = bfsSector(t, entry, s.x0, s.x1);
-    const target = TARGET_DEPTH[s.arch];
-    let best = -1, bestScore = Infinity;
-    for (let y = 0; y < FIELD_H; y++) for (let x = s.x0; x <= s.x1; x++) {
-      const c = idx(x, y);
-      if (dist[c] < 4 || t[c] === WALL || t[c] === BUS) continue;
-      const score = Math.abs(dist[c] - target);
-      if (score < bestScore) { bestScore = score; best = c; }
-    }
-    if (best >= 0) t[best] = VAULT;
-    const vaults = best >= 0 ? [best] : [];
-
-    return { ...s, entry, vaults, conquered: false, difficulty: null };
-  });
-
+  const sectors = SECTORS.map((s) => genSector(t, s, rng, noise));
   const machine = { t, sectors, burned: new Uint8Array(FIELD_W * FIELD_H), rng };
   for (const s of machine.sectors) s.difficulty = difficultyOf(machine, s);
+  // fairness: always leave at least one EASY way in (which sector is random)
+  if (!machine.sectors.some((s) => s.difficulty === 'EASY')) {
+    const s = machine.sectors[Math.floor(rng() * 3)];
+    if (s.vaults.length) openPath(t, idx(s.entry.x, s.entry.y), s.vaults[0], s.x0, s.x1);
+    for (const sec of machine.sectors) sec.difficulty = difficultyOf(machine, sec);
+  }
   return machine;
 }
 
-// smallest heat that reaches every vault in the sector (for the target-select label)
 export function heatToClear(machine, s) {
-  for (let heat = 4; heat <= 9; heat++) {
-    if (reachesVaults(machine, s, heat)) return heat;
-  }
+  for (let heat = 4; heat <= 9; heat++) if (reachesVaults(machine, s, heat)) return heat;
   return 99;
 }
 function difficultyOf(machine, s) {
@@ -148,13 +240,12 @@ function difficultyOf(machine, s) {
 function reachesVaults(machine, s, heat) {
   const { t } = machine;
   const seen = new Uint8Array(FIELD_W * FIELD_H);
-  const start = idx(s.entry.x, s.entry.y);
-  seen[start] = 1;
+  const start = idx(s.entry.x, s.entry.y); seen[start] = 1;
   const q = [start];
   for (let h = 0; h < q.length; h++) {
-    const c = q[h], cx = c % FIELD_W, cy = (c / FIELD_W) | 0;
+    const c = q[h];
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = cx + dx, ny = cy + dy;
+      const nx = cx(c) + dx, ny = cy(c) + dy;
       if (nx < s.x0 || nx > s.x1 || ny < 0 || ny >= FIELD_H) continue;
       const n = idx(nx, ny);
       if (seen[n]) continue;
@@ -168,7 +259,6 @@ function reachesVaults(machine, s, heat) {
 export function ignite(machine, s, embers) {
   for (const e of embers) if (machine.t[idx(e.x, e.y)] !== WALL) machine.burned[idx(e.x, e.y)] = 1;
 }
-
 export function burnStep(machine, s, heat) {
   const { t, burned, rng } = machine;
   const add = [];
@@ -184,7 +274,6 @@ export function burnStep(machine, s, heat) {
     }
   }
   for (const c of add) burned[c] = 1;
-  // bus flood within sector
   let go = true;
   while (go) {
     go = false;
@@ -200,16 +289,13 @@ export function burnStep(machine, s, heat) {
   }
   return add.length;
 }
-
 export function sectorStats(machine, s) {
   const { t, burned } = machine;
   let claim = 0, burn = 0;
   for (let y = 0; y < FIELD_H; y++) for (let x = s.x0; x <= s.x1; x++) {
     const c = idx(x, y);
     if (t[c] === WALL) continue;
-    claim++;
-    if (burned[c]) burn++;
+    claim++; if (burned[c]) burn++;
   }
-  const vaultsBurned = s.vaults.every((v) => burned[v]);
-  return { claim, burn, pct: claim ? (burn / claim) * 100 : 0, vaultsBurned };
+  return { claim, burn, pct: claim ? (burn / claim) * 100 : 0, vaultsBurned: s.vaults.every((v) => burned[v]) };
 }
