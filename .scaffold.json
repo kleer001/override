@@ -1,0 +1,13 @@
+{
+  "version": "2.0.0",
+  "type": "static",
+  "license": "MIT",
+  "created": "2026-07-11T21:24:13",
+  "flags": {
+    "public": true,
+    "no_venv": false,
+    "no_claude": false,
+    "ci": false,
+    "local": false
+  }
+}
