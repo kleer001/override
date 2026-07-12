@@ -1,107 +1,84 @@
-// Battle state + resolution. A battle is a race: fill the CRACK meter (all CODE
-// digits locked) before LOCKDOWN passes run out or ICE overruns your beachhead.
-//
-// Design note: the CRACK meter is driven by the accumulator (sequencing IS the
-// skill), while the cellular-automata board is the correlated spectacle — worm
-// push scales with your accumulator, ICE pushes back, but the board isn't the
-// win condition. This keeps the math legible and the screen alive.
+// Battle = conquering one sector (a node). The machine (three sectors) persists
+// across the run, so conquered sectors stay burned and the board fills up. Your
+// program's accumulator sets the fire's HEAT; terrain decides what it can burn.
 
-import { createBoard, injectFrontier, seedFork, tick, stats, WORM, ICE } from './board.js';
+import { generateMachine, ignite, burnStep, sectorStats, idx, FIELD_W, FIELD_H, OPEN, WALL } from './terrain.js';
 import { evalProgram } from './cards.js';
+import { randInt } from './rng.js';
 
+export { generateMachine };
 export const LOCKDOWN = 10;
 export const CODE_DIGITS = 8;
-export const TARGET = 60; // crack points to breach
+export const STEPS_PER_PASS = 3;
 
-export function createBattle(rng, node) {
-  const board = createBoard(rng);
+export function newCode(rng) {
+  return Array.from({ length: CODE_DIGITS }, () => Math.floor(rng() * 10));
+}
+
+export function heatOf(ev) {
+  return Math.max(4, Math.min(9, 4 + Math.floor(ev.value / 4) + (ev.flags.interrupt ? 1 : 0)));
+}
+
+export function createNode(machine, secIdx) {
+  const sector = machine.sectors[secIdx];
   return {
-    board,
-    rng,
-    node,
-    pass: 0,
-    crack: 0, // crack points, 0..TARGET
-    territory: stats(board).crackPct, // board fill %, cosmetic
-    code: makeCode(rng),
-    codeLocked: 0,
-    program: null,
-    outcome: null, // null | 'win' | 'lose'
-    log: ['> carrier established. beachhead live in KERNEL.'],
+    machine, secIdx, sector,
+    pass: 0, heat: 0, crack: 0, ignited: false, outcome: null,
+    log: [`> jacked into ${sector.id}. terrain: ${sector.difficulty}.`],
   };
 }
 
-function makeCode(rng) {
-  const digits = [];
-  for (let i = 0; i < CODE_DIGITS; i++) digits.push(Math.floor(rng() * 10));
-  return digits;
+export function crackPct(node) { return Math.min(100, node.crack); }
+
+// war-dial ignition (single ember at the sector entry). Character-based ember
+// patterns (shotgun / catapult) plug in here later.
+function embersFor(machine, sector) {
+  return [{ x: sector.entry.x, y: sector.entry.y }];
 }
 
-export function setProgram(battle, program) {
-  battle.program = program;
-}
+export function runPass(node, program) {
+  const ev = evalProgram(program);
+  node.pass++;
+  const { machine, sector } = node;
+  const heat = heatOf(ev);
+  node.heat = heat;
 
-export function crackPct(battle) {
-  return Math.min(100, (battle.crack / TARGET) * 100);
-}
-
-// Resolve one full pass. Returns the eval result (for the playhead animation).
-export function runPass(battle) {
-  const ev = evalProgram(battle.program);
-  battle.pass++;
-  const b = battle.board;
-
-  // --- CRACK METER (the win condition — pure function of the accumulator) ---
-  const baseDrain = 3 + Math.floor((battle.pass - 1) / 2); // the lockdown ramp (B clock)
-  const iceDrain = ev.flags.interrupt ? Math.ceil(baseDrain / 2) : baseDrain;
-  const forkBonus = ev.flags.fork * 5;
-  const netCrack = Math.max(0, ev.value + forkBonus - iceDrain);
-  battle.crack = Math.min(TARGET, battle.crack + netCrack);
-
-  // lock CODE digits as the meter climbs
-  const per = TARGET / CODE_DIGITS;
-  const shouldLock = Math.min(CODE_DIGITS, Math.floor(battle.crack / per));
-  if (shouldLock > battle.codeLocked) {
-    battle.codeLocked = shouldLock;
-    pushLog(battle, `> vault yielded. CODE digit ${shouldLock}/${CODE_DIGITS} LOCKED.`);
+  if (!node.ignited) {
+    ignite(machine, sector, embersFor(machine, sector));
+    node.ignited = true;
   }
-
-  // --- BOARD (spectacle — worm push scales with the accumulator) ---
+  // FORK lobs an extra ember deep in the sector (a fresh front)
   for (let k = 0; k < ev.flags.fork; k++) {
-    seedFork(b);
-    pushLog(battle, `> FORK seeded a beachhead. second front open.`);
-  }
-  const wormBoost = 1 + Math.floor(ev.value / 5);
-  injectFrontier(b, WORM, wormBoost);
-  const iceOn = !ev.flags.interrupt;
-  if (iceOn) injectFrontier(b, ICE, 1 + Math.floor(battle.pass / 4));
-  const spread = Math.max(1, ev.flags.spread);
-  for (let t = 0; t < 1 + spread; t++) tick(b, { iceOn });
-  battle.territory = stats(b).crackPct;
-
-  pushLog(battle,
-    `> pass ${battle.pass}: acc ${ev.value}` +
-    (forkBonus ? ` +${forkBonus} fork` : '') +
-    (ev.flags.interrupt ? ` (ICE slowed)` : '') +
-    ` -${iceDrain} drain = +${netCrack} crack. [${battle.crack}/${TARGET}]`);
-
-  if (b.linkCut) pushLog(battle, `> WARNING: ICE holds a firewall link.`);
-
-  // --- win / lose ---
-  if (battle.codeLocked >= CODE_DIGITS || battle.crack >= TARGET) {
-    battle.outcome = 'win';
-    pushLog(battle, `> ROOT. system breached.`);
-  } else if (stats(b).worm <= 0) {
-    battle.outcome = 'lose';
-    pushLog(battle, `> beachhead lost. connection dropped.`);
-  } else if (battle.pass >= LOCKDOWN) {
-    battle.outcome = 'lose';
-    pushLog(battle, `> LOCKDOWN. trace complete.`);
+    const ex = randInt(machine.rng, sector.x0 + 2, sector.x1 - 2);
+    const ey = randInt(machine.rng, 2, FIELD_H - 2);
+    if (machine.t[idx(ex, ey)] !== WALL) machine.burned[idx(ex, ey)] = 1;
+    push(node, `> FORK: ember lobbed deep into ${sector.id}.`);
   }
 
+  // spread rate scales with the accumulator: a hotter program burns faster,
+  // so a bigger number both unlocks harder terrain AND conquers in fewer passes
+  const steps = Math.max(1, Math.min(5, 1 + Math.floor(ev.value / 6)));
+  for (let s = 0; s < steps; s++) burnStep(machine, sector, heat);
+
+  const st = sectorStats(machine, sector);
+  node.crack = st.pct;
+
+  push(node, `> pass ${node.pass}: acc ${ev.value} -> heat ${heat}. burned ${st.pct.toFixed(0)}% of ${sector.id}.`);
+
+  if (st.vaultsBurned) {
+    node.outcome = 'win';
+    sector.conquered = true;
+    push(node, `> VAULT cracked. ${sector.id} is yours.`);
+  } else if (node.pass >= LOCKDOWN) {
+    node.outcome = 'lose';
+    push(node, node.heat <= 5
+      ? `> LOCKDOWN. your program ran too cold for ${sector.id}.`
+      : `> LOCKDOWN. ran out of time in ${sector.id}.`);
+  }
   return ev;
 }
 
-function pushLog(battle, line) {
-  battle.log.push(line);
-  if (battle.log.length > 6) battle.log.shift();
+function push(node, line) {
+  node.log.push(line);
+  if (node.log.length > 6) node.log.shift();
 }

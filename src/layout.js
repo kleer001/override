@@ -2,8 +2,16 @@
 // hit-tester so clickable regions can never drift from what's drawn.
 // All coordinates are in character-grid cells (col, row) on the 80x40 screen.
 
+import { SECTORS } from './terrain.js';
+
 export const COLS = 80;
 export const ROWS = 40;
+export const FIELD_TOP = 3;
+
+// tappable sector columns (target-select phase)
+export const SECTOR_RECTS = SECTORS.map((s) => ({
+  x: s.x0, y: FIELD_TOP, w: s.x1 - s.x0 + 1, h: 33, id: s.id,
+}));
 
 // assemble: five hand cards across (15 wide x 8 tall), starting at x=2, y=7
 export const HAND_CARDS = Array.from({ length: 5 }, (_, i) => ({
@@ -12,7 +20,7 @@ export const HAND_CARDS = Array.from({ length: 5 }, (_, i) => ({
 
 // assemble action buttons
 export const BTN_UNDO = { x: 18, y: 24, w: 14, h: 3, label: 'UNDO' };
-export const BTN_EXEC = { x: 46, y: 24, w: 16, h: 3, label: 'EXEC ▶' };
+export const BTN_EXEC = { x: 46, y: 24, w: 16, h: 3, label: 'TARGET ▶' };
 
 // draft: three cards centered (15 wide, 2-col gaps -> pitch 17), y=9
 const DRAFT_X0 = Math.floor((COLS - (3 * 15 + 2 * 2)) / 2);

@@ -1,125 +1,70 @@
-// Compose the whole 80x40 screen as one monospace text buffer.
-// Monochrome amber: glyph density carries meaning, not colour.
-//
-// The central region (rows 3-35) is contextual:
-//   - assemble / draft -> a card-selection panel (the decision takes the stage)
-//   - exec / result    -> the living cellular-automata board (the spectacle)
+// Compose the whole 80x40 screen. Central region is contextual:
+//   assemble / draft -> card panels · target -> the machine (pick a sector) ·
+//   exec / result    -> the sector burning.
 
-import { FIELD_W, FIELD_H, WALL_COLS, LINK_ROWS, NONE, WORM, ICE, WALL } from './board.js';
-import { LOCKDOWN, CODE_DIGITS, crackPct } from './battle.js';
+import { FIELD_W, FIELD_H, WALL, VAULT, idx, SECTORS, heatToClear } from './terrain.js';
+import { LOCKDOWN, CODE_DIGITS, crackPct, heatOf } from './battle.js';
 import { evalProgram } from './cards.js';
-import { COLS, ROWS, HAND_CARDS, DRAFT_CARDS, BTN_UNDO, BTN_EXEC, BTN_CONTINUE } from './layout.js';
+import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_UNDO, BTN_EXEC, BTN_CONTINUE } from './layout.js';
 
 export { COLS, ROWS };
-const FIELD_TOP = 3;
 
-const WORM_G = ['·', '·', '·', ':', '=', '+', '*', '@', '%', '%'];
-const ICE_G  = ['#', '#', '#', '#', 'X', 'X', 'X', '█', '█', '█'];
+const TERRAIN_G = [' ', '▒', '▓', '═', '$', '"']; // OPEN HARD WALL BUS VAULT HONEY
 
-function blankRows() {
-  return Array.from({ length: ROWS }, () => new Array(COLS).fill(' '));
-}
+function blank() { return Array.from({ length: ROWS }, () => new Array(COLS).fill(' ')); }
+function stamp(g, x, y, s) { if (y < 0 || y >= ROWS) return; for (let i = 0; i < s.length; i++) if (x + i >= 0 && x + i < COLS) g[y][x + i] = s[i]; }
+function center(g, y, s) { stamp(g, Math.max(0, Math.floor((COLS - s.length) / 2)), y, s); }
+function bar(pct, w) { const f = Math.round((pct / 100) * w); return '[' + '#'.repeat(f) + '.'.repeat(w - f) + ']'; }
 
-function stamp(g, x, y, text) {
-  if (y < 0 || y >= ROWS) return;
-  for (let i = 0; i < text.length; i++) {
-    const cx = x + i;
-    if (cx >= 0 && cx < COLS) g[y][cx] = text[i];
+function wrap(text, w) {
+  const out = []; let cur = '';
+  for (const word of text.split(' ')) {
+    if ((cur + ' ' + word).trim().length > w) { out.push(cur.trim()); cur = word; }
+    else cur = (cur + ' ' + word).trim();
   }
+  if (cur) out.push(cur.trim());
+  return out;
 }
 
-function center(g, y, text) {
-  stamp(g, Math.max(0, Math.floor((COLS - text.length) / 2)), y, text);
-}
-
-function bar(pct, width) {
-  const filled = Math.round((pct / 100) * width);
-  return '[' + '#'.repeat(filled) + '.'.repeat(width - filled) + ']';
-}
-
-function hex(n) { return '0x' + (n & 0xffff).toString(16).toUpperCase().padStart(4, '0'); }
-
-function wrap(text, width) {
-  const words = text.split(' ');
-  const lines = [];
-  let cur = '';
-  for (const w of words) {
-    if ((cur + ' ' + w).trim().length > width) { lines.push(cur.trim()); cur = w; }
-    else cur = (cur + ' ' + w).trim();
-  }
-  if (cur) lines.push(cur.trim());
-  return lines;
-}
-
-// --- a boxed instruction card, 15 wide x 8 tall ---
-function drawCard(g, x, y, keyLabel, card, spent) {
+function drawCard(g, x, y, key, card, spent) {
   const w = 15, h = 8;
-  const top = '┌' + `[${keyLabel}]` + '─'.repeat(w - 2 - (keyLabel.length + 2)) + '┐';
-  stamp(g, x, y, top);
+  stamp(g, x, y, '┌' + `[${key}]` + '─'.repeat(w - 2 - (key.length + 2)) + '┐');
   for (let r = 1; r < h - 1; r++) stamp(g, x, y + r, '│' + ' '.repeat(w - 2) + '│');
   stamp(g, x, y + h - 1, '└' + '─'.repeat(w - 2) + '┘');
-  if (spent) {
-    stamp(g, x + 2, y + 3, 'SPENT');
-    return;
-  }
+  if (spent) { stamp(g, x + 2, y + 3, 'SPENT'); return; }
   stamp(g, x + 2, y + 1, card.name.slice(0, w - 3));
-  const lines = wrap(card.desc, w - 4).slice(0, 3);
-  lines.forEach((ln, i) => stamp(g, x + 2, y + 3 + i, ln));
+  wrap(card.desc, w - 4).slice(0, 3).forEach((ln, i) => stamp(g, x + 2, y + 3 + i, ln));
   stamp(g, x + 2, y + h - 2, card.kind.toUpperCase());
 }
 
-// a tappable button drawn as a 3-row box with a centered label
-function drawButton(g, rect, dim) {
-  const { x, y, w, label } = rect;
-  stamp(g, x, y, '┌' + '─'.repeat(w - 2) + '┐');
-  stamp(g, x, y + 1, '│' + ' '.repeat(w - 2) + '│');
-  stamp(g, x, y + 2, '└' + '─'.repeat(w - 2) + '┘');
-  const text = dim ? label.replace('▶', '·') : label;
-  stamp(g, x + Math.max(1, Math.floor((w - text.length) / 2)), y + 1, text);
+function drawButton(g, r, dim) {
+  stamp(g, r.x, r.y, '┌' + '─'.repeat(r.w - 2) + '┐');
+  stamp(g, r.x, r.y + 1, '│' + ' '.repeat(r.w - 2) + '│');
+  stamp(g, r.x, r.y + 2, '└' + '─'.repeat(r.w - 2) + '┘');
+  const t = dim ? r.label.replace('▶', '·') : r.label;
+  stamp(g, r.x + Math.max(1, Math.floor((r.w - t.length) / 2)), r.y + 1, t);
 }
 
-// live accumulator readout, e.g. "0 +3 +3 x2 = 12"
 function accPreview(program) {
   const loaded = program.filter(Boolean);
   if (!loaded.length) return { expr: '(load cards to preview)', value: 0 };
-  const tok = loaded.map((c) => {
-    if (c.kind === 'add') return `+${c.value}`;
-    if (c.kind === 'mult') return `x${c.value}`;
-    if (c.kind === 'nop') return '(nop)';
-    if (c.kind === 'goto') return '(goto)';
-    if (c.kind === 'fork') return '(fork)';
-    if (c.kind === 'interrupt') return '(int)';
-    return '?';
-  });
+  const tok = loaded.map((c) => c.kind === 'add' ? `+${c.value}` : c.kind === 'mult' ? `x${c.value}`
+    : c.kind === 'nop' ? '(nop)' : c.kind === 'goto' ? '(goto)' : c.kind === 'fork' ? '(fork)' : '(int)');
   return { expr: '0 ' + tok.join(' '), value: evalProgram(loaded).value };
 }
 
 function drawAssemble(g, game) {
   center(g, 3, 'ASSEMBLE INTRUSION');
   center(g, 4, 'instructions run left→right on a CPU accumulator — adds early, x late');
-
-  // 5 hand cards across
-  game.hand.forEach((h, i) =>
-    drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, String(i + 1), h.card, h.used));
-
-  // program-in-progress
+  game.hand.forEach((h, i) => drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, String(i + 1), h.card, h.used));
   stamp(g, 6, 17, 'PROGRAM');
-  const slots = [0, 1, 2].map((i) => {
-    const c = game.program[i];
-    return `[ ${(c ? c.name : '......').padEnd(9).slice(0, 9)} ]`;
-  });
-  stamp(g, 16, 17, slots.join(' → '));
-
+  stamp(g, 16, 17, [0, 1, 2].map((i) => `[ ${(game.program[i] ? game.program[i].name : '......').padEnd(9).slice(0, 9)} ]`).join(' → '));
   const p = accPreview(game.program);
   stamp(g, 6, 19, 'ACCUMULATOR');
-  stamp(g, 18, 19, `${p.expr}   =  ${p.value}  crack/pass`);
-
-  const ready = game.selection.length >= 3;
-  center(g, 22, 'tap a card to load · tap a loaded slot to unload');
+  stamp(g, 18, 19, `${p.expr}   =  ${p.value}   (heat ${p.value ? heatOf({ value: p.value, flags: {} }) : '–'})`);
+  center(g, 22, 'tap a card to load · then choose which sector to hit');
   drawButton(g, BTN_UNDO, false);
-  drawButton(g, BTN_EXEC, !ready);
-
-  // lower third intentionally open for future art / animation
+  drawButton(g, BTN_EXEC, game.selection.length < 3);
 }
 
 function drawDraft(g, game) {
@@ -128,70 +73,77 @@ function drawDraft(g, game) {
   center(g, 19, 'tap a card to keep it');
 }
 
-function glyphFor(owner, s, x, y) {
-  if (owner === WALL) return '|';
-  if (WALL_COLS.includes(x) && LINK_ROWS.includes(y) && owner === NONE) return '+';
-  if (owner === WORM) return WORM_G[Math.max(0, Math.min(9, s))];
-  if (owner === ICE) return ICE_G[Math.max(0, Math.min(9, s))];
-  return s <= 0 ? ' ' : s === 1 ? '·' : ':';
+function frontier(machine, x, y) {
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const nx = x + dx, ny = y + dy;
+    if (nx < 0 || nx >= FIELD_W || ny < 0 || ny >= FIELD_H) continue;
+    const n = idx(nx, ny);
+    if (!machine.burned[n] && machine.t[n] !== WALL) return true;
+  }
+  return false;
 }
 
-function drawBoard(g, game) {
-  const b = game.battle.board;
-  for (let y = 0; y < FIELD_H; y++) {
-    for (let x = 0; x < FIELD_W; x++) {
-      const i = y * FIELD_W + x;
-      g[FIELD_TOP + y][x] = glyphFor(b.owner[i], b.str[i], x, y);
-    }
+function drawMachineBoard(g, machine) {
+  for (let y = 0; y < FIELD_H; y++) for (let x = 0; x < FIELD_W; x++) {
+    const c = idx(x, y);
+    let ch;
+    if (machine.burned[c]) ch = machine.t[c] === VAULT ? '$' : frontier(machine, x, y) ? '@' : '#';
+    else ch = TERRAIN_G[machine.t[c]];
+    g[FIELD_TOP + y][x] = ch;
   }
-  const d = b.frame >> 3;
-  stamp(g, 2, FIELD_TOP, `KERNEL ${hex(0x7f3a + d)}`);
-  stamp(g, 30, FIELD_TOP, `IO.SYS ${hex(0x40c1 + d * 2)}`);
-  stamp(g, 58, FIELD_TOP, `SWAP ${hex(0xa10c + d)}`);
+}
 
-  // program track + crack bar + log live under the board during exec/result
-  stamp(g, 0, 36, 'PROGRAM  ');
-  const slots = [0, 1, 2].map((i) => {
-    const card = game.program[i];
-    const name = (card ? card.name : '......').padEnd(9).slice(0, 9);
-    const active = game.phase === 'exec' && game.playhead === i;
-    return active ? `[>${name}<]` : `[ ${name} ]`;
+function drawTarget(g, game) {
+  const { machine } = game.run;
+  drawMachineBoard(g, machine);
+  const heat = heatOf(evalProgram(game.program));
+  machine.sectors.forEach((s) => {
+    const label = s.conquered ? `${s.id} ·OWNED·` : `${s.id} ${s.difficulty} h≥${heatToClear(machine, s)}`;
+    stamp(g, s.x0 + 1, FIELD_TOP, label.slice(0, s.x1 - s.x0));
   });
-  stamp(g, 9, 36, slots.join(''));
+  center(g, 38, `YOUR HEAT ${heat}  —  tap an un-owned sector to assault  (higher heat burns hotter & faster)`);
+}
 
-  const cp = crackPct(game.battle);
-  stamp(g, 0, 37, `CRACK ${bar(cp, 40)} ${cp.toFixed(0)}%   TERR ${game.battle.territory.toFixed(0)}%`);
-
-  const log = game.battle.log.slice(-2);
+function drawBurning(g, game) {
+  const node = game.node;
+  drawMachineBoard(g, game.run.machine);
+  game.run.machine.sectors.forEach((s) => {
+    const tag = s.conquered ? `${s.id} ·OWNED·` : s === node.sector ? `${s.id} «BURNING»` : s.id;
+    stamp(g, s.x0 + 1, FIELD_TOP, tag.slice(0, s.x1 - s.x0));
+  });
+  stamp(g, 0, 36, 'PROGRAM  ');
+  stamp(g, 9, 36, [0, 1, 2].map((i) => {
+    const name = (game.program[i] ? game.program[i].name : '......').padEnd(9).slice(0, 9);
+    return game.phase === 'exec' && game.playhead === i ? `[>${name}<]` : `[ ${name} ]`;
+  }).join(''));
+  const cp = crackPct(node);
+  stamp(g, 0, 37, `CRACK ${bar(cp, 34)} ${cp.toFixed(0)}%   heat ${node.heat}   ${node.sector.id}`);
+  const log = node.log.slice(-2);
   stamp(g, 0, 38, (log[0] || '').slice(0, COLS));
   stamp(g, 0, 39, (log[1] || game.message || '').slice(0, COLS));
 }
 
 export function buildScreen(game) {
-  const g = blankRows();
-  const { phase, run, battle } = game;
+  const g = blank();
+  const { phase, run, node } = game;
 
-  // HUD (rows 0-2), always present
-  const lockPct = battle ? (battle.pass / LOCKDOWN) * 100 : 0;
-  stamp(g, 0, 0, `TIER ${run.tier}: THE MACHINE   NODE ${run.node}/3   ROOT:${run.root}`);
-  stamp(g, 54, 0, `LOCKDOWN${bar(lockPct, 8)} ${battle ? battle.pass : 0}/${LOCKDOWN}`);
+  const lockPct = node ? (node.pass / LOCKDOWN) * 100 : 0;
+  stamp(g, 0, 0, `TIER ${run.tier}: THE MACHINE   CONQUERED ${run.conquered}/3   ROOT:${run.root}`);
+  if (node) stamp(g, 54, 0, `LOCKDOWN${bar(lockPct, 8)} ${node.pass}/${LOCKDOWN}`);
 
   let code = 'CODE  ';
-  for (let i = 0; i < CODE_DIGITS; i++) {
-    code += (battle && i < battle.codeLocked ? String(battle.code[i]) : '_') + ' ';
-  }
+  for (let i = 0; i < CODE_DIGITS; i++) code += (run.locked[i] ? String(run.code[i]) : '_') + ' ';
   stamp(g, 0, 1, code);
   stamp(g, 0, 2, game.prompt || '');
 
   if (phase === 'assemble') drawAssemble(g, game);
   else if (phase === 'draft') drawDraft(g, game);
-  else if (battle) drawBoard(g, game);
+  else if (phase === 'target') drawTarget(g, game);
+  else if (node) drawBurning(g, game);
 
-  // result / end messages get the bottom line + a tappable CONTINUE button
   if (phase === 'result' || phase === 'tierclear' || phase === 'gameover') {
     drawButton(g, BTN_CONTINUE, false);
     stamp(g, 0, 39, (game.message || '').slice(0, COLS));
   }
-
-  return g.map((row) => row.join('')).join('\n');
+  return g.map((r) => r.join('')).join('\n');
 }

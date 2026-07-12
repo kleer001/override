@@ -29,10 +29,16 @@ python3 -m http.server 8099
 # open http://localhost:8099/index.html
 ```
 
-**Play (mouse / touch / keyboard):** tap a hand card to load it, tap **UNDO** /
-**EXEC** buttons, tap a draft card to keep it, tap **CONTINUE** past a result.
-Keyboard also works: `1`–`5` load · `Backspace` undo · `Enter` EXEC / continue.
+**Play (mouse / touch / keyboard):** build a 3-card program (tap hand cards),
+tap **TARGET**, then tap one of the three sectors to assault — matching your
+program's **heat** to the sector's terrain (KERNEL easy, SWAP a fortress).
+Conquer all three to crack THE MACHINE. Keyboard also works: `1`–`5` load ·
+`Backspace` undo · `Enter` target · `1`–`3` pick sector/draft · `Enter` continue.
 Order is everything — adds early, multipliers late. Fits mobile (best in landscape).
+
+**Strategy:** you see all three terrains and draw a blind loadout each node, so
+plan the order — take the fortress when you draw a hot hand, save easy KERNEL for
+a cold one.
 
 **Test:** `node --test` (pure-logic suite: accumulator, win/lose, determinism,
 CA well-formedness).
@@ -40,11 +46,12 @@ CA well-formedness).
 ## Code layout (`src/`)
 
 - `rng.js` — seeded mulberry32 (+ shuffle).
-- `layout.js` — shared screen geometry (card/button rects) used by render + input.
+- `layout.js` — shared screen geometry (card/button/sector rects) used by render + input.
 - `input.js` — unified pointer input (mouse + touch via Pointer Events), à la finding_numbers.
 - `cards.js` — card defs + the accumulator interpreter (`evalProgram`).
-- `board.js` — the 3-faction cellular automaton (worm / ice / neutral, firewalls, links).
-- `battle.js` — pass resolution: CRACK meter (accumulator-driven win) + board spectacle.
+- `terrain.js` — the machine: 3 sectors (KERNEL/IO.SYS/SWAP), layered terrain
+  generation (noise + walls + bus lanes + BFS-depth vaults), and the heat-gated burn.
+- `battle.js` — a node = conquering one sector; accumulator sets the fire's heat.
 - `render.js` — composes the 80×40 monochrome screen buffer.
 - `audio.js` — procedural WebAudio chiptune SFX (no samples).
 - `main.js` — phase state machine (assemble → exec → result → draft), input, loop.
