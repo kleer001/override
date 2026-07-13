@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OVERRIDE — ASSAULT scan-pattern sandbox (2D)</title>
+<style>
+  :root { --amber:#ffb000; --dim:#7a5500; --bg:#140d00; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--amber);
+         font:13px/1.15 "SFMono-Regular",Menlo,Consolas,monospace; }
+  .wrap { display:flex; gap:16px; padding:14px; flex-wrap:wrap; }
+  #field { white-space:pre; letter-spacing:1px; text-shadow:0 0 4px #ff9000aa; }
+  .panel { min-width:260px; }
+  h1 { font-size:14px; margin:0 0 10px; letter-spacing:2px; }
+  .row { display:flex; align-items:center; gap:8px; margin:5px 0; }
+  .row label { width:96px; color:var(--amber); }
+  .row output { width:44px; text-align:right; color:#ffd27a; }
+  input[type=range] { flex:1; accent-color:var(--amber); }
+  select { background:#2a1c00; color:var(--amber); border:1px solid var(--dim); font:inherit; padding:3px; }
+  button { background:#2a1c00; color:var(--amber); border:1px solid var(--dim); padding:5px 10px; font:inherit; cursor:pointer; margin:2px 4px 2px 0; }
+  button:hover { background:#3a2700; }
+  .prog { display:flex; gap:6px; align-items:center; margin:8px 0; }
+  .stat { margin:4px 0; }
+  .big { font-size:15px; }
+  .hint { color:var(--dim); font-size:11px; margin-top:12px; max-width:280px; }
+  code { color:#ffd27a; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="field"></div>
+  <div class="panel">
+    <h1>ASSAULT — 2D SCAN</h1>
+    <div class="prog">
+      PROGRAM
+      <select id="c0"></select><select id="c1"></select><select id="c2"></select>
+    </div>
+    <div class="row"><label>pings (volley)</label><input id="pings" type="range" min="3" max="120" value="48"><output id="pings_o"></output></div>
+    <div class="row"><label>freq Fx</label><input id="fx" type="range" min="1" max="7" step="1" value="3"><output id="fx_o"></output></div>
+    <div class="row"><label>freq Fy</label><input id="fy" type="range" min="1" max="7" step="1" value="2"><output id="fy_o"></output></div>
+    <div class="row"><label>card freq k</label><input id="k" type="range" min="1" max="6" step="1" value="2"><output id="k_o"></output></div>
+    <div style="margin:8px 0;">
+      <button id="reseed">RESEED SECTOR</button><button id="anim">ANIMATE</button>
+    </div>
+    <div class="stat">sector <b id="secid">—</b> · gen difficulty <b id="diff">—</b></div>
+    <div class="stat big">pattern efficiency <b id="eff">—</b></div>
+    <div class="stat">pings on burnable ground / total</div>
+    <div class="hint">The 3 cards compose a phase warp φ(t); the beam rides a Lissajous
+      <code>x=sin(Fx·φ), y=sin(Fy·φ)</code>. Order matters — reorder the cards and the
+      figure redraws. In-game the volley samples only a few pings along this curve; the
+      base game lands them at random until the ASSAULT deck is unlocked. Goal: find a
+      pattern that overlaps this board's open ground (high efficiency). RESEED to test
+      other boards. <code>*</code> = ping on burnable, <code>x</code> = wasted on WALL.</div>
+  </div>
+</div>
+
+<script type="module">
+import { generateMachine, FIELD_H, WALL, idx } from '../src/terrain.js';
+
+const CARDS = {
+  NONE: { fn: (v, k) => v },
+  LIN:  { fn: (v, k) => v },
+  SIN:  { fn: (v, k) => 0.5 + 0.5 * Math.sin(2 * Math.PI * k * v) },
+  COS:  { fn: (v, k) => 0.5 + 0.5 * Math.cos(2 * Math.PI * k * v) },
+  TAN:  { fn: (v, k) => 0.5 + 0.5 * Math.tanh(3 * (v - 0.5)) },
+  MOD:  { fn: (v, k) => (v * k) % 1 },
+  POW:  { fn: (v, k) => v * v },
+};
+const NAMES = Object.keys(CARDS);
+const TERR = [' ', '▒', '█', '=', '$', '"'];
+
+let seed = 0x0003, machine, sector, W, H;
+const P = { c: ['SIN', 'POW', 'LIN'], pings: 48, fx: 3, fy: 2, k: 2 };
+
+function build() {
+  machine = generateMachine(seed);
+  sector = machine.sectors[0];
+  W = sector.x1 - sector.x0 + 1; H = FIELD_H;
+  document.getElementById('secid').textContent = sector.id;
+  document.getElementById('diff').textContent = sector.difficulty;
+  render();
+}
+
+// compose the 3 cards left->right into a phase warp, then ride the Lissajous
+function positions(n) {
+  const prog = P.c.filter((c) => c !== 'NONE');
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? 0 : i / (n - 1);
+    let phi = t;
+    for (const c of prog) phi = CARDS[c].fn(phi, P.k);
+    const x = 0.5 + 0.45 * Math.sin(2 * Math.PI * P.fx * phi);
+    const y = 0.5 + 0.45 * Math.sin(2 * Math.PI * P.fy * phi + Math.PI / 2);
+    const cx = sector.x0 + Math.round(x * (W - 1));
+    const cy = Math.round(y * (H - 1));
+    pts.push([cx, cy]);
+  }
+  return pts;
+}
+
+let animN = 0, animRAF = null;
+function render() {
+  const total = animRAF ? Math.max(1, Math.min(P.pings, animN)) : P.pings;
+  const pts = positions(P.pings).slice(0, total);
+  const grid = Array.from({ length: H }, (_, y) => Array.from({ length: W }, (_, x) => TERR[machine.t[idx(sector.x0 + x, y)]]));
+  let onGround = 0;
+  for (const [x, y] of pts) {
+    const wall = machine.t[idx(x, y)] === WALL;
+    if (!wall) onGround++;
+    grid[y][x - sector.x0] = wall ? 'x' : '*';
+  }
+  document.getElementById('field').textContent = grid.map((r) => r.join('')).join('\n');
+  const pct = pts.length ? (100 * onGround / pts.length).toFixed(0) : '0';
+  document.getElementById('eff').textContent = `${pct}%  (${onGround}/${pts.length})`;
+}
+
+// --- controls ---
+for (let i = 0; i < 3; i++) {
+  const sel = document.getElementById('c' + i);
+  NAMES.forEach((n) => { const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o); });
+  sel.value = P.c[i];
+  sel.addEventListener('change', () => { P.c[i] = sel.value; render(); });
+}
+for (const key of ['pings', 'fx', 'fy', 'k']) {
+  const el = document.getElementById(key), o = document.getElementById(key + '_o');
+  const sync = () => { P[key] = +el.value; o.textContent = el.value; render(); };
+  el.addEventListener('input', sync); sync();
+}
+document.getElementById('reseed').onclick = () => { seed = (seed * 48271 + 1) >>> 0; build(); };
+document.getElementById('anim').onclick = () => {
+  if (animRAF) { cancelAnimationFrame(animRAF); animRAF = null; render(); return; }
+  animN = 0;
+  const step = () => { animN += 2; render(); if (animN < P.pings) animRAF = requestAnimationFrame(step); else { animRAF = null; render(); } };
+  animRAF = requestAnimationFrame(step);
+};
+
+build();
+</script>
+</body>
+</html>

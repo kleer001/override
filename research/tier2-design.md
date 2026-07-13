@@ -365,3 +365,18 @@ gives waves/chirps/grids) vs. 2-D (both axes are functions → Lissajous figures
 richer but harder to read); (2) the card set + whether a "base sequence" card
 (LIN/SPIRAL/…) is required first; (3) how many pings sample the curve (from POWER
 volley size / a TRANSFER-style rate).
+
+### Decisions (2026-07-13) + sandbox
+
+- **Aiming is an UNLOCK.** Base game places pings at RANDOM (current Tier-1
+  behavior, `spreadPing`). The ASSAULT scan-deck is unlocked (ROOT shop / Tier 2);
+  until then, no placement programming happens. So Tier 1 stays byte-identical.
+- **Straight to 2D.** The beam rides a Lissajous `x=sin(Fx·φ), y=sin(Fy·φ)` where
+  the 3 cards compose the phase warp `φ(t)` (chirp/cluster/retrace). Fx/Fy set the
+  base figure.
+- **Card set:** LIN, SIN, COS, TAN, MOD, POW (the confirmed starters), each an
+  unlock. Ping count sampling the curve = the POWER volley size (for now).
+- **Sandbox:** `preview/scan.html` (launch `./run-scan.sh`). Headless check
+  (`scratchpad/scan2d.mjs`, 5 seeds): the best pattern differs per board (COS·SIN
+  92% one board, LIN/MOD 92% another, ceiling 42% on a hard board) — confirming
+  pattern-vs-terrain is a real skill axis and a natural Tier-2 difficulty measure.
