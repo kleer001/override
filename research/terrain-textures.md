@@ -261,3 +261,7 @@ order of **80–120 distinguishable archetypes** — but that figure is misleadi
 It is ~40% CA, and the variety a player actually *feels* in play leans far more on
 the instance-rich techniques (shapes / voronoi / circuit), where every seed is a
 new board. All counts here are design-judgment estimates, not measured.
+
+**For the exact list** — every rule number, seed mode and the precise `opts` +
+measured OPEN/HARD/WALL mix for each preset of all eight techniques — see the
+build sheet in [`terrain-texture-catalog.md`](terrain-texture-catalog.md).
