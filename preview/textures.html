@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OVERRIDE — terrain texture lab</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="../styles.css" />
+</head>
+<body>
+  <div class="crt">
+    <pre id="screen" aria-label="terrain texture preview"></pre>
+    <div class="scanlines" aria-hidden="true"></div>
+    <div class="vignette" aria-hidden="true"></div>
+  </div>
+  <p class="caption">
+    <b>←/→</b> or <b>1-8</b> cycle texture · <b>R</b> reseed · <b>T</b> one/triptych ·
+    <b>[/]</b> CA rule · <b>\</b> heightmap ramp · <b>S</b> CA seed ·
+    URL: <b>?tex=automata&amp;rule=90&amp;seed=7</b>
+  </p>
+  <script type="module">
+    import { buildField, idx, FIELD_W, FIELD_H, GENERATORS, GEN_ORDER, CA_RULES, RAMPS } from './textures.js';
+
+    const COLS = 80, ROWS = 40, FIELD_TOP = 4;
+    const BLK = [' ', '▒', '▓', '═'];           // OPEN HARD WALL BUS block glyphs
+    const RAMP_KEYS = Object.keys(RAMPS);
+
+    const P = new URLSearchParams(location.search);
+    const st = {
+      texi: Math.max(0, GEN_ORDER.indexOf(P.get('tex') || 'automata')),
+      seed: parseInt(P.get('seed') || '7', 10),
+      rulei: Math.max(0, CA_RULES.findIndex((r) => r.n === +(P.get('rule') || 90))),
+      rampi: Math.max(0, RAMP_KEYS.indexOf(P.get('ramp') || 'ascii')),
+      caSeed: P.get('caseed') === 'random' ? 'random' : 'center',
+      triptych: P.get('mode') === 'tri',
+    };
+
+    function optsFor(tex) {
+      if (tex === 'automata') return { rule: CA_RULES[st.rulei].n, seed: st.caSeed };
+      if (tex === 'heightmap') return { ramp: RAMP_KEYS[st.rampi] };
+      return {};
+    }
+
+    function stamp(g, x, y, s) { for (let i = 0; i < s.length; i++) if (x + i >= 0 && x + i < COLS && y >= 0 && y < ROWS) g[y][x + i] = s[i]; }
+
+    function render() {
+      const g = Array.from({ length: ROWS }, () => new Array(COLS).fill(' '));
+      const tex = GEN_ORDER[st.texi];
+
+      const pick = st.triptych
+        ? (i) => { const t = GEN_ORDER[(st.texi + i) % GEN_ORDER.length]; return { gen: t, opts: optsFor(t) }; }
+        : () => ({ gen: tex, opts: optsFor(tex) });
+      const { t, glyph } = buildField(st.seed, pick);
+
+      // header
+      let sub = `seed:${st.seed}`;
+      if (!st.triptych && tex === 'automata') sub += ` · rule ${CA_RULES[st.rulei].n} (${CA_RULES[st.rulei].name}) · seed:${st.caSeed}`;
+      if (!st.triptych && tex === 'heightmap') sub += ` · ramp:${RAMP_KEYS[st.rampi]}`;
+      stamp(g, 0, 0, `TEXTURE LAB · ${GENERATORS[tex].label.toUpperCase()}`);
+      stamp(g, 0, 1, sub);
+      stamp(g, 0, 2, st.triptych ? 'TRIPTYCH — three textures divided by firewalls, as a real machine would mix them' : `[${st.texi + 1}/${GEN_ORDER.length}] ▒ HARD (costs more)   ▓ WALL (impassable)   · glyphs carry shape`);
+
+      for (let y = 0; y < FIELD_H; y++) for (let x = 0; x < FIELD_W; x++) {
+        const c = idx(x, y);
+        g[FIELD_TOP + y][x] = glyph[c] || BLK[t[c]];
+      }
+
+      // per-sector labels along the firewall tops in triptych mode
+      if (st.triptych) {
+        [[1, 0], [28, 1], [55, 2]].forEach(([x, i]) => {
+          const tg = GEN_ORDER[(st.texi + i) % GEN_ORDER.length];
+          stamp(g, x, FIELD_TOP, GENERATORS[tg].label.slice(0, 24));
+        });
+      }
+
+      // type mix readout
+      let o = 0, h = 0, w = 0;
+      for (let i = 0; i < t.length; i++) { if (t[i] === 0) o++; else if (t[i] === 1) h++; else if (t[i] === 2) w++; }
+      const tot = o + h + w || 1;
+      stamp(g, 0, 38, `mix  OPEN ${(100 * o / tot | 0)}%   HARD ${(100 * h / tot | 0)}%   WALL ${(100 * w / tot | 0)}%`);
+      stamp(g, 0, 39, 'these are DROP-IN replacements for the noise loop in src/terrain.js genSector()');
+
+      document.getElementById('screen').textContent = g.map((r) => r.join('')).join('\n');
+    }
+
+    addEventListener('keydown', (e) => {
+      const k = e.key.toLowerCase();
+      if (k === 'arrowright') st.texi = (st.texi + 1) % GEN_ORDER.length;
+      else if (k === 'arrowleft') st.texi = (st.texi - 1 + GEN_ORDER.length) % GEN_ORDER.length;
+      else if (k >= '1' && k <= '8') st.texi = Math.min(GEN_ORDER.length - 1, +k - 1);
+      else if (k === 'r') st.seed = (st.seed + 1) % 10000;
+      else if (k === 't') st.triptych = !st.triptych;
+      else if (k === ']') st.rulei = (st.rulei + 1) % CA_RULES.length;
+      else if (k === '[') st.rulei = (st.rulei - 1 + CA_RULES.length) % CA_RULES.length;
+      else if (k === '\\') st.rampi = (st.rampi + 1) % RAMP_KEYS.length;
+      else if (k === 's') st.caSeed = st.caSeed === 'center' ? 'random' : 'center';
+      else return;
+      e.preventDefault();
+      render();
+    });
+    // tap / click also advances the texture, for touch
+    document.getElementById('screen').addEventListener('click', () => { st.texi = (st.texi + 1) % GEN_ORDER.length; render(); });
+
+    render();
+  </script>
+</body>
+</html>
