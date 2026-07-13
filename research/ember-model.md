@@ -83,24 +83,41 @@ neighbors are "allowed" in the spread loop. Composes with the IQ ladder (a Homin
 
 ---
 
-## 5. Enemy clawback (the rate-race) — revives ICE
+## 5. Enemy clawback = the TRACE SWEEP (revives ICE)
 
-Because pings arrive at a **rate (pings/min)**, the system reclaims cells between
-them at a **decay rate**. The battle becomes an equilibrium:
+Because pings arrive at a **rate**, the system claws cells back between them. The
+battle is an equilibrium: your pings *add* cells, the enemy sweep *removes* them.
 
-```
-net coverage growth  =  (ping rate × energy × efficiency)  −  (enemy reclaim rate)
-```
+**The mechanic — a scan line (decided 2026-07-12):** a horizontal line descends
+**top-to-bottom** across the field; as it sweeps it **reclaims a set number of
+burned cells** it crosses (a per-sweep budget). Simple constant waves to begin.
 
-- Win: coverage reaches WIN_COVERAGE (50%) before lockdown.
-- Lose: enemy reclaim outpaces you (coverage plateaus/recedes) or lockdown.
-- Makes the "watch it sing or stall" fantasy literal — you set the parameters,
-  hit EXEC, and watch the rate-race resolve.
-- Reclaim rate is a natural per-sector **difficulty** knob (and maps to the spec's
-  Tier-3 "heat — traced back, you bleed" = you literally bleed cells).
+**Difficulty scaling (higher tiers):**
+- **Onset** — low tier grants a grace delay; high tier the sweep **starts
+  immediately on ignition** ("upon contact").
+- **Speed** — low tier is a slow constant descent; high tier **accelerates**
+  (faster and faster as the run goes).
 
-Open: does reclaim eat from the frontier (erodes edges) or spawn interior ICE
-pockets? Edge-erosion is simpler and reads as a tug-of-war border.
+Thematically this *is* the WarGames "they're tracing the call" — a CRT scan line
+wiping your worm, which reads perfectly as a moving bar on the character grid.
+
+**Elegant symmetry:** your ping = a finite energy packet that *adds* cells; the
+sweep = a finite reclaim budget that *removes* cells. Same currency (cells),
+opposing flows — a clean, tunable tug-of-war. Maps to the spec's Tier-3 "traced
+back, you bleed": you literally bleed cells to the descending line.
+
+### Unify the sweep with the TRACEBACK clock (proposed)
+
+We need a discovery deadline: a **TRACEBACK countdown** → player discovered → run
+ends. Rather than a separate meter, **make the scan line the clock**: each full
+top-to-bottom sweep advances traceback one tick; after **K sweeps** you're
+discovered, run over. One visual (the descending line), two pressures (ground
+loss + the clock). This generalizes/replaces the current `LOCKDOWN = 10 passes`,
+and honeypots feed it as they do today (burning HONEY spikes trace).
+
+Reclaim target — a dial: reclaimed cells go to **neutral** (retake at normal cost,
+simple) or to **ICE** (border *hardens*, re-burning contested ground costs more —
+a real front). Start neutral, harden later.
 
 ---
 
@@ -114,7 +131,7 @@ surface, like registers on the machine:
 |------|-----------|------|--------|
 | **POWER** | the accumulator (BRUTE, XOR, NOP, GOTO…) | **energy per ping** | built (MVP) |
 | **ASSAULT** | placement — how pings hit | random → center-of-mass → grid → deep → aimed | new (absorbs the old targeting minigame + character patterns) |
-| **TRANSFER** | cadence — how often pings hit | ping rate, bursts vs steady, ramp | new |
+| **TRANSFER** | rhythm — how often pings hit (rate, bursts, drips, ramps — all "how often") | ping timing | new |
 | **GROWTH** | spread shape — direction + IQ (§3,§4) | which cells a ping takes | new |
 
 Separation of concerns: POWER = how hard, ASSAULT = where, TRANSFER = how often,
@@ -148,10 +165,15 @@ register. Progression = more decks + more cards per deck, not bigger numbers.
 
 ## 8. Open dials / questions
 
-- TRANSFER's second axis beyond rate — burst size? sync-to-power-pass? duration?
+- ~~TRANSFER's second axis~~ — resolved: "how often" covers all rhythm; TRANSFER
+  is a single-axis deck (different cards = different rhythms).
 - Ping-rate units: real-time pings/min vs pings-per-power-pass.
-- Clawback: edge-erosion vs interior ICE pockets; per-sector rate range.
-- How many decks in the first playable build past the POWER-only MVP — just
-  ASSAULT next, or ASSAULT+TRANSFER together?
-- INTERRUPT's new job (was +heat): freeze clawback for a beat? +energy?
-- `E = acc` scale and COST numbers need a `preview/` calibration pass.
+- Unify sweep + traceback into one scan-line clock (§5) vs two separate meters?
+  Leaning unified. If unified: how many sweeps K to discovery per tier?
+- Reclaim target: neutral (simple) vs ICE (hardening border). Start neutral.
+- Win = momentary coverage ≥ 50% (breach the instant you touch it) vs held 50%?
+  Leaning momentary — erosion already makes reaching it hard.
+- How many decks in the first playable build past POWER-only — just ASSAULT next,
+  or ASSAULT+TRANSFER together?
+- INTERRUPT's new job (was +heat): freeze the sweep for a beat? +energy?
+- `E = acc` scale, COST numbers, sweep budget/speed need a `preview/` calibration.
