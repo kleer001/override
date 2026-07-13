@@ -5,18 +5,19 @@
 import { mulberry32, shuffle } from './rng.js';
 import { startingDeck, BASE_DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
 import { SHOP_ITEMS, CHAR_UNLOCK, CARD_UNLOCK } from './shop.js';
-import { generateMachine, newCode, createNode, beginVolley, lobOne, advanceScan, resolveVolley, REDRAW_COST,
+import { generateMachine, newCode, createNode, beginVolley, planLob, advanceScan, resolveVolley, REDRAW_COST,
   rewardMult, draftPicks, AGGRO_BASE, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
 import { buildScreen } from './render.js';
+import { composeBoard } from './juice.js';
 import { installPointer } from './input.js';
 import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
 import { CHARACTERS } from './characters.js';
-import { WIN_COVERAGE } from './terrain.js';
+import { WIN_COVERAGE, sectorStats } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
 const screen = document.getElementById('screen');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const BURN_MS = 70; // per burn-step frame — every spread layer is drawn
+const GROW_MS = 14; // per-cell reveal — an ember lands then grows one cell at a time
 const ROOT_KEY = 'override.root';
 const DECK_KEY = 'override.deck';     // persistent deck: card ids, survives runs
 const POINTS_KEY = 'override.points'; // persistent points bank
@@ -39,7 +40,9 @@ const loadPoints = () => parseInt(localStorage.getItem(POINTS_KEY) || '0', 10) |
 const savePoints = (v) => localStorage.setItem(POINTS_KEY, String(v));
 const loadPlays = () => parseInt(localStorage.getItem(PLAYS_KEY) || '0', 10) || 0;
 const savePlays = (v) => localStorage.setItem(PLAYS_KEY, String(v));
-const draw = () => { screen.textContent = buildScreen(game); };
+const clock = () => performance.now();
+const paint = (now) => { screen.innerHTML = composeBoard(buildScreen(game), game, now); };
+const draw = () => paint(clock());
 
 // --- ROOT shop persistence (permanent unlocks + held consumables) ---
 const CHARS_KEY = 'override.chars';   // unlocked jack-in ids
@@ -201,10 +204,17 @@ async function startExec() {
     }
     game.playhead = -1;
     const before = node.crack;
-    while (node.pingsLeft > 0) { // lob each finite ping, animate its spread
-      lobOne(node);
-      draw();
-      await sleep(BURN_MS);
+    while (node.pingsLeft > 0) { // each ember lands, then grows outward one cell at a time
+      const cells = planLob(node);
+      const hit = clock(); // cluster anchor — the whole ember shares this pulse phase
+      if (!cells.length) { await sleep(GROW_MS * 3); continue; }
+      for (const c of cells) {
+        node.machine.burned[c] = 1;
+        node.machine.bornAt[c] = hit;
+        node.crack = sectorStats(node.machine, node.sector).pct;
+        draw();
+        await sleep(GROW_MS);
+      }
     }
     advanceScan(node); // the trace scan descends + reclaims
     draw();
@@ -370,7 +380,15 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-setInterval(() => { if (game.phase === 'exec') draw(); }, 80);
+// pulse loop: repaint (~30fps) while the field is live so captures breathe and
+// the conquer celebration plays. Other screens repaint on demand via draw().
+const needsAnim = () => game.node && (game.phase === 'exec' || game.phase === 'result');
+let lastPaint = 0;
+function animLoop(t) {
+  if (needsAnim() && t - lastPaint >= 33) { lastPaint = t; paint(t); }
+  requestAnimationFrame(animLoop);
+}
+requestAnimationFrame(animLoop);
 
 startRun();
 draw();

@@ -46,8 +46,12 @@ html, body {
   letter-spacing: 0;
   white-space: pre;
   text-shadow: 0 0 4px rgba(255, 176, 0, 0.7), 0 0 10px rgba(255, 176, 0, 0.25);
-  animation: flicker 3.4s infinite;
 }
+
+/* burned cells run hotter than base phosphor; opacity (set inline) does the pulse */
+#screen .brn { color: #ffe08a; text-shadow: 0 0 6px rgba(255, 190, 90, 0.9), 0 0 16px rgba(255, 140, 0, 0.45); }
+/* the single conquer flash — white-hot for a beat */
+#screen .hot { color: #fff6df; text-shadow: 0 0 10px rgba(255, 240, 200, 1), 0 0 24px rgba(255, 180, 60, 0.8); }
 
 /* scanlines */
 .scanlines {
@@ -79,12 +83,3 @@ html, body {
   letter-spacing: 0.5px;
 }
 .caption b { color: var(--amber); font-weight: 600; }
-
-@keyframes flicker {
-  0%, 100% { opacity: 1; }
-  92% { opacity: 1; }
-  93% { opacity: 0.82; }
-  94% { opacity: 1; }
-  97% { opacity: 0.9; }
-  98% { opacity: 1; }
-}

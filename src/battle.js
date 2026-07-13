@@ -8,7 +8,7 @@
 // is the run clock. Win by reaching WIN_COVERAGE and HOLDING it through a breach
 // timer before the scan bottoms out.
 
-import { generateMachine, spreadPing, reclaimRow, sectorStats, FIELD_H, WIN_COVERAGE } from './terrain.js';
+import { generateMachine, spreadPing, planPing, reclaimRow, sectorStats, FIELD_H, WIN_COVERAGE } from './terrain.js';
 import { evalProgram } from './cards.js';
 
 export { generateMachine };
@@ -76,6 +76,14 @@ export function lobOne(node) {
   const added = spreadPing(node.machine, node.sector, node.energy, node.machine.rng);
   node.crack = sectorStats(node.machine, node.sector).pct;
   return added;
+}
+
+// Plan one ping without applying it: consumes a ping, returns the ordered cells
+// it will burn so the UI can reveal them one at a time. Caller applies them.
+export function planLob(node) {
+  if (node.pingsLeft <= 0) return [];
+  node.pingsLeft--;
+  return planPing(node.machine, node.sector, node.energy, node.machine.rng);
 }
 
 // Advance the trace scan one volley's worth (unless INTERRUPT froze it), reclaiming
