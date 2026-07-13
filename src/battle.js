@@ -42,7 +42,7 @@ export function newCode(rng) {
   return Array.from({ length: CODE_DIGITS }, () => Math.floor(rng() * 10));
 }
 
-export function createNode(machine, secIdx, char, aggro = AGGRO_BASE, baseAggro = AGGRO_BASE) {
+export function createNode(machine, secIdx, char, aggro = AGGRO_BASE, baseAggro = AGGRO_BASE, extraEnergy = 0) {
   const sector = machine.sectors[secIdx];
   return {
     machine, secIdx, sector, aggro, baseAggro,
@@ -50,7 +50,7 @@ export function createNode(machine, secIdx, char, aggro = AGGRO_BASE, baseAggro 
     scanRow: 0, scanAcc: 0, breachLeft: -1, honeyHit: 0,
     energy: 0, pings: 0, pingsLeft: 0, freeze: false,
     pingBonus: char ? (char.pingBonus || 0) : 0,
-    energyBonus: char ? (char.energyBonus || 0) : 0,
+    energyBonus: (char ? (char.energyBonus || 0) : 0) + extraEnergy,
     log: [`> jacked into ${sector.id}. terrain: ${sector.difficulty}. aggression x${aggro.toFixed(2)}.`],
   };
 }

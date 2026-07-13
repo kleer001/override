@@ -3,12 +3,13 @@
 // blind loadout, see all three terrains, and choose which to assault.
 
 import { mulberry32, shuffle } from './rng.js';
-import { startingDeck, DRAFT_POOL, CARDS } from './cards.js';
+import { startingDeck, BASE_DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
+import { SHOP_ITEMS, CHAR_UNLOCK, CARD_UNLOCK } from './shop.js';
 import { generateMachine, newCode, createNode, beginVolley, lobOne, advanceScan, resolveVolley, REDRAW_COST,
   rewardMult, draftPicks, AGGRO_BASE, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
 import { buildScreen } from './render.js';
 import { installPointer } from './input.js';
-import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, BTN_AGGRO_DOWN, BTN_AGGRO_UP, inRect } from './layout.js';
+import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
 import { CHARACTERS } from './characters.js';
 import { WIN_COVERAGE } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
@@ -40,6 +41,26 @@ const loadPlays = () => parseInt(localStorage.getItem(PLAYS_KEY) || '0', 10) || 
 const savePlays = (v) => localStorage.setItem(PLAYS_KEY, String(v));
 const draw = () => { screen.textContent = buildScreen(game); };
 
+// --- ROOT shop persistence (permanent unlocks + held consumables) ---
+const CHARS_KEY = 'override.chars';   // unlocked jack-in ids
+const CARDS_KEY = 'override.cards';   // unlocked draft-card ids
+const RETRY_KEY = 'override.retry';   // held retry tokens
+const OC_KEY = 'override.overclock';  // overclock armed for next run
+const loadJSON = (k, d) => { const r = localStorage.getItem(k); return r ? JSON.parse(r) : d; };
+const unlockedChars = () => loadJSON(CHARS_KEY, ['wardial']);      // War-dialer free
+const unlockedCards = () => loadJSON(CARDS_KEY, []);
+const loadRetry = () => parseInt(localStorage.getItem(RETRY_KEY) || '0', 10) || 0;
+const saveRetry = (v) => localStorage.setItem(RETRY_KEY, String(v));
+
+const availChars = () => CHARACTERS.filter((c) => unlockedChars().includes(c.id));
+const draftPool = () => BASE_DRAFT_POOL.concat(unlockedCards().map((id) => SHOP_CARDS[id]).filter(Boolean));
+
+function shopOwned(item) {
+  if (item.kind === 'char') return unlockedChars().includes(CHAR_UNLOCK[item.id]);
+  if (item.kind === 'card') return unlockedCards().includes(CARD_UNLOCK[item.id]);
+  return false; // consumables are repeatable
+}
+
 // Onboarding ramp: the first couple of runs are gentle, then ease up to the real
 // baseline over a few more. NOT performance-based rubber-banding — a fixed
 // tutorial curve keyed to how many runs you've started. The player still owns the
@@ -55,23 +76,26 @@ function startRun() {
   game.seed = (Date.now() ^ 0x9e3779b9) >>> 0;
   const machine = generateMachine(game.seed);
   const plays = loadPlays();
-  const baseAggro = onboardingBase(plays);
+  let baseAggro = onboardingBase(plays);
+  const overclock = localStorage.getItem(OC_KEY) === '1';        // armed in the shop
+  if (overclock) { localStorage.removeItem(OC_KEY); baseAggro = Math.min(AGGRO_MAX, +(baseAggro + 0.25).toFixed(2)); }
   game.run = {
     tier: 1, node: 1, root: loadRoot(), points: loadPoints(), deck: loadDeck(),
     machine, code: newCode(mulberry32((game.seed ^ 12345) >>> 0)),
     locked: new Array(8).fill(false), conquered: 0, char: null,
     aggression: baseAggro, baseAggro, pendingDrafts: 0, plays,
+    availChars: availChars(), overclockEnergy: overclock ? 2 : 0, retry: loadRetry(),
   };
   savePlays(plays + 1);
   game.node = null;
   game.phase = 'charselect';
-  game.prompt = '';
+  game.prompt = overclock ? 'OVERCLOCK ARMED — hotter pings, faster trace this run.' : '';
   draw();
 }
 
 function pickChar(i) {
-  if (game.phase !== 'charselect' || !CHARACTERS[i]) return;
-  game.run.char = CHARACTERS[i];
+  if (game.phase !== 'charselect' || !game.run.availChars[i]) return;
+  game.run.char = game.run.availChars[i];
   sfx.lock();
   newAssemble();
 }
@@ -153,7 +177,7 @@ function lowerAggro() {
 function chooseSector(si) {
   const s = game.run.machine.sectors[si];
   if (!s || s.conquered) return;
-  game.node = createNode(game.run.machine, si, game.run.char, game.run.aggression, game.run.baseAggro);
+  game.node = createNode(game.run.machine, si, game.run.char, game.run.aggression, game.run.baseAggro, game.run.overclockEnergy);
   game.phase = 'exec';
   startExec();
 }
@@ -208,10 +232,16 @@ function showResult() {
     sfx.lock(); sfx.win();
     game.message = `>> ${node.sector.id} BREACHED (aggro x${node.aggro.toFixed(2)}). +${reward} ROOT, +${bonus} PTS, ${r.pendingDrafts} draft. [ENTER].`;
     game.prompt = `${node.sector.id} cracked — its codes fall.`;
+  } else if (r.retry > 0) {
+    r.retry -= 1; saveRetry(r.retry);
+    game.retried = true;
+    sfx.ui();
+    game.message = `>> TRACED in ${node.sector.id} — RETRY TOKEN spent, you slip away. [ENTER] to reassemble.`;
+    game.prompt = `close call. retry tokens left: ${r.retry}.`;
   } else {
     sfx.lose();
     const kept = Math.floor(r.root * 0.5); saveRoot(kept);
-    game.message = `>> TRACED: they found you in ${node.sector.id}. banked ${kept} ROOT. [ENTER] to jack in again.`;
+    game.message = `>> TRACED: they found you in ${node.sector.id}. banked ${kept} ROOT. [ENTER] for the shop.`;
     game.prompt = 'TRACE COMPLETE.';
   }
   draw();
@@ -221,12 +251,47 @@ function advance() {
   if (game.node.outcome === 'win') {
     if (game.run.conquered >= 3) return tierClear();
     startDraft();
-  } else startRun();
+  } else if (game.retried) {
+    game.retried = false; newAssemble();     // retry token spent — same run continues
+  } else openShop();                          // run ended by the trace — shop before next run
+}
+
+// --- ROOT shop ---
+function refreshShop() {
+  if (game.run) game.run.root = loadRoot();   // keep the header in sync with purchases
+  game.shopData = {
+    root: loadRoot(), retry: loadRetry(), overclock: localStorage.getItem(OC_KEY) === '1',
+    items: SHOP_ITEMS.map((it) => ({ id: it.id, name: it.name, desc: it.desc, cost: it.cost, kind: it.kind, owned: shopOwned(it) })),
+  };
+}
+function openShop() {
+  game.phase = 'shop';
+  game.prompt = 'ROOT SHOP — permanent unlocks stick forever; consumables are single-use.';
+  game.message = '';
+  refreshShop();
+  draw();
+}
+function buyShop(id) {
+  if (game.phase !== 'shop') return;
+  const item = SHOP_ITEMS.find((s) => s.id === id);
+  if (!item) return;
+  if (shopOwned(item)) { game.message = 'already unlocked.'; draw(); return; }
+  const root = loadRoot();
+  if (root < item.cost) { game.message = `need ${item.cost} ROOT (have ${root}).`; sfx.undo(); draw(); return; }
+  saveRoot(root - item.cost);
+  if (item.kind === 'char') { const u = unlockedChars(); u.push(CHAR_UNLOCK[item.id]); localStorage.setItem(CHARS_KEY, JSON.stringify(u)); }
+  else if (item.kind === 'card') { const u = unlockedCards(); u.push(CARD_UNLOCK[item.id]); localStorage.setItem(CARDS_KEY, JSON.stringify(u)); }
+  else if (item.kind === 'retry') { saveRetry(loadRetry() + 1); }
+  else if (item.kind === 'curse') { localStorage.setItem(OC_KEY, '1'); }
+  sfx.lock();
+  game.message = `bought ${item.name}.  ROOT left: ${loadRoot()}.`;
+  refreshShop();
+  draw();
 }
 
 function startDraft() {
   const rng = mulberry32((game.seed ^ (game.run.node * 777) ^ (game.run.conquered * 99991) ^ (game.run.pendingDrafts * 131071)) >>> 0);
-  game.draft = shuffle(DRAFT_POOL, rng).slice(0, 3);
+  game.draft = shuffle(draftPool(), rng).slice(0, 3);
   game.phase = 'draft';
   game.prompt = game.run.pendingDrafts > 1 ? `DRAFT — ${game.run.pendingDrafts} picks left (aggression bonus)` : '';
   draw();
@@ -246,7 +311,7 @@ function tierClear() {
   game.phase = 'tierclear';
   game.run.root += 100; saveRoot(game.run.root);
   sfx.win();
-  game.message = '>> THE MACHINE IS YOURS. +100 ROOT. [ENTER] for a new run.';
+  game.message = '>> THE MACHINE IS YOURS. +100 ROOT. [ENTER] for the shop.';
   game.prompt = 'the codes were a front. something deeper is listening…';
   draw();
 }
@@ -267,10 +332,13 @@ function onTapCell(col, row) {
     for (let i = 0; i < SECTOR_RECTS.length; i++) if (inRect(col, row, SECTOR_RECTS[i])) return chooseSector(i);
   } else if (game.phase === 'draft') {
     for (let i = 0; i < DRAFT_CARDS.length; i++) if (inRect(col, row, DRAFT_CARDS[i])) return pickDraft(i);
+  } else if (game.phase === 'shop') {
+    for (let i = 0; i < SHOP_ITEMS.length; i++) if (inRect(col, row, shopRow(i))) return buyShop(SHOP_ITEMS[i].id);
+    if (inRect(col, row, BTN_JACKIN)) return startRun();
   } else if (game.phase === 'result') {
     if (inRect(col, row, BTN_CONTINUE)) return advance();
   } else if (game.phase === 'tierclear' || game.phase === 'gameover') {
-    if (inRect(col, row, BTN_CONTINUE)) return startRun();
+    if (inRect(col, row, BTN_CONTINUE)) return openShop();
   }
 }
 installPointer(screen, onTapCell);
@@ -292,10 +360,13 @@ window.addEventListener('keydown', (e) => {
     else if (k === '-' || k === '_') lowerAggro();
   } else if (game.phase === 'draft') {
     if (k >= '1' && k <= '3') pickDraft(+k - 1);
+  } else if (game.phase === 'shop') {
+    if (k >= '1' && k <= '9') { const i = +k - 1; if (SHOP_ITEMS[i]) buyShop(SHOP_ITEMS[i].id); }
+    else if (k === 'Enter') startRun();
   } else if (game.phase === 'result') {
     if (k === 'Enter') advance();
   } else if (game.phase === 'tierclear' || game.phase === 'gameover') {
-    if (k === 'Enter') startRun();
+    if (k === 'Enter') openShop();
   }
 });
 

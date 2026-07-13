@@ -5,7 +5,7 @@
 import { FIELD_W, FIELD_H, WALL, VAULT, idx, SECTORS, WIN_COVERAGE } from './terrain.js';
 import { CODE_DIGITS, crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE } from './battle.js';
 import { evalProgram } from './cards.js';
-import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, BTN_AGGRO_DOWN, BTN_AGGRO_UP } from './layout.js';
+import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN } from './layout.js';
 import { CHARACTERS } from './characters.js';
 
 export { COLS, ROWS };
@@ -83,9 +83,25 @@ function drawDraft(g, game) {
 function drawCharSelect(g, game) {
   center(g, 3, 'SELECT YOUR JACK-IN');
   center(g, 4, 'how you break in — your ignition style for this whole run');
-  CHARACTERS.forEach((ch, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1),
+  const chars = (game.run && game.run.availChars) || CHARACTERS;
+  chars.slice(0, 3).forEach((ch, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1),
     { name: ch.name, desc: ch.desc, kind: 'jack-in' }, false));
-  center(g, 19, 'tap a jack-in to begin');
+  center(g, 19, chars.length < CHARACTERS.length ? 'tap a jack-in · unlock more in the ROOT shop' : 'tap a jack-in to begin');
+}
+
+function drawShop(g, game) {
+  const d = game.shopData || { root: 0, retry: 0, overclock: false, items: [] };
+  center(g, 3, 'ROOT SHOP');
+  stamp(g, 4, 5, `ROOT: ${d.root}    retry tokens held: ${d.retry}${d.overclock ? '    OVERCLOCK ARMED' : ''}`);
+  d.items.forEach((it, i) => {
+    const r = shopRow(i);
+    const tag = it.owned ? 'OWNED' : `${it.cost} ROOT`;
+    const line = `[${i + 1}] ${it.name.padEnd(23)}${tag.padStart(9)}  ${it.desc}`;
+    stamp(g, r.x, r.y, line.slice(0, r.w));
+  });
+  drawButton(g, BTN_JACKIN, false);
+  stamp(g, 4, 32, (game.message || '').slice(0, COLS - 4));
+  center(g, 38, 'tap an item to buy · number keys buy · [ENTER] / JACK IN starts the next run');
 }
 
 function frontier(machine, x, y) {
@@ -166,6 +182,7 @@ export function buildScreen(game) {
   else if (phase === 'assemble') drawAssemble(g, game);
   else if (phase === 'draft') drawDraft(g, game);
   else if (phase === 'target') drawTarget(g, game);
+  else if (phase === 'shop') drawShop(g, game);
   else if (node) drawBurning(g, game);
 
   if (phase === 'result' || phase === 'tierclear' || phase === 'gameover') {
