@@ -25,25 +25,27 @@ export const BREACH_HOLD = 2;       // volleys you must hold >= WIN_COVERAGE to 
 // (the enemy), mirroring how the accumulator scales your whole volley (you). The
 // player raises it for free (harder scan, bigger reward) or spends PTS to lower
 // it (safer). Per-tier baseline lives here for now (Tier 1 = 1.0).
-export const AGGRO_BASE = 1.0;
+export const AGGRO_BASE = 0.75;        // the "real" graduated baseline (post-onboarding)
 export const AGGRO_STEP = 0.25;
 export const AGGRO_MIN = 0.5;
 export const AGGRO_MAX = 2.5;
 export const AGGRO_REDUCE_COST = 15;   // PTS to lower aggression one step
 
-export function rewardMult(aggro) { return aggro / AGGRO_BASE; }        // ROOT/PTS scale, 1.0 at baseline
-export function draftPicks(aggro) {                                    // extra cards for cranking up
-  return Math.max(1, 1 + Math.floor((aggro - AGGRO_BASE) / 0.5 + 1e-9));
+// Reward/draft are relative to the run's baseline, so the current default always
+// pays "standard" and cranking ABOVE it is what pays more.
+export function rewardMult(aggro, base = AGGRO_BASE) { return aggro / base; }
+export function draftPicks(aggro, base = AGGRO_BASE) {
+  return Math.max(1, 1 + Math.floor((aggro - base) / 0.5 + 1e-9));
 }
 
 export function newCode(rng) {
   return Array.from({ length: CODE_DIGITS }, () => Math.floor(rng() * 10));
 }
 
-export function createNode(machine, secIdx, char, aggro = AGGRO_BASE) {
+export function createNode(machine, secIdx, char, aggro = AGGRO_BASE, baseAggro = AGGRO_BASE) {
   const sector = machine.sectors[secIdx];
   return {
-    machine, secIdx, sector, aggro,
+    machine, secIdx, sector, aggro, baseAggro,
     tick: 0, crack: 0, outcome: null,
     scanRow: 0, scanAcc: 0, breachLeft: -1, honeyHit: 0,
     energy: 0, pings: 0, pingsLeft: 0, freeze: false,

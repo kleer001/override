@@ -205,3 +205,23 @@ reclaim/row, breach hold, win coverage. RESEED cycles sectors.
 73–91%) while `weak = {energy 5, rate 1}` loses 6/6 (peaks <19%). The lone strong
 loss is an un-crackable layout (intended BRUTAL). Confirms: smooth curve, terrain
 still gates, no binary heat wall. These are starting numbers, not final balance.
+
+## 10. Difficulty = the AGGRESSION dial (built)
+
+Difficulty collapses to one scalar, `aggression`, that scales the whole trace scan
+(speed + reclaim) — mirroring how the accumulator scales your whole volley. Player
+owns it in the target phase: **raise for free** (harder scan) for a bigger payout —
+more ROOT/PTS (`rewardMult`, re-centered so the run's baseline pays 1.0×) and extra
+**draft picks** (`draftPicks`) — or **spend PTS to lower it** (safety valve). One
+loss ends the run and high aggression banks more to lose, so cranking is a genuine
+gamble (verified: a hot deck wins only ~3% at ×2.5 on EASY).
+
+Live tuning is **player-chosen escalation** (Ascension/Heat style), not hidden
+rubber-banding — legible per our shop research.
+
+**Onboarding ramp** (`onboardingBase(plays)`): the run's *baseline* aggression
+eases players in — runs 1–2 at 0.5 (~94% for a median deck on EASY), graduating to
+the real `AGGRO_BASE = 0.75` by run 7. A fixed tutorial curve keyed to runs
+started (not performance), surfaced as a "TRAINING RUN" tag; the player still owns
+the dial on top of it. Per-sector terrain difficulty (energy-to-50%) stays a
+second, independent axis.

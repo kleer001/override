@@ -19,6 +19,7 @@ const BURN_MS = 70; // per burn-step frame — every spread layer is drawn
 const ROOT_KEY = 'override.root';
 const DECK_KEY = 'override.deck';     // persistent deck: card ids, survives runs
 const POINTS_KEY = 'override.points'; // persistent points bank
+const PLAYS_KEY = 'override.plays';   // runs started — drives the onboarding ramp
 
 const game = {
   phase: 'assemble', run: null, node: null,
@@ -35,17 +36,33 @@ const loadDeck = () => {
 const saveDeck = (deck) => localStorage.setItem(DECK_KEY, JSON.stringify(deck.map((c) => c.id)));
 const loadPoints = () => parseInt(localStorage.getItem(POINTS_KEY) || '0', 10) || 0;
 const savePoints = (v) => localStorage.setItem(POINTS_KEY, String(v));
+const loadPlays = () => parseInt(localStorage.getItem(PLAYS_KEY) || '0', 10) || 0;
+const savePlays = (v) => localStorage.setItem(PLAYS_KEY, String(v));
 const draw = () => { screen.textContent = buildScreen(game); };
+
+// Onboarding ramp: the first couple of runs are gentle, then ease up to the real
+// baseline over a few more. NOT performance-based rubber-banding — a fixed
+// tutorial curve keyed to how many runs you've started. The player still owns the
+// aggression dial on top of whatever base this returns.
+function onboardingBase(plays) {
+  const EASY = 0.5, REAL = AGGRO_BASE;
+  if (plays <= 1) return EASY;
+  if (plays >= 6) return REAL;
+  return +(EASY + (REAL - EASY) * ((plays - 1) / 5)).toFixed(2);
+}
 
 function startRun() {
   game.seed = (Date.now() ^ 0x9e3779b9) >>> 0;
   const machine = generateMachine(game.seed);
+  const plays = loadPlays();
+  const baseAggro = onboardingBase(plays);
   game.run = {
     tier: 1, node: 1, root: loadRoot(), points: loadPoints(), deck: loadDeck(),
     machine, code: newCode(mulberry32((game.seed ^ 12345) >>> 0)),
     locked: new Array(8).fill(false), conquered: 0, char: null,
-    aggression: AGGRO_BASE, pendingDrafts: 0,
+    aggression: baseAggro, baseAggro, pendingDrafts: 0, plays,
   };
+  savePlays(plays + 1);
   game.node = null;
   game.phase = 'charselect';
   game.prompt = '';
@@ -136,7 +153,7 @@ function lowerAggro() {
 function chooseSector(si) {
   const s = game.run.machine.sectors[si];
   if (!s || s.conquered) return;
-  game.node = createNode(game.run.machine, si, game.run.char, game.run.aggression);
+  game.node = createNode(game.run.machine, si, game.run.char, game.run.aggression, game.run.baseAggro);
   game.phase = 'exec';
   startExec();
 }
@@ -182,12 +199,12 @@ function showResult() {
   if (node.outcome === 'win') {
     r.conquered++;
     for (const d of node.sector.digits) r.locked[d] = true;
-    const mult = rewardMult(node.aggro);
+    const mult = rewardMult(node.aggro, node.baseAggro);
     const reward = Math.round((40 + r.conquered * 10) * mult);
     r.root += reward; saveRoot(r.root);
     const bonus = Math.round(Math.max(0, node.crack - WIN_COVERAGE) * mult);
     r.points += bonus; savePoints(r.points);
-    r.pendingDrafts = draftPicks(node.aggro);
+    r.pendingDrafts = draftPicks(node.aggro, node.baseAggro);
     sfx.lock(); sfx.win();
     game.message = `>> ${node.sector.id} BREACHED (aggro x${node.aggro.toFixed(2)}). +${reward} ROOT, +${bonus} PTS, ${r.pendingDrafts} draft. [ENTER].`;
     game.prompt = `${node.sector.id} cracked — its codes fall.`;
