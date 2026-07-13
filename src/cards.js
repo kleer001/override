@@ -35,11 +35,14 @@ export function startingDeck() {
   ].map((c) => ({ ...c }));
 }
 
-// Cards offered in the draft-between-nodes pool.
-export const DRAFT_POOL = [
-  CARDS.ADD5, CARDS.SHL, CARDS.GOTO, CARDS.PUNCH, CARDS.FORK,
-  CARDS.INTERRUPT, CARDS.XOR, CARDS.BRUTE,
+// Cards always available in the draft-between-nodes pool.
+export const BASE_DRAFT_POOL = [
+  CARDS.ADD5, CARDS.XOR, CARDS.BRUTE, CARDS.FORK, CARDS.INTERRUPT, CARDS.NOP,
 ];
+// Cards that start LOCKED and enter the draft pool once bought in the ROOT shop.
+export const SHOP_CARDS = {
+  SHL: CARDS.SHL, GOTO: CARDS.GOTO, PUNCH: CARDS.PUNCH,
+};
 
 // Pure interpreter: run a 3-card program, return the pass value + effect flags
 // + a per-step trace (for the playhead animation).

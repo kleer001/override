@@ -2,10 +2,10 @@
 //   assemble / draft -> card panels · target -> the machine (pick a sector) ·
 //   exec / result    -> the sector burning.
 
-import { FIELD_W, FIELD_H, WALL, VAULT, idx, SECTORS, heatToClear, WIN_COVERAGE } from './terrain.js';
-import { LOCKDOWN, CODE_DIGITS, crackPct, heatOf, REDRAW_COST } from './battle.js';
+import { FIELD_W, FIELD_H, WALL, VAULT, idx, SECTORS, WIN_COVERAGE } from './terrain.js';
+import { CODE_DIGITS, crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE } from './battle.js';
 import { evalProgram } from './cards.js';
-import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE } from './layout.js';
+import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN } from './layout.js';
 import { CHARACTERS } from './characters.js';
 
 export { COLS, ROWS };
@@ -67,7 +67,7 @@ function drawAssemble(g, game) {
   stamp(g, 16, 17, [0, 1, 2].map((i) => `[ ${(game.program[i] ? game.program[i].name : '......').padEnd(9).slice(0, 9)} ]`).join(' → '));
   const p = accPreview(game.program);
   stamp(g, 6, 19, 'ACCUMULATOR');
-  stamp(g, 18, 19, `${p.expr}   =  ${p.value}   (heat ${p.value ? heatOf({ value: p.value, flags: {} }) : '–'})`);
+  stamp(g, 18, 19, `${p.expr}   =  ${p.value}   (energy / ping)`);
   center(g, 22, 'tap a card to load · then choose which sector to hit');
   drawButton(g, BTN_REDRAW, game.run.points < REDRAW_COST);
   drawButton(g, BTN_UNDO, false);
@@ -83,27 +83,25 @@ function drawDraft(g, game) {
 function drawCharSelect(g, game) {
   center(g, 3, 'SELECT YOUR JACK-IN');
   center(g, 4, 'how you break in — your ignition style for this whole run');
-  CHARACTERS.forEach((ch, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1),
+  const chars = (game.run && game.run.availChars) || CHARACTERS;
+  chars.slice(0, 3).forEach((ch, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1),
     { name: ch.name, desc: ch.desc, kind: 'jack-in' }, false));
-  center(g, 19, 'tap a jack-in to begin');
+  center(g, 19, chars.length < CHARACTERS.length ? 'tap a jack-in · unlock more in the ROOT shop' : 'tap a jack-in to begin');
 }
 
-function drawJackin(g, game) {
-  const { machine } = game.run;
-  const s = game.node.sector;
-  const j = game.jack;
-  drawMachineBoard(g, machine);
-  // vertical gnomon (X axis): moving while aiming X, locked while aiming Y
-  const xcol = j.step === 'x' ? j.col : j.lockedX;
-  if (xcol != null) for (let y = 0; y < FIELD_H; y++) g[FIELD_TOP + y][xcol] = '║';
-  // horizontal gnomon (Y axis)
-  if (j.step === 'y' && j.row != null) {
-    for (let x = s.x0; x <= s.x1; x++) g[FIELD_TOP + j.row][x] = '═';
-    if (xcol != null) g[FIELD_TOP + j.row][xcol] = '╬';
-  }
-  machine.sectors.forEach((sec) => stamp(g, sec.x0 + 1, FIELD_TOP,
-    (sec === s ? `${sec.id} «TARGET»` : sec.id).slice(0, sec.x1 - sec.x0)));
-  center(g, 38, `JACK-IN: ${game.run.char.name}  ·  AIM ${j.step.toUpperCase()} axis  ·  tap / SPACE to lock`);
+function drawShop(g, game) {
+  const d = game.shopData || { root: 0, retry: 0, overclock: false, items: [] };
+  center(g, 3, 'ROOT SHOP');
+  stamp(g, 4, 5, `ROOT: ${d.root}    retry tokens held: ${d.retry}${d.overclock ? '    OVERCLOCK ARMED' : ''}`);
+  d.items.forEach((it, i) => {
+    const r = shopRow(i);
+    const tag = it.owned ? 'OWNED' : `${it.cost} ROOT`;
+    const line = `[${i + 1}] ${it.name.padEnd(23)}${tag.padStart(9)}  ${it.desc}`;
+    stamp(g, r.x, r.y, line.slice(0, r.w));
+  });
+  drawButton(g, BTN_JACKIN, false);
+  stamp(g, 4, 32, (game.message || '').slice(0, COLS - 4));
+  center(g, 38, 'tap an item to buy · number keys buy · [ENTER] / JACK IN starts the next run');
 }
 
 function frontier(machine, x, y) {
@@ -129,18 +127,27 @@ function drawMachineBoard(g, machine) {
 function drawTarget(g, game) {
   const { machine } = game.run;
   drawMachineBoard(g, machine);
-  const heat = heatOf(evalProgram(game.program));
+  const energy = evalProgram(game.program).value;
   machine.sectors.forEach((s) => {
-    const h = heatToClear(machine, s);
-    const label = s.conquered ? `${s.id} ·OWNED·` : `${s.id} ${s.difficulty} h${h === 99 ? '✕' : '≥' + h}`;
+    const label = s.conquered ? `${s.id} ·OWNED·` : `${s.id} ${s.difficulty}`;
     stamp(g, s.x0 + 1, FIELD_TOP, label.slice(0, s.x1 - s.x0));
   });
-  center(g, 38, `YOUR HEAT ${heat}  —  tap a sector · burn ${WIN_COVERAGE}% to breach it (BRUTAL = maybe impossible)`);
+  const a = game.run.aggression, base = game.run.baseAggro;
+  drawButton(g, BTN_AGGRO_DOWN, game.run.points < AGGRO_REDUCE_COST);
+  drawButton(g, BTN_AGGRO_UP, false);
+  stamp(g, 26, 36, `E/PING ${energy}  ·  AGGRO x${a.toFixed(2)}`);
+  stamp(g, 26, 37, `reward x${rewardMult(a, base).toFixed(2)}  ·  ${draftPicks(a, base)} draft`);
+  if (base < AGGRO_BASE) stamp(g, 26, 38, 'TRAINING RUN — trace runs slow');
+  center(g, 39, `tap a sector to commit · HARDER free (pays more) · SAFER -${AGGRO_REDUCE_COST} PTS`);
 }
 
 function drawBurning(g, game) {
   const node = game.node;
   drawMachineBoard(g, game.run.machine);
+  // the descending TRACE SCAN, overlaid across the target sector
+  if (node.scanRow < FIELD_H) {
+    for (let x = node.sector.x0; x <= node.sector.x1; x++) g[FIELD_TOP + node.scanRow][x] = '─';
+  }
   game.run.machine.sectors.forEach((s) => {
     const tag = s.conquered ? `${s.id} ·OWNED·` : s === node.sector ? `${s.id} «BURNING»` : s.id;
     stamp(g, s.x0 + 1, FIELD_TOP, tag.slice(0, s.x1 - s.x0));
@@ -151,7 +158,8 @@ function drawBurning(g, game) {
     return game.phase === 'exec' && game.playhead === i ? `[>${name}<]` : `[ ${name} ]`;
   }).join(''));
   const cp = crackPct(node);
-  stamp(g, 0, 37, `CRACK ${bar(cp, 34)} ${cp.toFixed(0)}%/${WIN_COVERAGE}%  heat ${node.heat}  ${node.sector.id}`);
+  const breach = node.breachLeft > 0 ? ` HOLD ${node.breachLeft}` : node.breachLeft === 0 ? ' BREACH!' : '';
+  stamp(g, 0, 37, `CRACK ${bar(cp, 30)} ${cp.toFixed(0)}%/${WIN_COVERAGE}%  E${node.energy}${breach}`);
   const log = node.log.slice(-2);
   stamp(g, 0, 38, (log[0] || '').slice(0, COLS));
   stamp(g, 0, 39, (log[1] || game.message || '').slice(0, COLS));
@@ -161,10 +169,9 @@ export function buildScreen(game) {
   const g = blank();
   const { phase, run, node } = game;
 
-  const effPass = node ? node.pass + (node.penalty || 0) : 0;
-  const lockPct = node ? (effPass / LOCKDOWN) * 100 : 0;
+  const tracePct = node ? (node.scanRow / FIELD_H) * 100 : 0;
   stamp(g, 0, 0, `TIER ${run.tier}: THE MACHINE   CONQUERED ${run.conquered}/3   ROOT:${run.root}`);
-  if (node) stamp(g, 54, 0, `LOCKDOWN${bar(lockPct, 8)} ${effPass}/${LOCKDOWN}`);
+  if (node) stamp(g, 54, 0, `TRACE${bar(tracePct, 8)} ${node.scanRow}/${FIELD_H}`);
 
   let code = 'CODE  ';
   for (let i = 0; i < CODE_DIGITS; i++) code += (run.locked[i] ? String(run.code[i]) : '_') + ' ';
@@ -175,7 +182,7 @@ export function buildScreen(game) {
   else if (phase === 'assemble') drawAssemble(g, game);
   else if (phase === 'draft') drawDraft(g, game);
   else if (phase === 'target') drawTarget(g, game);
-  else if (phase === 'jackin') drawJackin(g, game);
+  else if (phase === 'shop') drawShop(g, game);
   else if (node) drawBurning(g, game);
 
   if (phase === 'result' || phase === 'tierclear' || phase === 'gameover') {

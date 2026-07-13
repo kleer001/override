@@ -1,9 +1,11 @@
-// Jack-in characters — chosen at run start. Each defines how you ignite: the
-// gnomon sweep speed (period, ms — lower = faster & harder to time) and the
-// ember pattern that lands at your locked mark.
+// Jack-in characters — chosen at run start, defining how your pings hit. In the
+// base game pings land at RANDOM cells (precise aiming is a future power-up), so
+// characters differ in the shape of their volley: more pings vs. hotter pings.
+//   pingBonus   — extra pings per volley (more fronts, more surface area)
+//   energyBonus — extra energy per ping (each front burns deeper / through HARD)
 
 export const CHARACTERS = [
-  { id: 'wardial',  name: 'WAR-DIALER',  period: 2600, scatter: 0, deep: false, desc: 'slow, precise aim; one clean ember at your mark' },
-  { id: 'shotgun',  name: 'SHOTGUNNER',  period: 1100, scatter: 4, deep: false, desc: 'fast aim; 5 embers scattered around the mark' },
-  { id: 'catapult', name: 'CATAPULTIST', period: 1700, scatter: 0, deep: true,  desc: 'lobs one ember deep; aim limited to the far half' },
+  { id: 'wardial',  name: 'WAR-DIALER',  pingBonus: 0, energyBonus: 3, desc: 'focused: fewer pings, each carries more energy' },
+  { id: 'shotgun',  name: 'SHOTGUNNER',  pingBonus: 2, energyBonus: 0, desc: 'scatter: +2 pings per volley, more fronts at once' },
+  { id: 'catapult', name: 'CATAPULTIST', pingBonus: 0, energyBonus: 5, desc: 'deep payload: big energy per ping, punches through HARD' },
 ];

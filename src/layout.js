@@ -30,6 +30,14 @@ export const DRAFT_CARDS = Array.from({ length: 3 }, (_, i) => ({
   x: DRAFT_X0 + i * 17, y: 9, w: 15, h: 8,
 }));
 
+// target phase: adjust aggression (risk/reward) before committing to a sector
+export const BTN_AGGRO_DOWN = { x: 2, y: 36, w: 22, h: 3, label: 'SAFER ◀' };
+export const BTN_AGGRO_UP = { x: 56, y: 36, w: 22, h: 3, label: '▶ HARDER' };
+
+// ROOT shop: one tappable row per item, then a jack-in button
+export const shopRow = (i) => ({ x: 4, y: 7 + i, w: 72, h: 1 });
+export const BTN_JACKIN = { x: 31, y: 34, w: 18, h: 3, label: 'JACK IN ▶' };
+
 // result / tier-clear / game-over: one continue button
 export const BTN_CONTINUE = { x: 31, y: 31, w: 18, h: 3, label: 'CONTINUE ▶' };
 

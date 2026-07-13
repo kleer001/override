@@ -1,130 +1,135 @@
 // Battle = conquering one sector (a node). The machine (three sectors) persists
-// across the run, so conquered sectors stay burned and the board fills up. Your
-// program's accumulator sets the fire's HEAT; terrain decides what it can burn.
+// across the run, so conquered sectors stay burned and the board fills up.
+//
+// The new model (research/ember-model.md): your program's accumulator sets the
+// ENERGY each ping carries. A volley of finite pings lands at random cells and
+// spends that energy infecting new ground (terrain cost, not a gate). Meanwhile a
+// single TRACE SCAN descends the field, reclaiming cells row by row — its descent
+// is the run clock. Win by reaching WIN_COVERAGE and HOLDING it through a breach
+// timer before the scan bottoms out.
 
-import { generateMachine, ignite, burnStep, sectorStats, idx, FIELD_W, FIELD_H, OPEN, WALL, WIN_COVERAGE } from './terrain.js';
+import { generateMachine, spreadPing, reclaimRow, sectorStats, FIELD_H, WIN_COVERAGE } from './terrain.js';
 import { evalProgram } from './cards.js';
-import { randInt } from './rng.js';
 
 export { generateMachine };
-export const LOCKDOWN = 10;
 export const CODE_DIGITS = 8;
-export const STEPS_PER_PASS = 3;
-export const REDRAW_COST = 10; // points spent to reshuffle the hand in assemble
+export const REDRAW_COST = 10;      // points spent to reshuffle the hand in assemble
+
+// Tier-1 tuning (later: per-tier / per-deck). See preview/ping.html to calibrate.
+export const PINGS_PER_PASS = 3;    // volley size before FORK / character bonuses
+export const SCAN_SPEED = 2;        // rows the trace scan descends per volley (at aggression 1)
+export const RECLAIM_PER_ROW = 5;   // burned cells the scan reclaims per row (at aggression 1)
+export const BREACH_HOLD = 2;       // volleys you must hold >= WIN_COVERAGE to win
+
+// --- AGGRESSION: the single difficulty dial. It scales the whole trace scan
+// (the enemy), mirroring how the accumulator scales your whole volley (you). The
+// player raises it for free (harder scan, bigger reward) or spends PTS to lower
+// it (safer). Per-tier baseline lives here for now (Tier 1 = 1.0).
+export const AGGRO_BASE = 0.75;        // the "real" graduated baseline (post-onboarding)
+export const AGGRO_STEP = 0.25;
+export const AGGRO_MIN = 0.5;
+export const AGGRO_MAX = 2.5;
+export const AGGRO_REDUCE_COST = 15;   // PTS to lower aggression one step
+
+// Reward/draft are relative to the run's baseline, so the current default always
+// pays "standard" and cranking ABOVE it is what pays more.
+export function rewardMult(aggro, base = AGGRO_BASE) { return aggro / base; }
+export function draftPicks(aggro, base = AGGRO_BASE) {
+  return Math.max(1, 1 + Math.floor((aggro - base) / 0.5 + 1e-9));
+}
 
 export function newCode(rng) {
   return Array.from({ length: CODE_DIGITS }, () => Math.floor(rng() * 10));
 }
 
-export function heatOf(ev) {
-  return Math.max(4, Math.min(9, 4 + Math.floor(ev.value / 4) + (ev.flags.interrupt ? 1 : 0)));
-}
-
-export function createNode(machine, secIdx, embers) {
+export function createNode(machine, secIdx, char, aggro = AGGRO_BASE, baseAggro = AGGRO_BASE, extraEnergy = 0) {
   const sector = machine.sectors[secIdx];
   return {
-    machine, secIdx, sector,
-    embers: embers && embers.length ? embers : [{ x: sector.entry.x, y: sector.entry.y }],
-    pass: 0, heat: 0, crack: 0, ignited: false, outcome: null,
-    penalty: 0, honeyHit: 0,
-    log: [`> jacked into ${sector.id}. terrain: ${sector.difficulty}.`],
+    machine, secIdx, sector, aggro, baseAggro,
+    tick: 0, crack: 0, outcome: null,
+    scanRow: 0, scanAcc: 0, breachLeft: -1, honeyHit: 0,
+    energy: 0, pings: 0, pingsLeft: 0, freeze: false,
+    pingBonus: char ? (char.pingBonus || 0) : 0,
+    energyBonus: (char ? (char.energyBonus || 0) : 0) + extraEnergy,
+    log: [`> jacked into ${sector.id}. terrain: ${sector.difficulty}. aggression x${aggro.toFixed(2)}.`],
   };
-}
-
-// settle a point off any WALL onto the nearest passable cell
-function settle(t, x, y) {
-  for (let r = 0; r < 8; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-    const nx = x + dx, ny = y + dy;
-    if (nx >= 0 && nx < FIELD_W && ny >= 0 && ny < FIELD_H && t[idx(nx, ny)] !== WALL) return { x: nx, y: ny };
-  }
-  return { x, y };
-}
-
-// embers that land from a locked (lx, ly) mark, per the jack-in character
-export function jackEmbers(machine, sector, lx, ly, ch) {
-  const t = machine.t;
-  const clampX = (x) => Math.max(sector.x0, Math.min(sector.x1, x));
-  const clampY = (y) => Math.max(0, Math.min(FIELD_H - 1, y));
-  const out = [settle(t, clampX(lx), clampY(ly))];
-  for (let i = 0; i < (ch.scatter || 0); i++) {
-    out.push(settle(t, clampX(out[0].x + randInt(machine.rng, -3, 3)), clampY(out[0].y + randInt(machine.rng, -3, 3))));
-  }
-  return out;
 }
 
 export function crackPct(node) { return Math.min(100, node.crack); }
 
-// Set up a pass (accumulator, heat, ignition, fork embers) and stash the number
-// of burn-steps it earns on the node. Callers then spread that many steps — the
-// UI does it one at a time (animated); runPass does them in a batch.
-export function beginPass(node, program) {
+// Set up a volley: accumulator -> energy per ping, ping count (+FORK, +character),
+// and whether INTERRUPT freezes the scan this volley. Does not lob yet.
+export function beginVolley(node, program) {
   const ev = evalProgram(program);
-  node.pass++;
-  const { machine, sector } = node;
-  const heat = heatOf(ev);
-  node.heat = heat;
-
-  if (!node.ignited) {
-    ignite(machine, sector, node.embers);
-    node.ignited = true;
-  }
-  // FORK lobs an extra ember deep in the sector (a fresh front)
-  for (let k = 0; k < ev.flags.fork; k++) {
-    const ex = randInt(machine.rng, sector.x0 + 2, sector.x1 - 2);
-    const ey = randInt(machine.rng, 2, FIELD_H - 2);
-    if (machine.t[idx(ex, ey)] !== WALL) machine.burned[idx(ex, ey)] = 1;
-    push(node, `> FORK: ember lobbed deep into ${sector.id}.`);
-  }
-
-  // spread rate scales with the accumulator: a hotter program burns faster,
-  // so a bigger number both unlocks harder terrain AND conquers in fewer passes
-  node.steps = Math.max(1, Math.min(5, 1 + Math.floor(ev.value / 6)));
+  node.tick++;
+  node.energy = Math.max(1, ev.value + node.energyBonus);
+  node.pings = PINGS_PER_PASS + node.pingBonus + ev.flags.fork;
+  node.pingsLeft = node.pings;
+  node.freeze = ev.flags.interrupt;
   return ev;
 }
 
-// One spread tick: advance the fire a single frontier layer and refresh crack%.
-// Used both for the animated pass and the post-win burn-to-completion.
-export function burnMore(node) {
-  const added = burnStep(node.machine, node.sector, node.heat);
+// Lob one ping and refresh coverage (so the bar animates per ping).
+export function lobOne(node) {
+  if (node.pingsLeft <= 0) return 0;
+  node.pingsLeft--;
+  const added = spreadPing(node.machine, node.sector, node.energy, node.machine.rng);
   node.crack = sectorStats(node.machine, node.sector).pct;
   return added;
 }
 
-// Tally the pass: crack%, honeypot penalty, win/lose. Win fires the instant
-// coverage crosses WIN_COVERAGE (bonus burn happens after, outside lockdown).
-export function endPass(node, ev) {
+// Advance the trace scan one volley's worth (unless INTERRUPT froze it), reclaiming
+// cells row by row. Returns cells reclaimed.
+export function advanceScan(node) {
+  if (node.freeze) { push(node, `> INTERRUPT: trace scan stalled one beat.`); return 0; }
+  node.scanAcc += SCAN_SPEED * node.aggro;                       // aggression = scan speed
+  const reclaim = Math.max(1, Math.round(RECLAIM_PER_ROW * node.aggro)); // and bite
+  let reclaimed = 0;
+  while (node.scanAcc >= 1 && node.scanRow < FIELD_H) {
+    reclaimed += reclaimRow(node.machine, node.sector, node.scanRow, reclaim, node.machine.rng);
+    node.scanRow++; node.scanAcc -= 1;
+  }
+  node.crack = sectorStats(node.machine, node.sector).pct;
+  return reclaimed;
+}
+
+// Tally the volley: coverage, honeypot trace-spike, breach-hold win, trace-complete loss.
+export function resolveVolley(node, ev) {
   const { machine, sector } = node;
   const st = sectorStats(machine, sector);
   node.crack = st.pct;
 
-  // HONEYPOT: burning bait trips the trace — each newly-burned honey costs time
+  // HONEYPOT: burning bait speeds your discovery — nudge the scan faster.
   const newHoney = st.honeyBurned - node.honeyHit;
   if (newHoney > 0) {
     node.honeyHit = st.honeyBurned;
-    node.penalty += newHoney * 2;
-    push(node, `> HONEYPOT TRIPPED x${newHoney}! trace +${newHoney * 2}.`);
+    node.scanAcc += newHoney;
+    push(node, `> HONEYPOT TRIPPED x${newHoney}! trace accelerates.`);
   }
-  const effPass = node.pass + node.penalty;
 
-  push(node, `> pass ${node.pass}: acc ${ev.value} -> heat ${node.heat}. burned ${st.pct.toFixed(0)}% of ${sector.id} (need ${WIN_COVERAGE}%).`);
+  push(node, `> volley ${node.tick}: acc ${ev.value} -> energy ${node.energy}, ${node.pings} pings. ${st.pct.toFixed(0)}%/${WIN_COVERAGE}% of ${sector.id}.`);
 
   if (st.pct >= WIN_COVERAGE) {
-    node.outcome = 'win';
-    sector.conquered = true;
-    push(node, `> ${WIN_COVERAGE}% breached. ${sector.id} is yours.`);
-  } else if (effPass >= LOCKDOWN) {
+    if (node.breachLeft < 0) { node.breachLeft = BREACH_HOLD; push(node, `> ${WIN_COVERAGE}% reached — HOLD for breach (${BREACH_HOLD}).`); }
+    else if (node.breachLeft === 0) { node.outcome = 'win'; sector.conquered = true; push(node, `> breach locked. ${sector.id} is yours.`); }
+    else { node.breachLeft--; }
+  } else if (node.breachLeft >= 0) {
+    node.breachLeft = -1;
+    push(node, `> fell back under ${WIN_COVERAGE}% — breach lost.`);
+  }
+  if (!node.outcome && node.scanRow >= FIELD_H) {
     node.outcome = 'lose';
-    push(node, node.heat <= 5
-      ? `> LOCKDOWN. your program ran too cold to spread through ${sector.id}.`
-      : `> LOCKDOWN. couldn't cover enough of ${sector.id} in time.`);
+    push(node, `> TRACE COMPLETE. discovered in ${sector.id}.`);
   }
   return ev;
 }
 
-export function runPass(node, program) {
-  const ev = beginPass(node, program);
-  for (let s = 0; s < node.steps; s++) burnStep(node.machine, node.sector, node.heat);
-  return endPass(node, ev);
+// Whole volley in one call (headless / tests). The UI runs the steps animated.
+export function runVolley(node, program) {
+  const ev = beginVolley(node, program);
+  while (node.pingsLeft > 0) lobOne(node);
+  advanceScan(node);
+  return resolveVolley(node, ev);
 }
 
 function push(node, line) {

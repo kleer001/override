@@ -11,7 +11,10 @@ import { mulberry32, randInt } from './rng.js';
 
 export const FIELD_W = 80, FIELD_H = 33;
 export const OPEN = 0, HARD = 1, WALL = 2, BUS = 3, VAULT = 4, HONEY = 5;
-export const RESIST = [0, 5, 99, -2, 1, 0];
+// Energy a ping SPENDS to infect each cell (replaces the old heat GATE). WALL is
+// unaffordable; BUS refunds (accelerant). OPEN must cost >=1 or the free flood
+// returns. See research/ember-model.md §2.
+export const COST = [1, 6, Infinity, -1, 2, 1];
 export const idx = (x, y) => y * FIELD_W + x;
 export const WIN_COVERAGE = 50; // % of a sector's claimable cells to breach it
 
@@ -191,69 +194,84 @@ export function generateMachine(seed) {
   return machine;
 }
 
-// fraction of a sector's claimable (non-WALL) cells reachable & burnable at heat
-export function coverageAt(machine, s, heat) {
-  const { t } = machine;
-  const seen = new Uint8Array(FIELD_W * FIELD_H);
-  const start = idx(s.entry.x, s.entry.y); seen[start] = 1;
-  const q = [start];
-  let reach = 0, claim = 0;
-  for (let y = 0; y < FIELD_H; y++) for (let x = s.x0; x <= s.x1; x++) if (t[idx(x, y)] !== WALL) claim++;
-  for (let h = 0; h < q.length; h++) {
-    const c = q[h]; reach++;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = cx(c) + dx, ny = cy(c) + dy;
-      if (nx < s.x0 || nx > s.x1 || ny < 0 || ny >= FIELD_H) continue;
-      const n = idx(nx, ny);
-      if (seen[n]) continue;
-      if (heat > RESIST[t[n]]) { seen[n] = 1; q.push(n); }
-    }
-  }
-  return claim ? reach / claim : 0;
-}
-export function heatToClear(machine, s) {
-  for (let heat = 4; heat <= 9; heat++) if (coverageAt(machine, s, heat) * 100 >= WIN_COVERAGE) return heat;
-  return 99;
-}
-function difficultyOf(machine, s) {
-  const h = heatToClear(machine, s);
-  return h === 99 ? 'BRUTAL' : h <= 4 ? 'EASY' : h <= 5 ? 'MED' : 'HARD';
-}
+const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
-// --- burn ---
-export function ignite(machine, s, embers) {
-  for (const e of embers) if (machine.t[idx(e.x, e.y)] !== WALL) machine.burned[idx(e.x, e.y)] = 1;
-}
-export function burnStep(machine, s, heat) {
-  const { t, burned, rng } = machine;
-  const add = [];
+// Energy to claim the cheapest `pct`% of a sector's claimable cells. Random ping
+// placement means connectivity no longer gates (a ping can land on any island),
+// so difficulty is: how much of the cheap half is unavoidably HARD.
+export function energyTo(machine, s, pct) {
+  const costs = [];
   for (let y = 0; y < FIELD_H; y++) for (let x = s.x0; x <= s.x1; x++) {
     const c = idx(x, y);
-    if (burned[c] || t[c] === WALL) continue;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = x + dx, ny = y + dy;
-      if (nx < s.x0 || nx > s.x1 || ny < 0 || ny >= FIELD_H) continue;
-      if (!burned[idx(nx, ny)]) continue;
-      const jitter = rng() < 0.28 ? 1 : 0;
-      if (heat > RESIST[t[c]] + jitter) { add.push(c); break; }
-    }
+    if (machine.t[c] === WALL) continue;
+    costs.push(Math.max(0, COST[machine.t[c]]));
   }
-  for (const c of add) burned[c] = 1;
-  let go = true;
-  while (go) {
-    go = false;
-    for (let y = 0; y < FIELD_H; y++) for (let x = s.x0; x <= s.x1; x++) {
-      const c = idx(x, y);
-      if (burned[c] || t[c] !== BUS) continue;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const nx = x + dx, ny = y + dy;
-        if (nx < s.x0 || nx > s.x1 || ny < 0 || ny >= FIELD_H) continue;
-        if (burned[idx(nx, ny)]) { burned[c] = 1; go = true; break; }
-      }
-    }
-  }
-  return add.length;
+  costs.sort((a, b) => a - b);
+  const n = Math.ceil(costs.length * pct / 100);
+  let energy = 0; for (let i = 0; i < n; i++) energy += costs[i];
+  return { energy, cells: n, perCell: n ? energy / n : 0 };
 }
+function difficultyOf(machine, s) {
+  const { perCell } = energyTo(machine, s, WIN_COVERAGE);
+  return perCell < 1.4 ? 'EASY' : perCell < 2.2 ? 'MED' : perCell < 3.5 ? 'HARD' : 'BRUTAL';
+}
+
+// --- burn: finite energy-metered pings ---
+// One ping: land at a random non-WALL cell in the sector, then spend `energy`
+// infecting new ground. Conduit rule (ember-model.md §3 tier 1): already-burned
+// cells are free conduits — no cost, no re-infection — so energy only ever buys
+// NEW ground. Returns cells added.
+export function spreadPing(machine, s, energy, rng) {
+  const { t, burned } = machine;
+  let sx, sy, tries = 0;
+  do { sx = randInt(rng, s.x0, s.x1); sy = randInt(rng, 0, FIELD_H - 1); tries++; }
+  while (t[idx(sx, sy)] === WALL && tries < 40);
+  if (t[idx(sx, sy)] === WALL) return 0;
+
+  let spend = energy, added = 0;
+  const start = idx(sx, sy);
+  if (!burned[start]) {
+    const c = COST[t[start]];
+    if (c > spend) return 0;
+    spend -= c; burned[start] = 1; added++;
+  }
+  const frontier = [start];
+  const seen = new Set([start]);
+  while (spend > 0 && frontier.length) {
+    const fi = randInt(rng, 0, frontier.length - 1);
+    const c = frontier[fi], fx = cx(c), fy = cy(c);
+    const opts = [];
+    for (const [dx, dy] of DIRS) {
+      const nx = fx + dx, ny = fy + dy;
+      if (nx < s.x0 || nx > s.x1 || ny < 0 || ny >= FIELD_H) continue;
+      const nc = idx(nx, ny);
+      if (seen.has(nc) || t[nc] === WALL) continue;
+      opts.push(nc);
+    }
+    if (!opts.length) { frontier.splice(fi, 1); continue; }
+    const nc = opts[randInt(rng, 0, opts.length - 1)];
+    seen.add(nc);
+    if (burned[nc]) { frontier.push(nc); continue; }   // free conduit hop
+    const cost = COST[t[nc]];
+    if (cost > spend) continue;                         // can't afford this cell
+    spend -= cost; burned[nc] = 1; added++; frontier.push(nc);
+  }
+  return added;
+}
+
+// The trace scan crossing one row: reclaim up to `budget` burned cells back to
+// neutral (ember-model.md §5). Returns how many were reclaimed.
+export function reclaimRow(machine, s, y, budget, rng) {
+  const { burned } = machine;
+  const cells = [];
+  for (let x = s.x0; x <= s.x1; x++) if (burned[idx(x, y)]) cells.push(idx(x, y));
+  let n = 0;
+  for (let k = 0; k < budget && cells.length; k++) {
+    burned[cells.splice(randInt(rng, 0, cells.length - 1), 1)[0]] = 0; n++;
+  }
+  return n;
+}
+
 export function sectorStats(machine, s) {
   const { t, burned } = machine;
   let claim = 0, burn = 0, honeyBurned = 0, vaultsBurned = true;
