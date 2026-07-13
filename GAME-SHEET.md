@@ -103,7 +103,10 @@ Ignition patterns are prototyped in `preview/` — see the terrain screenshots.
 ## Look & feel
 
 - Monochrome amber-phosphor, an **80×40 character grid**, WebGL CRT filter — all
-  lifted from `finding_numbers`.
+  lifted from `finding_numbers`. This is the **signature baseline**, not a ceiling:
+  the grid is the substrate, and modern graphical juice (real particles, bloom,
+  screen-shake, deliberate color flashes, free-floating pop-text) layers on top for
+  the payoff beats — see [`research/juice-model.md`](research/juice-model.md).
 - The board is alive: a cellular-automata territory war fills ~82% of the screen,
   churning every tick (see the spec sheet). Numbers going up = a stain spreading.
 - Chunky procedural bleeps + a handful of CC0 electromechanical textures + a
