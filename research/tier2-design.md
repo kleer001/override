@@ -323,3 +323,45 @@ current behavior).
    `radius` (WIDE) and the FOCUS/BROADCAST factors, raster lattice spacing,
    `startingAssaultDeck()` contents/size, and whether `SANDBOX` fully rejects or
    just de-weights honey.
+
+---
+
+## PLACEMENT MODEL — RESOLVED (designer, supersedes the anchor/radius/shape descriptor)
+
+The ASSAULT deck is **not aiming and not an {anchor,radius,shape} bag** — it's an
+**oscilloscope**. Pings never target a cell; the deck programs a *scanning
+function* that traces a curve across the field, and pings land along it.
+
+- A scan parameter `t` sweeps one axis (e.g. top→bottom over the volley). The
+  3-card ASSAULT program **composes into a function** `f` applied to `t`; `f(t)`
+  deflects the *cross* axis. Ping i lands at `(x0 + f(t_i)·W, t_i·H)`.
+- Cards are math primitives, composed left→right like the POWER accumulator, so
+  **order is the game** transfers intact:
+  - `LIN` identity (diagonal sweep) · `SIN`/`COS` wave · `MOD` repeating stripes
+    (grid) · `POW` easing/clustering · `TAN` whip-to-edges.
+  - `[SIN][POW][LIN]` = a **chirp** (sine whose frequency warps as it sweeps);
+    reorder → a different curve. Same 3 cards, different coverage — the direct
+    analogue of `+3 +3 ×2 = 12` vs `×2 +3 +3 = 6`.
+
+**Why this resolves the difficulty risk (the flagged blocker):** a *pattern* is
+not a *target*. The player picks a distribution SHAPE; whether it overlaps
+burnable ground is emergent from the procedural board they don't control. So the
+skill is **reading the terrain and matching a curve to it** — the shear lays open
+ground in horizontal bands a `LIN` rake covers, a clustered island wants a tight
+`POW`. It re-engages the terrain instead of bypassing it.
+
+**New difficulty measure for Tier 2:** replace `energyTo`'s random-landing
+assumption with **best-pattern coverage** — the fraction of burnable ground the
+best-available ASSAULT curve can put pings on. "Pattern efficiency"
+(pings-on-burnable / pings) is the skill axis; a sector is harder when no simple
+curve overlaps its open ground well. Recalibrate in a `preview/scan.html` sandbox.
+
+Prototyped headless (`scratchpad/scanpat.mjs`, KERNEL sector seed 3): LIN 48/60,
+SIN 49/60, CHIRP 46/60, GRID 43/60 pings-on-ground — patterns genuinely differ in
+efficiency vs. the same board, confirming the skill loop.
+
+**Open (this model):** (1) 1-D deflection (beam over a linear sweep — simple,
+gives waves/chirps/grids) vs. 2-D (both axes are functions → Lissajous figures,
+richer but harder to read); (2) the card set + whether a "base sequence" card
+(LIN/SPIRAL/…) is required first; (3) how many pings sample the curve (from POWER
+volley size / a TRANSFER-style rate).
