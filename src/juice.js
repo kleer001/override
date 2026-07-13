@@ -19,6 +19,20 @@ const FAST_PERIOD = 500;  // celebration pulse, ~2x the active pulse
 const FAST_PULSES = 4;
 const CELEB_END = FLASH_MS + FAST_PERIOD * FAST_PULSES;
 
+// Detonation (the ×N payoff, §3 ▅): the burned mass surges white-hot and solid
+// for DET_FLASH, then eases back to its breathing pulse over DET_GLOW. Fired from
+// main.js the frame a mult card lands, in sync with the pass-hold + trauma shake.
+const DET_FLASH = 150;
+const DET_GLOW = 320;
+const DET_TOTAL = DET_FLASH + DET_GLOW;
+
+// prefers-reduced-motion path: keep the brightness STATES (a burn still reads as
+// bright, a conquer still settles to a locked grid) but drop the rapid flashes and
+// slow the breathing pulse — the photosensitivity concern from juice-model §6.
+let reduced = false;
+export function setReducedMotion(v) { reduced = !!v; }
+const pulsePeriod = () => (reduced ? PERIOD * 2 : PERIOD);
+
 const wave = (dt, p) => 0.5 - 0.5 * Math.cos(TWO_PI * dt / p); // 0 at dt=0, 1 at p/2
 const round2 = (v) => Math.round(v * 100) / 100;
 
@@ -29,9 +43,16 @@ SECTORS.forEach((s, i) => { for (let x = s.x0; x <= s.x1; x++) SECTOR_OF[x] = i;
 // visual state lives here, keyed to the machine so a new run resets it. Pulse
 // phase reads machine.bornAt (set when a cell burns); this map only tracks each
 // conquered sector's celebration start.
-let state = { machine: null, celeb: new Map() };
+let state = { machine: null, celeb: new Map(), det: { at: -1e9, strength: 0 } };
 function sync(machine) {
-  if (state.machine !== machine) state = { machine, celeb: new Map() };
+  if (state.machine !== machine) state = { machine, celeb: new Map(), det: { at: -1e9, strength: 0 } };
+}
+
+// main.js calls this the frame a mult card detonates (now = performance.now()).
+// strength (roughly 0..1.5) rides the resulting energy so a bigger boom glows
+// harder; the flash timing itself is fixed so the beat reads consistently.
+export function detonate(now, strength = 1) {
+  state.det = { at: now, strength: Math.max(0, Math.min(1.5, strength)) };
 }
 
 const esc = (ch) => ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '&' ? '&amp;' : ch;
@@ -60,16 +81,28 @@ function cellStyle(row, x, y, machine, now) {
   if (sec.conquered) {
     const el = now - (state.celeb.get(sec.id) ?? now);
     if (burned) {
-      if (el < FLASH_MS) return { cls: 'hot', op: 1, ch };
-      if (el < CELEB_END) return { cls: 'brn', op: round2(DIM + (FULL - DIM) * wave(el - FLASH_MS, FAST_PERIOD)), ch };
+      // reduced motion: skip the flash + fast pulses, go straight to the settled grid.
+      if (!reduced) {
+        if (el < FLASH_MS) return { cls: 'hot', op: 1, ch };
+        if (el < CELEB_END) return { cls: 'brn', op: round2(DIM + (FULL - DIM) * wave(el - FLASH_MS, FAST_PERIOD)), ch };
+      }
       // settled: locked-in grid — pull board glyphs to '#', never touch labels
       return { cls: 'brn', op: MED, ch: (ch === '@' || ch === '$') ? '#' : ch };
     }
-    return el < CELEB_END ? { cls: '', op: 1, ch } : { cls: '', op: DARK, ch }; // ground goes dark
+    return (!reduced && el < CELEB_END) ? { cls: '', op: 1, ch } : { cls: '', op: DARK, ch }; // ground goes dark
   }
   if (burned) {
     const born = machine.bornAt[idx(x, y)] || now;
-    return { cls: 'brn', op: round2(DIM + (FULL - DIM) * wave(now - born, PERIOD)), ch };
+    const pulse = round2(DIM + (FULL - DIM) * wave(now - born, pulsePeriod()));
+    const det = now - state.det.at;
+    if (!reduced && det >= 0 && det < DET_TOTAL) {
+      // the detonation surge: solid white-hot mass, then ease back to the pulse.
+      if (det < DET_FLASH) return { cls: 'hot', op: 1, ch: ch === '@' ? '#' : ch };
+      // afterglow floor rides strength — a bigger boom cools down from brighter.
+      const k = (1 - (det - DET_FLASH) / DET_GLOW) * Math.min(1, state.det.strength);
+      return { cls: 'brn', op: round2(Math.max(pulse, DIM + (FULL - DIM) * k)), ch };
+    }
+    return { cls: 'brn', op: pulse, ch };
   }
   return { cls: '', op: 1, ch };
 }
