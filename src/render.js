@@ -141,6 +141,23 @@ function drawTarget(g, game) {
   center(g, 39, `tap a sector to commit · HARDER free (pays more) · SAFER -${AGGRO_REDUCE_COST} PTS`);
 }
 
+// the scanning gnomon: a crosshair converging on the cell it's about to ignite.
+// With beams on (travelling/locking) it draws a vertical beam down the target
+// column and a horizontal beam across the sector; with beams off (during a
+// bloom) only the '╬' reticle remains, so the crosshair is continuously on
+// screen without covering the burn. Drawn before the sector labels so it never
+// clobbers them. main.js owns the position + on/off timing.
+function drawGnomon(g, node, gn) {
+  if (!gn || !gn.active || gn.x == null) return;
+  const s = node.sector, gx = gn.x, gy = gn.y;
+  if (gx < s.x0 || gx > s.x1 || gy < 0 || gy >= FIELD_H) return;
+  if (gn.beams) {
+    for (let y = 0; y < FIELD_H; y++) g[FIELD_TOP + y][gx] = '║';   // vertical scan beam
+    for (let x = s.x0; x <= s.x1; x++) g[FIELD_TOP + gy][x] = '═';  // horizontal scan beam
+  }
+  g[FIELD_TOP + gy][gx] = '╬';                                      // the lock reticle
+}
+
 function drawBurning(g, game) {
   const node = game.node;
   drawMachineBoard(g, game.run.machine);
@@ -148,6 +165,7 @@ function drawBurning(g, game) {
   if (node.scanRow < FIELD_H) {
     for (let x = node.sector.x0; x <= node.sector.x1; x++) g[FIELD_TOP + node.scanRow][x] = '─';
   }
+  drawGnomon(g, node, game.gnomon);
   game.run.machine.sectors.forEach((s) => {
     const tag = s.conquered ? `${s.id} ·OWNED·` : s === node.sector ? `${s.id} «BURNING»` : s.id;
     stamp(g, s.x0 + 1, FIELD_TOP, tag.slice(0, s.x1 - s.x0));

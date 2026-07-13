@@ -8,16 +8,27 @@ import { SHOP_ITEMS, CHAR_UNLOCK, CARD_UNLOCK } from './shop.js';
 import { generateMachine, newCode, createNode, beginVolley, planLob, advanceScan, resolveVolley, REDRAW_COST,
   rewardMult, draftPicks, AGGRO_BASE, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
 import { buildScreen } from './render.js';
-import { composeBoard } from './juice.js';
+import { composeBoard, detonate, setReducedMotion } from './juice.js';
+import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
 import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
 import { CHARACTERS } from './characters.js';
-import { WIN_COVERAGE, sectorStats } from './terrain.js';
+import { WIN_COVERAGE, sectorStats, FIELD_W } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
 const screen = document.getElementById('screen');
+const crtEl = document.querySelector('.crt');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const GROW_MS = 14; // per-cell reveal — an ember lands then grows one cell at a time
+const DET_HOLD = 90; // pass-hold: extra ms the frame freezes when a mult detonates
+
+// --- game feel (research/juice-model.md) ---
+// One trauma scalar drives the CRT-container shake; reduced-motion drops the shake
+// and rapid flashes but keeps the brightness states (accessibility, §6).
+const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+setReducedMotion(reduceMotion);
+const trauma = createTrauma();
+const kick = (amount) => { if (!reduceMotion) trauma.add(amount); };
 const ROOT_KEY = 'override.root';
 const DECK_KEY = 'override.deck';     // persistent deck: card ids, survives runs
 const POINTS_KEY = 'override.points'; // persistent points bank
@@ -27,6 +38,11 @@ const game = {
   phase: 'assemble', run: null, node: null,
   program: [null, null, null], selection: [], hand: [], draft: [],
   playhead: -1, prompt: '', message: '', seed: 0, redrawCount: 0,
+  // scanning gnomon: an automated targeting crosshair that sweeps the arena to
+  // place each trace-ember (the player watches it aim, they don't drive it).
+  // active = the reticle is on the board; beams = the long crosshair lines show
+  // (only while travelling/locking, so they don't cover a blooming ember).
+  gnomon: { x: null, y: null, active: false, beams: false },
 };
 
 const loadRoot = () => parseInt(localStorage.getItem(ROOT_KEY) || '120', 10) || 120;
@@ -90,6 +106,7 @@ function startRun() {
     availChars: availChars(), overclockEnergy: overclock ? 2 : 0, retry: loadRetry(),
   };
   savePlays(plays + 1);
+  trauma.reset();                     // never carry shake across runs
   game.node = null;
   game.phase = 'charselect';
   game.prompt = overclock ? 'OVERCLOCK ARMED — hotter pings, faster trace this run.' : '';
@@ -185,29 +202,71 @@ function chooseSector(si) {
   startExec();
 }
 
+const GNOMON_MS = 22;   // per-step of the scanning-gnomon sweep
+
+// The automated targeting crosshair travels from its last lock to (tx,ty) with a
+// smoothstep ease, then locks on — this is the "aim" the player watches instead
+// of driving. Cells still come from planLob (random placement); the gnomon just
+// makes the placement legible and deliberate. Snaps instantly under reduced motion.
+async function sweepGnomon(tx, ty) {
+  const gn = game.gnomon;
+  gn.active = true; gn.beams = true;                          // beams on while it travels + locks
+  if (gn.x == null) { gn.x = tx; gn.y = ty; }                 // first lob: crosshair snaps in
+  const sx = gn.x, sy = gn.y;
+  const dist = Math.abs(tx - sx) + Math.abs(ty - sy);
+  const steps = reduceMotion ? 1 : Math.min(9, Math.max(2, Math.round(dist / 5)));
+  for (let s = 1; s <= steps; s++) {
+    const e = s / steps, k = e * e * (3 - 2 * e);             // smoothstep
+    gn.x = Math.round(sx + (tx - sx) * k);
+    gn.y = Math.round(sy + (ty - sy) * k);
+    draw();
+    await sleep(GNOMON_MS);
+  }
+  gn.x = tx; gn.y = ty;
+  sfx.ping();                                                  // radar lock on the target
+  draw();
+  await sleep(reduceMotion ? 0 : 60);                          // a beat on the locked crosshair
+}
+
 async function startExec() {
   resumeAudio();
   sfx.exec();
+  game.gnomon = { x: null, y: null, active: false };           // fresh scan per node
   await sleep(220);
   const node = game.node;
   while (!node.outcome) {
     const ev = beginVolley(node, game.program.slice());
     for (let i = 0; i < 3; i++) {
       game.playhead = i;
-      const k = game.program[i].kind;
-      if (k === 'mult') sfx.mult(game.program[i].value);
-      else if (k === 'fork') sfx.fork();
-      else if (k === 'interrupt') sfx.ice();
-      else sfx.add(i);
-      draw();
-      await sleep(190);
+      const card = game.program[i];
+      const k = card.kind;
+      if (k === 'mult') {
+        // DETONATION (§3 ▅): sound + flash + shake + pass-hold, all on one frame.
+        sfx.mult(card.value);
+        const power = Math.min(1, node.energy / 120) * (card.value / 2); // ∝ result & multiplier
+        kick(0.35 + 0.45 * power);
+        if (!reduceMotion) detonate(clock(), 0.6 + power);
+        draw();
+        await sleep(190 + (reduceMotion ? 0 : DET_HOLD));               // freeze so the hit lands
+      } else {
+        if (k === 'fork') sfx.fork();
+        else if (k === 'interrupt') sfx.ice();
+        else sfx.add(i);
+        draw();
+        await sleep(190);
+      }
     }
     game.playhead = -1;
     const before = node.crack;
-    while (node.pingsLeft > 0) { // each ember lands, then grows outward one cell at a time
+    const honeyBefore = node.honeyHit;
+    game.gnomon.active = true;
+    while (node.pingsLeft > 0) { // gnomon scans to each landing site, then the ember blooms
       const cells = planLob(node);
-      const hit = clock(); // cluster anchor — the whole ember shares this pulse phase
       if (!cells.length) { await sleep(GROW_MS * 3); continue; }
+      const anchor = cells[0]; // planPing's first cell is where the ping lands
+      await sweepGnomon(anchor % FIELD_W, (anchor / FIELD_W) | 0);
+      game.gnomon.beams = false; // drop the long beams; the reticle rides the target through the bloom
+      const hit = clock(); // cluster anchor — the whole ember shares this pulse phase
       for (const c of cells) {
         node.machine.burned[c] = 1;
         node.machine.bornAt[c] = hit;
@@ -216,14 +275,17 @@ async function startExec() {
         await sleep(GROW_MS);
       }
     }
+    game.gnomon.active = false; // scan phase — the gnomon steps off the board
     advanceScan(node); // the trace scan descends + reclaims
     draw();
     await sleep(140);
     resolveVolley(node, ev);
     if (node.crack > before) sfx.crack();
+    if (node.honeyHit > honeyBefore) { sfx.honeypot(); kick(0.5); } // ▄ warning jolt — a bad surprise
     draw();
     await sleep(260);
   }
+  if (node.outcome === 'lose') { sfx.flatline(); kick(0.9); }        // █ trace doom — caught
   showResult();
 }
 
@@ -239,6 +301,7 @@ function showResult() {
     const bonus = Math.round(Math.max(0, node.crack - WIN_COVERAGE) * mult);
     r.points += bonus; savePoints(r.points);
     r.pendingDrafts = draftPicks(node.aggro, node.baseAggro);
+    kick(0.7);                        // ▆ breach — the sector falls, celebrate it
     sfx.lock(); sfx.win();
     game.message = `>> ${node.sector.id} BREACHED (aggro x${node.aggro.toFixed(2)}). +${reward} ROOT, +${bonus} PTS, ${r.pendingDrafts} draft. [ENTER].`;
     game.prompt = `${node.sector.id} cracked — its codes fall.`;
@@ -382,9 +445,22 @@ window.addEventListener('keydown', (e) => {
 
 // pulse loop: repaint (~30fps) while the field is live so captures breathe and
 // the conquer celebration plays. Other screens repaint on demand via draw().
+// The shake runs every frame (60fps) so a jolt settles smoothly even between
+// paints and even on static screens (breach/doom fire outside the exec loop).
 const needsAnim = () => game.node && (game.phase === 'exec' || game.phase === 'result');
-let lastPaint = 0;
+let lastPaint = 0, lastFrame = 0, shaking = false;
+function applyShake(dt) {
+  trauma.decay(dt);
+  if (!crtEl) return;
+  if (trauma.value <= 0) { if (shaking) { crtEl.style.transform = ''; shaking = false; } return; }
+  shaking = true;
+  const s = trauma.shake();
+  crtEl.style.transform = `translate(${s.x.toFixed(2)}px, ${s.y.toFixed(2)}px) rotate(${s.rot.toFixed(3)}deg)`;
+}
 function animLoop(t) {
+  const dt = lastFrame ? t - lastFrame : 16;
+  lastFrame = t;
+  applyShake(dt);
   if (needsAnim() && t - lastPaint >= 33) { lastPaint = t; paint(t); }
   requestAnimationFrame(animLoop);
 }

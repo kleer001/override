@@ -60,10 +60,14 @@ export const sfx = {
     for (let i = 0; i < 3 + m; i++) setTimeout(() => blip(500 + i * 120, 0.05, 'square', 0.13), i * 45);
   },
   crack: () => blip(820, 0.04, 'square', 0.1),
+  ping: () => blip(1500, 0.03, 'sine', 0.05, 900), // scanning-gnomon lock — a soft radar tick
   lock: () => blip(1040, 0.09, 'triangle', 0.16),
   fork: () => { blip(360, 0.05, 'square', 0.14); setTimeout(() => blip(540, 0.05, 'square', 0.14), 60); },
   ice: () => noise(0.09, 0.1),
   exec: () => blip(2600, 0.12, 'sine', 0.08), // the phreak tone, briefly
   win: () => [0, 1, 2, 3].forEach((i) => setTimeout(() => blip(523 * Math.pow(2, i / 12 * 4), 0.12, 'square', 0.16), i * 90)),
   lose: () => [0, 1, 2, 3].forEach((i) => setTimeout(() => blip(400 - i * 60, 0.16, 'sawtooth', 0.16, 200 - i * 40), i * 120)),
+  // negative juice (juice-model §3 ▄/█): a bad surprise must sound like one.
+  honeypot: () => { blip(300, 0.14, 'sawtooth', 0.16, 90); noise(0.08, 0.08); }, // sharp descending jolt
+  flatline: () => blip(150, 0.9, 'sine', 0.12),                                   // the trace-complete drone
 };
