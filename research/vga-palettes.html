@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OVERRIDE — VGA 256-colour study</title>
+<link rel="icon" href="data:,">
+</head>
+<body>
+<title>OVERRIDE — VGA 256-colour study</title>
+<style>
+  /* ===== OVERRIDE · VGA colour study ====================================
+     Sibling to the CGA study. Same 1983 bench, next-gen glass: a 1987 VGA
+     monitor, 256 colours from an 18-bit DAC. Committed single dark world. */
+  :root{
+    --bg:#08090b; --panel:#101216; --panel-2:#14171d;
+    --line:#242a32; --line-hi:#333b46; --muted:#6d7883; --fg:#c8cfd7;
+    --fg-hi:#eef2f6; --accent:#55ffff; --accent-dim:#1c5c5c;
+    --mono:"Courier New",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --maxw:1200px;
+  }
+  :root[data-theme="light"]{ color-scheme:dark; }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:var(--bg); color:var(--fg); font-family:var(--sans); }
+  body{
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #12101b 0%, rgba(8,9,11,0) 60%),
+      var(--bg);
+    padding:clamp(18px,4vw,52px) clamp(14px,4vw,40px) 80px;
+  }
+  .wrap{ max-width:var(--maxw); margin:0 auto; }
+
+  .eyebrow{ font-family:var(--mono); font-size:12px; letter-spacing:.32em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 18px; }
+  h1{ font-family:var(--mono); font-weight:700; text-transform:uppercase;
+    font-size:clamp(30px,7vw,68px); line-height:.98; letter-spacing:.06em;
+    margin:0; color:var(--fg-hi); text-wrap:balance; text-shadow:0 0 24px rgba(85,255,255,.10); }
+  h1 .thin{ color:var(--muted); }
+  .lede{ font-size:clamp(15px,1.6vw,18px); color:var(--fg); max-width:64ch; margin:22px 0 0; }
+  .lede b{ color:var(--fg-hi); font-weight:600; }
+  .meta{ font-family:var(--mono); font-size:12.5px; color:var(--muted); letter-spacing:.04em;
+    margin:20px 0 0; display:flex; flex-wrap:wrap; gap:6px 22px; }
+  .meta span{ white-space:nowrap; } .meta b{ color:var(--accent); font-weight:400; }
+
+  hr.rule{ border:0; border-top:1px solid var(--line); margin:44px 0; }
+
+  /* ---- VGA reference: the 18-bit DAC as ramps ---- */
+  .ref{ margin-top:40px; }
+  .ref h2, .controls-h{ font-family:var(--mono); font-size:12px; letter-spacing:.28em; text-transform:uppercase;
+    color:var(--muted); margin:0 0 14px; font-weight:400; }
+  .ramps{ display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+  .rampcard{ background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 14px; }
+  .rampcard .bar{ height:26px; border-radius:5px; box-shadow:inset 0 0 0 1px rgba(255,255,255,.06); }
+  .rampcard .lbl{ font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:9px; letter-spacing:.03em; }
+  .rampcard .lbl b{ color:var(--fg); font-weight:400; }
+
+  .controls{ display:flex; align-items:center; gap:16px; margin:36px 0 8px; flex-wrap:wrap; }
+  .toggle{ display:inline-flex; align-items:center; gap:9px; cursor:pointer; user-select:none;
+    font-family:var(--mono); font-size:12.5px; letter-spacing:.06em; color:var(--fg); }
+  .toggle input{ position:absolute; opacity:0; width:0; height:0; }
+  .track{ width:38px; height:20px; border-radius:20px; background:var(--panel-2);
+    border:1px solid var(--line-hi); position:relative; transition:background .15s,border-color .15s; }
+  .track::after{ content:""; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%;
+    background:var(--muted); transition:transform .15s,background .15s; }
+  .toggle input:checked + .track{ background:var(--accent-dim); border-color:var(--accent); }
+  .toggle input:checked + .track::after{ transform:translateX(18px); background:var(--accent); }
+  .toggle input:focus-visible + .track{ outline:2px solid var(--accent); outline-offset:2px; }
+
+  .spec{ margin-top:54px; }
+  .spec-head{ display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+  .spec-id{ font-family:var(--mono); font-size:13px; letter-spacing:.2em; color:var(--accent);
+    border:1px solid var(--accent-dim); border-radius:5px; padding:4px 9px; }
+  .spec-name{ font-family:var(--mono); text-transform:uppercase; font-weight:700; letter-spacing:.05em;
+    font-size:clamp(19px,2.6vw,27px); color:var(--fg-hi); margin:0; }
+  .spec-tag{ color:var(--muted); font-size:14px; margin:0; }
+
+  .spec-body{ display:grid; grid-template-columns:minmax(0,1.55fr) minmax(260px,1fr); gap:26px; align-items:start; }
+  @media (max-width:860px){ .spec-body{ grid-template-columns:1fr; } }
+
+  .monitor{ background:linear-gradient(#1c1e24,#0e1013); border:1px solid var(--line-hi); border-radius:16px;
+    padding:clamp(10px,1.6vw,20px); box-shadow:0 24px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.05); }
+  .glass{ position:relative; background:#000; border-radius:9px; overflow:auto;
+    padding:clamp(8px,1.4vw,16px) clamp(6px,1vw,12px); box-shadow:inset 0 0 60px rgba(0,0,0,.9), inset 0 0 0 1px #000; }
+  .screen{ font-family:var(--mono); white-space:pre; margin:0; display:block;
+    font-size:clamp(6.5px,calc((100vw - 120px)/95),13px); line-height:1.15; letter-spacing:0; min-width:48em; }
+  /* VGA: finer dot-pitch than CGA → a tighter, softer glow */
+  .glass::before, .glass::after{ content:""; position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity .2s; }
+  .glass::before{ background:repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,.18) 3px, rgba(0,0,0,.18) 4px);
+    mix-blend-mode:multiply; z-index:3; }
+  .glass::after{ background:radial-gradient(ellipse at center, rgba(0,0,0,0) 62%, rgba(0,0,0,.45) 100%); z-index:2; }
+  body.crt .glass::before, body.crt .glass::after{ opacity:1; }
+  body.crt .screen span{ text-shadow:0 0 3px currentColor, 0 0 7px currentColor; }
+
+  .caption{ font-family:var(--mono); font-size:11.5px; color:var(--muted); margin:10px 2px 0; letter-spacing:.03em; }
+
+  .notes h3{ font-family:var(--mono); font-size:12px; letter-spacing:.22em; text-transform:uppercase;
+    color:var(--muted); font-weight:400; margin:0 0 10px; }
+  .notes p{ font-size:14px; margin:0 0 14px; color:var(--fg); }
+  .notes p.lineage{ color:var(--muted); font-size:13px; } .notes p.lineage b{ color:var(--fg); font-weight:600; }
+  .risk{ font-size:12.5px; color:var(--muted); border-left:2px solid var(--line-hi); padding:2px 0 2px 12px; margin:0 0 18px; }
+  .risk b{ color:#ffb87a; font-weight:600; letter-spacing:.04em; }
+
+  .legend{ display:flex; flex-direction:column; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .lrow{ display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:11px; background:var(--panel); padding:7px 12px; }
+  .lrow .g{ font-family:var(--mono); font-size:15px; width:1.1em; text-align:center; }
+  .lrow .swatch{ height:13px; border-radius:3px; box-shadow:inset 0 0 0 1px rgba(255,255,255,.08); }
+  .lrow .el{ font-family:var(--mono); font-size:11px; color:var(--fg); text-align:right; letter-spacing:.02em; white-space:nowrap; }
+
+  footer{ margin-top:70px; border-top:1px solid var(--line); padding-top:22px;
+    font-family:var(--mono); font-size:12px; color:var(--muted); letter-spacing:.03em; max-width:80ch; }
+  footer b{ color:var(--fg); font-weight:400; }
+
+  @media (prefers-reduced-motion:reduce){ *{ transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">OVERRIDE · display R&amp;D · gen 2 · watch-don't-click</p>
+  <h1>Two<span class="thin">-</span>fifty<span class="thin">-</span>six<br>colour burn</h1>
+  <p class="lede">
+    The same EXEC screen, one hardware generation on: a 1987 <b>VGA monitor</b>, <b>256 colours</b>
+    on screen at once from an <b>18-bit DAC</b>. CGA gave us flat cells; VGA gives us <b>ramps</b> —
+    so the intrusion can carry real <em>temperature</em>, the terrain can be <em>shaded</em>, and depth
+    stops being a glyph trick. Every colour below is snapped to VGA's 6-bits-per-channel palette.
+  </p>
+  <p class="meta">
+    <span>SOURCE · <b>buildScreen()</b> seed 19</span>
+    <span>PHASE · <b>EXEC</b>, mid-burn on IO.SYS</span>
+    <span>NEW · <b>per-cell shading</b> + fire ramps</span>
+    <span>DAC · <b>18-bit</b>, 256 on screen</span>
+  </p>
+
+  <section class="ref">
+    <h2>The upgrade — VGA, 256 from 262,144</h2>
+    <div class="ramps" id="ramps"></div>
+  </section>
+
+  <div class="controls">
+    <span class="controls-h">Bench</span>
+    <label class="toggle">
+      <input type="checkbox" id="crtToggle" checked>
+      <span class="track"></span>
+      <span>CRT scanlines &amp; bloom</span>
+    </label>
+  </div>
+
+  <hr class="rule">
+
+  <div id="specimens"></div>
+
+  <footer>
+    <b>Read-out.</b> Open ground is still black — an unburned cell is empty machine. What changed from the
+    CGA study is <b>shading</b>: terrain is filled from a low-frequency ramp so walls and bedrock read as
+    lit surfaces, and the burn samples a <b>fire ramp</b> — frontier <b>@</b> runs white-hot, the settled
+    core <b>#</b> cools to deep coal — so heat is legible without a single number. Glyphs and layout are
+    untouched; this stays a paint pass, just with a lookup that ramps on cell position instead of a flat
+    colour. Colours quantise to VGA's 18-bit DAC (64 levels per channel).
+  </footer>
+</div>
+
+<script type="text/plain" id="board">TIER 1: THE MACHINE   CONQUERED 1/3   ROOT:340        TRACE[##......] 9/33      
+CODE  0 6 _ _ _ _ _ _                                                           
+CHOOSE TARGET — match your energy to the terrain                                
+ KERNEL   ▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ IO.SYS «BURNING»▓▓▓▓▓▓▓$ ▓▓SWAP▓▓▓▓▓▓▓▓▒▒▒▒    ▒▒▓▓▓
+         ▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ▒     ▓▓▓▓▓║▓▓▓▓▓▓▓▓▓▓▓  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒▒▒  ▒▒▒▓
+▓▓▓▓▓▓▓▓      ▒▒▒▒▒▒▒▓▓▓▓▓▓▒     ▓▓▓▓▓▓║▓▓▓▓▓▓▓▓▓   ▒▓▓▓▓▒▒▒▒ ▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+     ▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓  ▓═▓▓▓▓▓   ▒▒▒║▒    ▓▓▓▓▓▓▓═▓▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒▒▒ ▒▒
+▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓       ▒▓═▓▓▓▓▓      ║      ▓▓▓▓▓▓═▓▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒    ▒
+▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓    "  ▓@@   ▒▒    ▓║▓▓▓▓▓▓▓▓▓▓▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓     ▒▒▓▓
+▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓       ▓@    ▒▒▒▒▒  ║▓▓▓▓▓▓▓▓▓▒▒▒▒▓    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  
+▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▒       ▒▒▒▓@▒       ▒▒▒║    ▓▓▓▓▓▓▓▓▒▓   ▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  
+    ▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▒   ▓      ▒▒▒   ║     ▒▒▒     ▓     ▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+    ▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓    ▓────────────║─────────────▓"▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓        ▒▒▒▓   ▒▒▒▒▒    ║             ▓▓▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▒         ▒▓▒           ║     ▒▒▒▒▒▒▒▒▓▓▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+      ▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓    ▓▒▒▒▒▒▒▒     ║   ▓        ▒▓▓▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+      ▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓  ▒ ▓▒▒▒▒▒▒▒     ║   ▓@@@     ▒▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒
+   ▒▒▒▒▒▒▒▒ ▒▓▓▓▓▓▓▓ ▒▒   ▓════════════╬═════════════▓ ▒▒▒▒▒ ▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
+▒   ▒▒▒▒▒  ▓▓▓▓▓▓  ▒▒     ▓     ▓     @║@@  @        ▓    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓   ▒▒▒ 
+    ▒▒▒▒   ▓▓▓▓▒▒▒▒▒▒     ▓           @║   @▓@@  @   ▓    ═▓▓▓▓▓▓▓▓▓▓▓▓▓▓       
+    ▒▒▒▒▒▒▒   ▒▒▒▒▒▒▒▒▒   ▓          ▓ ║   @#@@ @#@  ▓    ═▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ▒     
+    ▒▒▒▒▒▒▒   ▒▒▒▒▒▒▒▒▒   ▓          ▓ ║    @ @ @#@  ▓═▓▓▓▒▒      ▓▓▓▓▓▓▓▓▒▒▒▓▓▓
+▒▒      ▒▒▒▓▒▒▒    ▒▒▒▒▒▒▒▓            ║"      ▓ @@  ▓ ▒      ▓▓▓▓▓▓▓▓▓▒▓▓▓▓▓▓▓▓
+▒      ▒▒▓▓▓▓▓▓    ▒▒▒▒▒▒▒▓            ║      @@     ▓═       ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+  ▒▒▓▓▓▓▓▓▓▓  ▓▒▒▒▒▒▒▒    ▓@@ @        ║      @#@    ▓═    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+▓▓▓▓▓▓▓▓▓ ▓▒▒▒▒▒        ▒▓▓#@@@@       ║      @#@    ▓═▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+  ▒▒▒▒▓▓▓▓▓▓▓▓▓ ▓▒▒▒▒     ▓@          ▒║       @     ▓▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒▒▒
+▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▒▓ ▒▒▒     ▓        ▒▒▒ ║       ▒▒▒▒  ▓▓▓ ▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓
+▒▒▒▒▓═▓▓▓▓▓▓▓▒▓▒▒▒▒      ▒▓       ▒▒▒  ║             ▓▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ▒▒
+▓▓▓▓▓═▒▒▒       ▒▒▒▒▒▓▓▓▓▓▓     @      ║       ▒▒    ▓▒▒▓▓▓▓▓▓▓▓▓▓▓▓ ▒▒▒▒▒▒▒▒▒▒▒
+▓▓▓▓▓▓▒▒▒  ▒▒▒  ▒▒▒▒▓▓▓▓▓▓▓    @@      ║     ▒▒▒▒   @▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓ ▒▒▒▒
+▓▓▒▒▒▓▓▓▓▓▓▓▒▒▒   "   ▒▓▓▓▓@  @#@@     ║     ▒▒@   @#▓▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓  ▒▒
+$▒▓▓▓▓▓▒▒▒▒▒▓▓▓▓▓▓▒▒▒▒▒   ▓#@  @       ║  ▒  ▒▒@@  @#▓▓▓   ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓
+▒▒▒▒▒▓▓▓▓▓▓▒▒▒▒▒   ▒▒▓▓▓▓▓▓#@  @       ║▒▒@@@▒▒@  @##▓▓▓▓    ▒▒▒▒▒▒▒▒▒▒▒▒ ▓ ▓▓▓▓
+▒▒▒▒▒▒▓▓▓▓▓▒▒▒▒▒   ▒▒▒▓▓▓▒▓#@          ║  @▒▒   @@@@@▓     ▒▒▒▒▒▒▒▒▒▒▒▒▒   ▓▓▓▓▓
+▒▒═════▒▒▒▒    ▒▒▒▒▓▒▒▒▒▒▒▓#@          ║  ▒▒▒        ▓   ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  $▓▓▓▓ 
+PROGRAM  [ BRUTE +3  ][>XOR x2   <][ BRUTE +3  ]                                
+CRACK [####..........................] 13%/50%  E9                              
+> volley 5: acc 9 -> energy 9, 3 pings. 11%/50% of IO.SYS.                      
+> volley 6: acc 9 -> energy 9, 3 pings. 13%/50% of IO.SYS.                      </script>
+
+<script>
+(() => {
+  "use strict";
+
+  const clamp = (v,a,b) => v<a?a:v>b?b:v;
+
+  // ---- VGA 18-bit DAC quantise: 64 levels per channel ----
+  function q6(hex){
+    const p = i => parseInt(hex.slice(i,i+2),16);
+    const s = c => Math.round(Math.round(c/255*63)/63*255);
+    return "#"+[s(p(1)),s(p(3)),s(p(5))].map(c=>c.toString(16).padStart(2,"0")).join("");
+  }
+  function lerpHex(a,b,t){
+    const pa=i=>parseInt(a.slice(i,i+2),16), pb=i=>parseInt(b.slice(i,i+2),16);
+    const m=(x,y)=>Math.round(x+(y-x)*t);
+    return "#"+[m(pa(1),pb(1)),m(pa(3),pb(3)),m(pa(5),pb(5))].map(c=>c.toString(16).padStart(2,"0")).join("");
+  }
+  function rampAt(ramp,t){
+    t=clamp(t,0,1); const s=t*(ramp.length-1), i=Math.floor(s);
+    return q6(i>=ramp.length-1 ? ramp[ramp.length-1] : lerpHex(ramp[i],ramp[i+1],s-i));
+  }
+  const cssRamp = ramp => `linear-gradient(90deg,${ramp.map(q6).join(",")})`;
+
+  // ---- deterministic shading fields (the VGA gradient trick) ----
+  const hash = (x,y) => { const n=Math.sin(x*127.1+y*311.7)*43758.5453; return n-Math.floor(n); };
+  // smooth diagonal bands + gentle grain → terrain reads as a lit surface
+  const surface = (x,y) => clamp(0.28 + 0.55*(0.5+0.5*Math.sin(x*0.17 - y*0.27)) + 0.14*(hash(x,y)-0.5), 0, 1);
+  // heat: frontier hotter than core, with grain + a vertical lick
+  const heat = (x,y,flame) => clamp((flame?0.74:0.36) + 0.22*hash(x*1.7,y*1.3) + 0.12*Math.sin(y*0.45+x*0.1), 0, 1);
+
+  // ---- glyph → element class ----
+  function classOf(ch){
+    switch(ch){
+      case " ":  return "bg";
+      case "▓":  return "wall";
+      case "▒":  return "hard";
+      case "@":  return "flame";
+      case "#":  return "ember";
+      case "$":  return "vault";
+      case '"':  return "honey";
+      case "║":  return "beam";
+      case "═":  return "bus";
+      case "╬":  return "reticle";
+      case "─":  return "scan";
+      case "«": case "»": return "alarm";
+      case ".": case "_": return "dim";
+      case "[": case "]": return "frame";
+      default:   return "text";
+    }
+  }
+
+  // ---- three VGA-era palettes. wall/hard/flame/ember are RAMPS; rest flat. ----
+  // fire ramps run coal → white; terrain ramps run shadow → lit.
+  const SIERRA = { // painterly 256-colour adventure VGA
+    bg:"#0a0b12",
+    wall:["#20222c","#33384a","#474f68","#5b6788","#727f9c"],
+    hard:["#2f2820","#4c3b2b","#6c543c","#8c7050","#a98a66"],
+    flame:["#5a2410","#9a4718","#d47a22","#ffb24a","#ffe6a0","#fff7e0"],
+    ember:["#3a1608","#6b2f10","#a2531c","#d68a3a","#f0b866"],
+    vault:"#ffd766", honey:"#7fc86a", beam:"#bfe0ff", bus:"#d8b06a",
+    reticle:"#ffffff", scan:"#ff6a52", alarm:"#ff9a5a", dim:"#454b5a", frame:"#8b93a6", text:"#cfd7e4",
+  };
+  const IDTECH = { // id Software — DOOM / Wolf3D, dark & molten
+    bg:"#050505",
+    wall:["#141312","#26221d","#3a3128","#4e4034","#5f4e3c"],
+    hard:["#1e0c08","#361410","#54241a","#742f20","#8f3d26"],
+    flame:["#2a0602","#7a1c06","#c23a0a","#ff6a10","#ffb020","#ffe86a"],
+    ember:["#1a0402","#4e1204","#8a2c0a","#c05014","#e07a1c"],
+    vault:"#ffd230", honey:"#8aa62e", beam:"#a82012", bus:"#8a6a2a",
+    reticle:"#ff3b22", scan:"#ff1810", alarm:"#ff2810", dim:"#33291f", frame:"#8a2018", text:"#b8a68c",
+  };
+  const DEMOSCENE = { // Future Crew / cyberspace neon plasma
+    bg:"#06040f",
+    wall:["#120f30","#221a58","#33268c","#4a34c0","#6a4af0"],
+    hard:["#08222f","#0d4356","#127687","#18aac2","#2ad6ea"],
+    flame:["#4a0860","#9a12b0","#e030d0","#ff5ae0","#ff9af0","#ffe6ff"],
+    ember:["#2c0640","#5c0a80","#9012b8","#c22ad8","#e05af0"],
+    vault:"#eaff30", honey:"#2dff8f", beam:"#30f0ff", bus:"#30ffa0",
+    reticle:"#ffffff", scan:"#ff2a6a", alarm:"#ff2a6a", dim:"#2a2a5a", frame:"#30f0ff", text:"#7ad6ff",
+  };
+
+  const SPECS = [
+    { id:"EXP·04", name:"Adventure VGA — Painterly 256", pal:SIERRA,
+      tag:"the Sierra / LucasArts 256-colour illustration look",
+      lineage:["King's Quest V","Monkey Island 2","Loom","Space Quest IV"],
+      body:"The first thing VGA bought was <em>gradients</em>. Terrain fills from a soft slate-and-sandstone ramp so the board reads as a lit surface, not a stencil — and the burn runs a warm campfire ramp, coal at the core to a buttery white edge. It's the painterly adventure-game palette: legible, warm, a machine that looks <em>rendered</em> rather than plotted.",
+      risk:"Softness cuts contrast. On a fast EXEC the gentle mid-tones can bury the reticle — the targeting layer may need to stay pure white to punch through." },
+    { id:"EXP·05", name:"id Tech — Molten Dark", pal:IDTECH,
+      tag:"DOOM / Wolfenstein: shadow, rust, and fire",
+      lineage:["DOOM","Wolfenstein 3D","Blake Stone","Rise of the Triad"],
+      body:"id's 256-palette lived in shadow so the fire could scream. Walls sink to near-black steel, bedrock rusts blood-brown, and the intrusion is a proper molten ramp — deep coal to white-hot spark. Red belongs to the trace scan alone, so the enemy clock reads as danger the instant it moves. This is the palette that suits an intrusion <em>battler</em> best: it feels hostile.",
+      risk:"Everything skews warm and dark. Vault-gold, flame-orange and trace-red crowd one corner of the wheel — accessibility needs the glyph and brightness deltas doing real work." },
+    { id:"EXP·06", name:"Cyberspace — Demoscene Plasma", pal:DEMOSCENE,
+      tag:"Future Crew neon: the netrunner fantasy, lit",
+      lineage:["Second Reality","Unreal (demo)","cyberpunk VGA","Crystal Dream"],
+      body:"The demoscene showed what 256 colours could really do: electric plasma. Indigo-to-violet structure, a teal-to-cyan bedrock ramp, and a magenta-to-white plasma burn — with an electric-cyan gnomon slicing through it. This is OVERRIDE's own fiction rendered literally: you're not lighting a room, you're inside the machine. The most <em>OVERRIDE</em> of the six.",
+      risk:"Maximum saturation is maximum fatigue. Gorgeous for a 20-second EXEC, potentially exhausting across a full run — it may want a desaturated calm state between volleys." },
+  ];
+
+  const ELEMENTS = [
+    ["wall","▓","WALL"], ["hard","▒","HARD"], ["flame","@","FLAME"], ["ember","#","EMBER"],
+    ["reticle","╬","RETICLE"], ["beam","║","SCAN-BEAM"], ["bus","═","BUS"], ["scan","─","TRACE"],
+    ["vault","$","VAULT"], ["honey",'"',"HONEYPOT"], ["text","A","READ-OUT"],
+  ];
+  const RAMP_CLASSES = new Set(["wall","hard","flame","ember"]);
+
+  // resolve a colour for one cell (ramp classes shade on position)
+  function colorFor(cls, ch, x, y, pal){
+    const v = pal[cls];
+    if (cls === "wall" || cls === "hard") return rampAt(v, surface(x,y));
+    if (cls === "flame") return rampAt(v, heat(x,y,true));
+    if (cls === "ember") return rampAt(v, heat(x,y,false));
+    return q6(v || pal.text);
+  }
+
+  const esc = c => c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === "&" ? "&amp;" : c;
+
+  function paintLine(line, y, pal){
+    let out="", buf="", cur=null;
+    const flush = () => { if(buf){ out += `<span style="color:${cur}">${buf}</span>`; buf=""; } };
+    let x=0;
+    for (const ch of line){
+      const cls = classOf(ch);
+      const col = cls === "bg" ? pal.bg : colorFor(cls, ch, x, y, pal);
+      if (col !== cur){ flush(); cur=col; }
+      buf += esc(ch); x++;
+    }
+    flush();
+    return out;
+  }
+
+  const BOARD = document.getElementById("board").textContent.replace(/^\n/,"").replace(/\n$/,"");
+  const LINES = BOARD.split("\n");
+  const paintBoard = pal => LINES.map((l,y) => paintLine(l, y, pal)).join("\n");
+
+  // reference ramps
+  const RCARDS = [
+    { bar:cssRamp(["#000000","#ffffff"]), lbl:"<b>Grayscale</b> — 64 steps per channel" },
+    { bar:cssRamp(["#0a0402","#7a1c06","#ff6a10","#ffe86a","#ffffff"]), lbl:"<b>Fire ramp</b> — the burn's temperature" },
+    { bar:cssRamp(["#06040f","#33268c","#30f0ff","#ffffff"]), lbl:"<b>Plasma ramp</b> — demoscene cyan" },
+  ];
+  const rhost = document.getElementById("ramps");
+  RCARDS.forEach(r => {
+    const el = document.createElement("div"); el.className="rampcard";
+    el.innerHTML = `<div class="bar" style="background:${r.bar}"></div><div class="lbl">${r.lbl}</div>`;
+    rhost.appendChild(el);
+  });
+
+  // legend swatch: a gradient bar for ramp classes, a flat chip otherwise
+  function legendSwatch(cls, pal){
+    const v = pal[cls];
+    return RAMP_CLASSES.has(cls) ? cssRamp(v) : q6(v || pal.text);
+  }
+
+  const host = document.getElementById("specimens");
+  SPECS.forEach(s => {
+    const sec = document.createElement("section"); sec.className="spec";
+    const lineage = s.lineage.map(g=>`<b>${g}</b>`).join(" · ");
+    const rows = ELEMENTS.map(([cls,g,label]) => {
+      const sample = RAMP_CLASSES.has(cls) ? rampAt(s.pal[cls],0.7) : q6(s.pal[cls]||s.pal.text);
+      return `<div class="lrow"><span class="g" style="color:${sample}">${esc(g)}</span>`+
+             `<span class="swatch" style="background:${legendSwatch(cls,s.pal)}"></span>`+
+             `<span class="el">${label}</span></div>`;
+    }).join("");
+    sec.innerHTML = `
+      <div class="spec-head">
+        <span class="spec-id">${s.id}</span>
+        <h2 class="spec-name">${s.name}</h2>
+        <p class="spec-tag">${s.tag}</p>
+      </div>
+      <div class="spec-body">
+        <div>
+          <div class="monitor"><div class="glass" style="background:${q6(s.pal.bg)}"><pre class="screen">${paintBoard(s.pal)}</pre></div></div>
+          <p class="caption">IBM 8513 · VGA · EXEC phase · IO.SYS «BURNING» · fire-ramped burn</p>
+        </div>
+        <div class="notes">
+          <h3>Read</h3>
+          <p>${s.body}</p>
+          <p class="lineage">DRAWN FROM — ${lineage}</p>
+          <p class="risk"><b>WATCH ▸</b> ${s.risk}</p>
+          <h3>Colour map</h3>
+          <div class="legend">${rows}</div>
+        </div>
+      </div>`;
+    host.appendChild(sec);
+  });
+
+  const crt = document.getElementById("crtToggle");
+  const applyCrt = () => document.body.classList.toggle("crt", crt.checked);
+  crt.addEventListener("change", applyCrt); applyCrt();
+})();
+</script>
+
+</body>
+</html>
