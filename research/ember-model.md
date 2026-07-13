@@ -106,18 +106,33 @@ sweep = a finite reclaim budget that *removes* cells. Same currency (cells),
 opposing flows — a clean, tunable tug-of-war. Maps to the spec's Tier-3 "traced
 back, you bleed": you literally bleed cells to the descending line.
 
-### Unify the sweep with the TRACEBACK clock (proposed)
+### Single scan = the clock (DECIDED 2026-07-12)
 
-We need a discovery deadline: a **TRACEBACK countdown** → player discovered → run
-ends. Rather than a separate meter, **make the scan line the clock**: each full
-top-to-bottom sweep advances traceback one tick; after **K sweeps** you're
-discovered, run over. One visual (the descending line), two pressures (ground
-loss + the clock). This generalizes/replaces the current `LOCKDOWN = 10 passes`,
-and honeypots feed it as they do today (burning HONEY spikes trace).
+One scan, one descent. The line's **single top-to-bottom pass IS the run clock**;
+reaching the bottom = **traceback complete = discovered = run ends**. Scan speed
+(set by level) is therefore the effective time limit. Generalizes/replaces
+`LOCKDOWN = 10 passes`; honeypots still spike the trace (nudge the line faster).
 
-Reclaim target — a dial: reclaimed cells go to **neutral** (retake at normal cost,
-simple) or to **ICE** (border *hardens*, re-burning contested ground costs more —
-a real front). Start neutral, harden later.
+- **Reclaim target = NEUTRAL** (decided) — reclaimed cells just go unburned,
+  retakeable at normal cost. ICE-hardened borders are a later-tier escalation.
+- **PTS penalty is emergent, not bolted on** (decided) — the scan eating cells
+  lowers your peak coverage, which lowers the bonus PTS you carry to next run. A
+  weak deck gets traced and banks little; a strong deck out-adds the scan and
+  banks surplus. So "the scan reduces your carried points" falls out of erosion.
+- **Must stay defeatable** — tuning constraint: a powerful enough deck (energy ×
+  rhythm) out-paces the scan, reaches the win, and even over-covers for bonus.
+
+## 5a. Win condition (DECIDED 2026-07-12)
+
+Not instant at 50%. **Reach WIN_COVERAGE (50%) → a BREACH TIMER starts (length set
+by level) → hold ≥50% until it expires → sector breached.** Drop back under 50%
+during the hold and the timer pauses/resets. The scan's erosion is the thing
+threatening the hold — so the finish is a sprint against the descending line.
+Over-coverage during the hold banks bonus PTS.
+
+Edge to calibrate: if the scan bottoms out *during* the breach timer while you're
+≥50% — caught, or locked in? Lean: caught (a strong deck reaches 50% early enough
+to also survive the timer before the line finishes).
 
 ---
 
@@ -168,12 +183,25 @@ register. Progression = more decks + more cards per deck, not bigger numbers.
 - ~~TRANSFER's second axis~~ — resolved: "how often" covers all rhythm; TRANSFER
   is a single-axis deck (different cards = different rhythms).
 - Ping-rate units: real-time pings/min vs pings-per-power-pass.
-- Unify sweep + traceback into one scan-line clock (§5) vs two separate meters?
-  Leaning unified. If unified: how many sweeps K to discovery per tier?
-- Reclaim target: neutral (simple) vs ICE (hardening border). Start neutral.
-- Win = momentary coverage ≥ 50% (breach the instant you touch it) vs held 50%?
-  Leaning momentary — erosion already makes reaching it hard.
+- ~~Unify sweep + traceback~~ — resolved: single scan, one descent = the clock,
+  bottom = discovered = run ends (§5).
+- ~~Reclaim target~~ — resolved: NEUTRAL to start (§5).
+- ~~Win = momentary vs held~~ — resolved: reach 50% → breach timer → hold to win
+  (§5a). Timer length adjustable per level.
 - How many decks in the first playable build past POWER-only — just ASSAULT next,
   or ASSAULT+TRANSFER together?
 - INTERRUPT's new job (was +heat): freeze the sweep for a beat? +energy?
 - `E = acc` scale, COST numbers, sweep budget/speed need a `preview/` calibration.
+
+## 9. Calibration sandbox (`preview/ping.html`)
+
+Standalone tool that reuses the **real `src/terrain.js` generator**, so tuned
+numbers port straight to the game. Sliders: energy/ping, pings/tick, scan speed,
+reclaim/row, breach hold, win coverage. RESEED cycles sectors.
+
+**First validated split** (headless smoke test, 6 seeds, KERNEL sector):
+`COST = {OPEN 1, HARD 6, WALL ∞, BUS −1, VAULT 2, HONEY 1}`, and a
+`strong = {energy 20, rate 4, scan 0.6, reclaim 6, hold 8}` deck wins ~5/6 (peaks
+73–91%) while `weak = {energy 5, rate 1}` loses 6/6 (peaks <19%). The lone strong
+loss is an un-crackable layout (intended BRUTAL). Confirms: smooth curve, terrain
+still gates, no binary heat wall. These are starting numbers, not final balance.

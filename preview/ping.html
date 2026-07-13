@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OVERRIDE — ping vs. scan calibration</title>
+<style>
+  :root { --amber: #ffb000; --dim: #7a5500; --bg: #140d00; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--amber);
+         font: 13px/1.15 "SFMono-Regular", Menlo, Consolas, monospace; }
+  .wrap { display: flex; gap: 14px; padding: 14px; flex-wrap: wrap; }
+  #field { white-space: pre; letter-spacing: 1px; text-shadow: 0 0 4px #ff9000aa; }
+  .panel { min-width: 240px; }
+  h1 { font-size: 14px; margin: 0 0 10px; letter-spacing: 2px; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+  .row label { width: 116px; color: var(--amber); }
+  .row output { width: 40px; text-align: right; color: #ffd27a; }
+  input[type=range] { flex: 1; accent-color: var(--amber); }
+  button { background: #2a1c00; color: var(--amber); border: 1px solid var(--dim);
+           padding: 5px 10px; font: inherit; cursor: pointer; margin: 2px 2px 2px 0; }
+  button:hover { background: #3a2700; }
+  .stat { margin: 3px 0; }
+  .big { font-size: 15px; }
+  .win { color: #6cff6c; text-shadow: 0 0 6px #6cff6c88; }
+  .lose { color: #ff5c5c; text-shadow: 0 0 6px #ff5c5c88; }
+  .hint { color: var(--dim); font-size: 11px; margin-top: 10px; max-width: 260px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="field"></div>
+  <div class="panel">
+    <h1>PING &times; SCAN</h1>
+    <div class="row"><label>energy / ping</label><input id="energy" type="range" min="1" max="40" value="14"><output id="energy_o"></output></div>
+    <div class="row"><label>pings / tick</label><input id="rate" type="range" min="1" max="8" value="3"><output id="rate_o"></output></div>
+    <div class="row"><label>scan speed</label><input id="scan" type="range" min="0.2" max="6" step="0.2" value="0.6"><output id="scan_o"></output></div>
+    <div class="row"><label>reclaim / row</label><input id="reclaim" type="range" min="0" max="30" value="6"><output id="reclaim_o"></output></div>
+    <div class="row"><label>breach hold</label><input id="hold" type="range" min="0" max="60" value="8"><output id="hold_o"></output></div>
+    <div class="row"><label>win coverage %</label><input id="wincov" type="range" min="20" max="90" value="50"><output id="wincov_o"></output></div>
+    <div style="margin:8px 0;">
+      <button id="run">RUN</button><button id="pause">PAUSE</button>
+      <button id="step">STEP</button><button id="reset">RESET</button><button id="reseed">RESEED</button>
+    </div>
+    <div class="stat">sector <b id="secid">—</b> · gen difficulty <b id="difofficial">—</b></div>
+    <div class="stat big">coverage <b id="cov">0</b>% <span id="covneed">/ 50%</span></div>
+    <div class="stat">scan row <b id="scanrow">0</b> / 33 · tick <b id="tick">0</b></div>
+    <div class="stat">breach timer <b id="breach">—</b></div>
+    <div class="stat big" id="status">idle.</div>
+    <div class="hint">Reuses the real <code>src/terrain.js</code> generator, so these
+      numbers port straight to the game. Goal: find (energy, rate, scan, reclaim, hold)
+      where a strong deck wins and a weak one gets traced. Cycle sectors with RESEED.</div>
+  </div>
+</div>
+
+<script type="module">
+import { generateMachine, FIELD_W, FIELD_H, SECTORS, OPEN, HARD, WALL, BUS, VAULT, HONEY, idx }
+  from '../src/terrain.js';
+
+// COST replaces the old heat GATE with a spend economy (ember-model.md §2)
+const COST = { [OPEN]:1, [HARD]:6, [WALL]:Infinity, [BUS]:-1, [VAULT]:2, [HONEY]:1 };
+const GLYPH = { [OPEN]:'·', [HARD]:'▒', [WALL]:'█', [BUS]:'═', [VAULT]:'$', [HONEY]:'!' };
+
+let seed = 0x1234, machine, sector, burned, claim;
+let running = false, tick = 0, scanRow = 0, scanAcc = 0, breachLeft = -1, outcome = null;
+
+// deterministic-ish PRNG so STEP is reproducible within a seed
+let rndState = 0;
+const rnd = () => { rndState = (rndState * 1664525 + 1013904223) >>> 0; return rndState / 4294967296; };
+const ri = (n) => Math.floor(rnd() * n);
+
+const $ = (id) => document.getElementById(id);
+const P = { energy:12, rate:2, scan:3, reclaim:8, hold:18, wincov:50 };
+
+function build() {
+  machine = generateMachine(seed);
+  sector = machine.sectors[0];               // KERNEL — swap index to test others
+  burned = new Uint8Array(FIELD_W * FIELD_H);
+  claim = 0;
+  for (let y = 0; y < FIELD_H; y++) for (let x = sector.x0; x <= sector.x1; x++)
+    if (machine.t[idx(x, y)] !== WALL) claim++;
+  tick = 0; scanRow = 0; scanAcc = 0; breachLeft = -1; outcome = null; rndState = seed >>> 0;
+  $('secid').textContent = sector.id;
+  $('difofficial').textContent = sector.difficulty;
+  render();
+}
+
+function inSector(x, y) { return x >= sector.x0 && x <= sector.x1 && y >= 0 && y < FIELD_H; }
+
+// one finite ping: land at a random non-wall cell, spend energy on NEW ground.
+// Conduit rule (§3 tier 1): burned cells are free conduits — no cost, no re-infect.
+function lobPing() {
+  let sx, sy, tries = 0;
+  do { sx = sector.x0 + ri(sector.x1 - sector.x0 + 1); sy = ri(FIELD_H); tries++; }
+  while (machine.t[idx(sx, sy)] === WALL && tries < 40);
+  if (machine.t[idx(sx, sy)] === WALL) return;
+
+  let spend = P.energy;
+  const startC = idx(sx, sy);
+  if (!burned[startC]) { spend -= COST[machine.t[startC]] ?? 1; burned[startC] = 1; }
+  const frontier = [startC];
+  const seen = new Set([startC]);
+
+  while (spend > 0 && frontier.length) {
+    const fi = ri(frontier.length);
+    const c = frontier[fi];
+    const cx = c % FIELD_W, cy = (c / FIELD_W) | 0;
+    const opts = [];
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx = cx + dx, ny = cy + dy;
+      if (!inSector(nx, ny)) continue;
+      const nc = idx(nx, ny);
+      if (seen.has(nc) || machine.t[nc] === WALL) continue;
+      opts.push(nc);
+    }
+    if (!opts.length) { frontier.splice(fi, 1); continue; }
+    const nc = opts[ri(opts.length)];
+    seen.add(nc);
+    if (burned[nc]) { frontier.push(nc); continue; }        // free conduit hop
+    const cost = COST[machine.t[nc]] ?? 1;
+    if (cost > spend) { continue; }                          // can't afford — skip
+    spend -= cost; burned[nc] = 1; frontier.push(nc);
+  }
+}
+
+// the scan: a horizontal line descends; each row it crosses, reclaim up to
+// `reclaim` burned cells in that row back to neutral (§5).
+function advanceScan() {
+  scanAcc += P.scan;
+  while (scanAcc >= 1 && scanRow < FIELD_H) {
+    const y = scanRow;
+    const cells = [];
+    for (let x = sector.x0; x <= sector.x1; x++) if (burned[idx(x, y)]) cells.push(idx(x, y));
+    for (let k = 0; k < P.reclaim && cells.length; k++) burned[cells.splice(ri(cells.length), 1)[0]] = 0;
+    scanRow++; scanAcc -= 1;
+  }
+}
+
+function coverage() {
+  let b = 0;
+  for (let y = 0; y < FIELD_H; y++) for (let x = sector.x0; x <= sector.x1; x++)
+    if (burned[idx(x, y)]) b++;
+  return claim ? (b / claim) * 100 : 0;
+}
+
+function stepSim() {
+  if (outcome) return;
+  tick++;
+  for (let i = 0; i < P.rate; i++) lobPing();
+  advanceScan();
+  const cov = coverage();
+
+  // win: reach coverage, then hold through the breach timer (§5a)
+  if (cov >= P.wincov) {
+    if (breachLeft < 0) breachLeft = P.hold;
+    else if (breachLeft === 0) outcome = 'win';
+    else breachLeft--;
+  } else if (breachLeft >= 0) {
+    breachLeft = -1;                                         // fell back under — reset
+  }
+  // lose: scan finished its single descent before the breach locked in
+  if (!outcome && scanRow >= FIELD_H) outcome = 'lose';
+  render();
+}
+
+function render() {
+  const rows = [];
+  for (let y = 0; y < FIELD_H; y++) {
+    let line = '';
+    for (let x = sector.x0; x <= sector.x1; x++) {
+      const c = idx(x, y);
+      line += burned[c] ? '@' : (GLYPH[machine.t[c]] ?? '·');
+    }
+    rows.push((y === scanRow && scanRow < FIELD_H) ? line.replace(/./g, '─') : line);
+  }
+  $('field').textContent = rows.join('\n');
+  const cov = coverage();
+  $('cov').textContent = cov.toFixed(1);
+  $('covneed').textContent = `/ ${P.wincov}%`;
+  $('scanrow').textContent = scanRow;
+  $('tick').textContent = tick;
+  $('breach').textContent = breachLeft < 0 ? '—' : `${breachLeft} ticks to breach`;
+  const s = $('status');
+  s.className = 'stat big' + (outcome === 'win' ? ' win' : outcome === 'lose' ? ' lose' : '');
+  s.textContent = outcome === 'win' ? '>> BREACHED.' : outcome === 'lose' ? '>> TRACED. run ends.' :
+    running ? 'running…' : 'paused.';
+}
+
+let timer = null;
+function loop() { if (running && !outcome) stepSim(); }
+
+for (const k of Object.keys(P)) {
+  const el = $(k), o = $(k + '_o');
+  const sync = () => { P[k] = +el.value; o.textContent = el.value; };
+  el.addEventListener('input', sync); sync();
+}
+$('run').onclick = () => { running = true; if (!timer) timer = setInterval(loop, 90); };
+$('pause').onclick = () => { running = false; render(); };
+$('step').onclick = () => { running = false; stepSim(); };
+$('reset').onclick = () => build();
+$('reseed').onclick = () => { seed = (seed * 48271 + 1) >>> 0; build(); };
+
+build();
+</script>
+</body>
+</html>
