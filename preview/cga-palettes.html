@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OVERRIDE — CGA 16-colour study</title>
+<link rel="icon" href="data:,">
+</head>
+<body>
+<style>
+  /* ===== OVERRIDE · CGA colour study =====================================
+     A committed single-world design: this IS a 1983 CRT bench. No light
+     theme by intent (skill: a page that commits to one visual world may). */
+  :root{
+    --bg:#08090b; --panel:#101216; --panel-2:#14171d; --bezel:#040506;
+    --line:#242a32; --line-hi:#333b46; --muted:#6d7883; --fg:#c8cfd7;
+    --fg-hi:#eef2f6; --accent:#55ffff; --accent-dim:#1c5c5c;
+    --mono:"Courier New",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --maxw:1200px;
+  }
+  /* force the committed dark ground even if the viewer flips theme */
+  :root[data-theme="light"]{ color-scheme:dark; }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; background:var(--bg); color:var(--fg); font-family:var(--sans); }
+  body{
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #10151b 0%, rgba(8,9,11,0) 60%),
+      var(--bg);
+    padding:clamp(18px,4vw,52px) clamp(14px,4vw,40px) 80px;
+  }
+  .wrap{ max-width:var(--maxw); margin:0 auto; }
+
+  /* ---- type scale ---- */
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; letter-spacing:.32em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 18px;
+  }
+  h1{
+    font-family:var(--mono); font-weight:700; text-transform:uppercase;
+    font-size:clamp(30px,7vw,68px); line-height:.98; letter-spacing:.06em;
+    margin:0; color:var(--fg-hi); text-wrap:balance;
+    text-shadow:0 0 24px rgba(85,255,255,.10);
+  }
+  h1 .thin{ color:var(--muted); }
+  .lede{
+    font-size:clamp(15px,1.6vw,18px); color:var(--fg); max-width:64ch;
+    margin:22px 0 0;
+  }
+  .lede b{ color:var(--fg-hi); font-weight:600; }
+  .meta{
+    font-family:var(--mono); font-size:12.5px; color:var(--muted);
+    letter-spacing:.04em; margin:20px 0 0; display:flex; flex-wrap:wrap; gap:6px 22px;
+  }
+  .meta span{ white-space:nowrap; }
+  .meta b{ color:var(--accent); font-weight:400; }
+
+  hr.rule{ border:0; border-top:1px solid var(--line); margin:44px 0; }
+
+  /* ---- CGA-16 reference strip ---- */
+  .ref{ margin-top:40px; }
+  .ref h2, .controls-h{
+    font-family:var(--mono); font-size:12px; letter-spacing:.28em; text-transform:uppercase;
+    color:var(--muted); margin:0 0 14px; font-weight:400;
+  }
+  .swatches{
+    display:grid; grid-template-columns:repeat(auto-fill,minmax(128px,1fr));
+    gap:1px; background:var(--line); border:1px solid var(--line); border-radius:8px; overflow:hidden;
+  }
+  .sw{ background:var(--panel); padding:10px 12px; display:flex; align-items:center; gap:10px; }
+  .sw .chip{ width:22px; height:22px; border-radius:4px; flex:0 0 auto; box-shadow:inset 0 0 0 1px rgba(255,255,255,.08); }
+  .sw .nm{ font-family:var(--mono); font-size:11px; line-height:1.25; color:var(--muted); }
+  .sw .nm b{ display:block; color:var(--fg); font-weight:400; font-size:11.5px; }
+
+  /* ---- global controls ---- */
+  .controls{ display:flex; align-items:center; gap:16px; margin:36px 0 8px; flex-wrap:wrap; }
+  .toggle{ display:inline-flex; align-items:center; gap:9px; cursor:pointer; user-select:none;
+    font-family:var(--mono); font-size:12.5px; letter-spacing:.06em; color:var(--fg); }
+  .toggle input{ position:absolute; opacity:0; width:0; height:0; }
+  .track{ width:38px; height:20px; border-radius:20px; background:var(--panel-2);
+    border:1px solid var(--line-hi); position:relative; transition:background .15s,border-color .15s; }
+  .track::after{ content:""; position:absolute; top:2px; left:2px; width:14px; height:14px; border-radius:50%;
+    background:var(--muted); transition:transform .15s,background .15s; }
+  .toggle input:checked + .track{ background:var(--accent-dim); border-color:var(--accent); }
+  .toggle input:checked + .track::after{ transform:translateX(18px); background:var(--accent); }
+  .toggle input:focus-visible + .track{ outline:2px solid var(--accent); outline-offset:2px; }
+
+  /* ---- specimen ---- */
+  .spec{ margin-top:54px; }
+  .spec-head{ display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+  .spec-id{ font-family:var(--mono); font-size:13px; letter-spacing:.2em; color:var(--accent);
+    border:1px solid var(--accent-dim); border-radius:5px; padding:4px 9px; }
+  .spec-name{ font-family:var(--mono); text-transform:uppercase; font-weight:700; letter-spacing:.05em;
+    font-size:clamp(19px,2.6vw,27px); color:var(--fg-hi); margin:0; }
+  .spec-tag{ color:var(--muted); font-size:14px; margin:0; }
+
+  .spec-body{ display:grid; grid-template-columns:minmax(0,1.55fr) minmax(260px,1fr); gap:26px; align-items:start; }
+  @media (max-width:860px){ .spec-body{ grid-template-columns:1fr; } }
+
+  /* ---- the CGA monitor ---- */
+  .monitor{
+    background:linear-gradient(#1a1d22,#0e1013); border:1px solid var(--line-hi);
+    border-radius:16px; padding:clamp(10px,1.6vw,20px);
+    box-shadow:0 24px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .glass{
+    position:relative; background:#000; border-radius:9px; overflow:auto;
+    padding:clamp(8px,1.4vw,16px) clamp(6px,1vw,12px);
+    box-shadow:inset 0 0 60px rgba(0,0,0,.9), inset 0 0 0 1px #000;
+  }
+  .screen{
+    font-family:var(--mono); white-space:pre; margin:0; display:block;
+    /* size so 80 cols fit; a mono glyph is ~0.6em wide → 80*0.6 = 48em */
+    font-size:clamp(6.5px,calc((100vw - 120px)/95),13px);
+    line-height:1.15; letter-spacing:0; min-width:48em;
+    text-shadow:0 0 3px currentColor;
+  }
+  .screen span{ text-shadow:0 0 3px currentColor; }
+  /* scanline + vignette overlays (toggle via body.crt) */
+  .glass::before, .glass::after{ content:""; position:absolute; inset:0; pointer-events:none; opacity:0; transition:opacity .2s; }
+  .glass::before{
+    background:repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0, rgba(0,0,0,0) 2px, rgba(0,0,0,.30) 3px, rgba(0,0,0,.30) 4px);
+    mix-blend-mode:multiply; z-index:3;
+  }
+  .glass::after{ background:radial-gradient(ellipse at center, rgba(0,0,0,0) 58%, rgba(0,0,0,.5) 100%); z-index:2; }
+  body.crt .glass::before, body.crt .glass::after{ opacity:1; }
+  body.crt .screen{ text-shadow:0 0 4px currentColor, 0 0 9px currentColor; }
+  body.crt .screen span{ text-shadow:0 0 4px currentColor, 0 0 9px currentColor; }
+
+  .caption{ font-family:var(--mono); font-size:11.5px; color:var(--muted); margin:10px 2px 0; letter-spacing:.03em; }
+
+  /* ---- notes / legend column ---- */
+  .notes h3{ font-family:var(--mono); font-size:12px; letter-spacing:.22em; text-transform:uppercase;
+    color:var(--muted); font-weight:400; margin:0 0 10px; }
+  .notes p{ font-size:14px; margin:0 0 14px; color:var(--fg); }
+  .notes p.lineage{ color:var(--muted); font-size:13px; }
+  .notes p.lineage b{ color:var(--fg); font-weight:600; }
+  .risk{ font-size:12.5px; color:var(--muted); border-left:2px solid var(--line-hi); padding:2px 0 2px 12px; margin:0 0 18px; }
+  .risk b{ color:#ffb87a; font-weight:600; letter-spacing:.04em; }
+
+  .legend{ display:flex; flex-direction:column; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .lrow{ display:grid; grid-template-columns:auto auto 1fr; align-items:center; gap:11px; background:var(--panel); padding:7px 12px; }
+  .lrow .g{ font-family:var(--mono); font-size:15px; width:1.1em; text-align:center; }
+  .lrow .cn{ font-family:var(--mono); font-size:10.5px; color:var(--muted); white-space:nowrap; }
+  .lrow .el{ font-family:var(--mono); font-size:11px; color:var(--fg); text-align:right; letter-spacing:.02em; }
+
+  footer{ margin-top:70px; border-top:1px solid var(--line); padding-top:22px;
+    font-family:var(--mono); font-size:12px; color:var(--muted); letter-spacing:.03em; max-width:78ch; }
+  footer b{ color:var(--fg); font-weight:400; }
+  footer a{ color:var(--accent); }
+
+  @media (prefers-reduced-motion:reduce){ *{ transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">OVERRIDE · display R&amp;D · watch-don't-click</p>
+  <h1>Sixteen<span class="thin">-</span>colour<br>intrusion</h1>
+  <p class="lede">
+    Three ways to repaint the <b>EXEC screen</b> for a 1983 CGA monitor. Every colour is
+    drawn from the <b>16-colour IBM CGA hardware palette</b> — nothing invented — and mapped
+    onto the <b>real Tier-1 intrusion board</b>. Monochrome amber was the MVP; on this game
+    the burn <em>is</em> the payload, so colour is a gameplay signal, not polish.
+  </p>
+  <p class="meta">
+    <span>SOURCE · <b>buildScreen()</b> seed 19</span>
+    <span>PHASE · <b>EXEC</b>, mid-burn on IO.SYS</span>
+    <span>GRID · <b>80 × 40</b> mono cells</span>
+    <span>DELTA · <b>colour only</b> — glyphs &amp; layout unchanged</span>
+  </p>
+
+  <section class="ref">
+    <h2>The constraint — IBM CGA, 16 colours</h2>
+    <div class="swatches" id="cga16"></div>
+  </section>
+
+  <div class="controls">
+    <span class="controls-h">Bench</span>
+    <label class="toggle">
+      <input type="checkbox" id="crtToggle" checked>
+      <span class="track"></span>
+      <span>CRT scanlines &amp; bloom</span>
+    </label>
+  </div>
+
+  <hr class="rule">
+
+  <div id="specimens"></div>
+
+  <footer>
+    <b>Read-out.</b> Open ground stays black on every specimen — CGA screens are black-ground, and
+    an unburned cell should read as empty machine. The glyph vocabulary never changes
+    (<b>▓</b> wall, <b>▒</b> hard, <b>@ #</b> the spreading intrusion, <b>╬ ║</b> the targeting gnomon,
+    <b>─</b> the trace scan, <b>$</b> vault, <b>"</b> honeypot), so this is a pure paint pass:
+    a per-cell colour lookup keyed on the character the renderer already emits. No gameplay,
+    hit-testing, or layout is touched. Pick one and it drops into <b>styles.css</b> + a small
+    class in <b>src/juice.js</b>.
+  </footer>
+</div>
+
+<!-- the real 80×40 EXEC frame, verbatim from the game -->
+<script type="text/plain" id="board">TIER 1: THE MACHINE   CONQUERED 1/3   ROOT:340        TRACE[##......] 9/33      
+CODE  0 6 _ _ _ _ _ _                                                           
+CHOOSE TARGET — match your energy to the terrain                                
+ KERNEL   ▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ IO.SYS «BURNING»▓▓▓▓▓▓▓$ ▓▓SWAP▓▓▓▓▓▓▓▓▒▒▒▒    ▒▒▓▓▓
+         ▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ▒     ▓▓▓▓▓║▓▓▓▓▓▓▓▓▓▓▓  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒▒▒  ▒▒▒▓
+▓▓▓▓▓▓▓▓      ▒▒▒▒▒▒▒▓▓▓▓▓▓▒     ▓▓▓▓▓▓║▓▓▓▓▓▓▓▓▓   ▒▓▓▓▓▒▒▒▒ ▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+     ▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓  ▓═▓▓▓▓▓   ▒▒▒║▒    ▓▓▓▓▓▓▓═▓▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒▒▒ ▒▒
+▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓       ▒▓═▓▓▓▓▓      ║      ▓▓▓▓▓▓═▓▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒    ▒
+▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓    "  ▓@@   ▒▒    ▓║▓▓▓▓▓▓▓▓▓▓▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓     ▒▒▓▓
+▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓       ▓@    ▒▒▒▒▒  ║▓▓▓▓▓▓▓▓▓▒▒▒▒▓    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  
+▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▒       ▒▒▒▓@▒       ▒▒▒║    ▓▓▓▓▓▓▓▓▒▓   ▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  
+    ▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▒   ▓      ▒▒▒   ║     ▒▒▒     ▓     ▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+    ▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓    ▓────────────║─────────────▓"▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓        ▒▒▒▓   ▒▒▒▒▒    ║             ▓▓▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▒         ▒▓▒           ║     ▒▒▒▒▒▒▒▒▓▓▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+      ▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓    ▓▒▒▒▒▒▒▒     ║   ▓        ▒▓▓▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+      ▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓  ▒ ▓▒▒▒▒▒▒▒     ║   ▓@@@     ▒▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒
+   ▒▒▒▒▒▒▒▒ ▒▓▓▓▓▓▓▓ ▒▒   ▓════════════╬═════════════▓ ▒▒▒▒▒ ▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ 
+▒   ▒▒▒▒▒  ▓▓▓▓▓▓  ▒▒     ▓     ▓     @║@@  @        ▓    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓   ▒▒▒ 
+    ▒▒▒▒   ▓▓▓▓▒▒▒▒▒▒     ▓           @║   @▓@@  @   ▓    ═▓▓▓▓▓▓▓▓▓▓▓▓▓▓       
+    ▒▒▒▒▒▒▒   ▒▒▒▒▒▒▒▒▒   ▓          ▓ ║   @#@@ @#@  ▓    ═▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ▒     
+    ▒▒▒▒▒▒▒   ▒▒▒▒▒▒▒▒▒   ▓          ▓ ║    @ @ @#@  ▓═▓▓▓▒▒      ▓▓▓▓▓▓▓▓▒▒▒▓▓▓
+▒▒      ▒▒▒▓▒▒▒    ▒▒▒▒▒▒▒▓            ║"      ▓ @@  ▓ ▒      ▓▓▓▓▓▓▓▓▓▒▓▓▓▓▓▓▓▓
+▒      ▒▒▓▓▓▓▓▓    ▒▒▒▒▒▒▒▓            ║      @@     ▓═       ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+  ▒▒▓▓▓▓▓▓▓▓  ▓▒▒▒▒▒▒▒    ▓@@ @        ║      @#@    ▓═    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+▓▓▓▓▓▓▓▓▓ ▓▒▒▒▒▒        ▒▓▓#@@@@       ║      @#@    ▓═▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓
+  ▒▒▒▒▓▓▓▓▓▓▓▓▓ ▓▒▒▒▒     ▓@          ▒║       @     ▓▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▒▒▒▒
+▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▒▓ ▒▒▒     ▓        ▒▒▒ ║       ▒▒▒▒  ▓▓▓ ▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓
+▒▒▒▒▓═▓▓▓▓▓▓▓▒▓▒▒▒▒      ▒▓       ▒▒▒  ║             ▓▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓▓▓▓ ▒▒
+▓▓▓▓▓═▒▒▒       ▒▒▒▒▒▓▓▓▓▓▓     @      ║       ▒▒    ▓▒▒▓▓▓▓▓▓▓▓▓▓▓▓ ▒▒▒▒▒▒▒▒▒▒▒
+▓▓▓▓▓▓▒▒▒  ▒▒▒  ▒▒▒▒▓▓▓▓▓▓▓    @@      ║     ▒▒▒▒   @▓▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓▓ ▒▒▒▒
+▓▓▒▒▒▓▓▓▓▓▓▓▒▒▒   "   ▒▓▓▓▓@  @#@@     ║     ▒▒@   @#▓▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓▓▓▓  ▒▒
+$▒▓▓▓▓▓▒▒▒▒▒▓▓▓▓▓▓▒▒▒▒▒   ▓#@  @       ║  ▒  ▒▒@@  @#▓▓▓   ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▓▓▓▓▓▓▓
+▒▒▒▒▒▓▓▓▓▓▓▒▒▒▒▒   ▒▒▓▓▓▓▓▓#@  @       ║▒▒@@@▒▒@  @##▓▓▓▓    ▒▒▒▒▒▒▒▒▒▒▒▒ ▓ ▓▓▓▓
+▒▒▒▒▒▒▓▓▓▓▓▒▒▒▒▒   ▒▒▒▓▓▓▒▓#@          ║  @▒▒   @@@@@▓     ▒▒▒▒▒▒▒▒▒▒▒▒▒   ▓▓▓▓▓
+▒▒═════▒▒▒▒    ▒▒▒▒▓▒▒▒▒▒▒▓#@          ║  ▒▒▒        ▓   ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  $▓▓▓▓ 
+PROGRAM  [ BRUTE +3  ][>XOR x2   <][ BRUTE +3  ]                                
+CRACK [####..........................] 13%/50%  E9                              
+> volley 5: acc 9 -> energy 9, 3 pings. 11%/50% of IO.SYS.                      
+> volley 6: acc 9 -> energy 9, 3 pings. 13%/50% of IO.SYS.                      </script>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---- CGA 16-colour hardware palette (canonical IBM values) ----
+  const CGA = {
+    black:"#000000", blue:"#0000AA", green:"#00AA00", cyan:"#00AAAA",
+    red:"#AA0000", magenta:"#AA00AA", brown:"#AA5500", ltgray:"#AAAAAA",
+    dkgray:"#555555", ltblue:"#5555FF", ltgreen:"#55FF55", ltcyan:"#55FFFF",
+    ltred:"#FF5555", ltmagenta:"#FF55FF", yellow:"#FFFF55", white:"#FFFFFF",
+  };
+  const NAME = {
+    "#000000":"Black","#0000AA":"Blue","#00AA00":"Green","#00AAAA":"Cyan",
+    "#AA0000":"Red","#AA00AA":"Magenta","#AA5500":"Brown","#AAAAAA":"Light Gray",
+    "#555555":"Dark Gray","#5555FF":"Light Blue","#55FF55":"Light Green","#55FFFF":"Light Cyan",
+    "#FF5555":"Light Red","#FF55FF":"Light Magenta","#FFFF55":"Yellow","#FFFFFF":"White",
+  };
+
+  // render the 16-swatch reference strip
+  const ref = document.getElementById("cga16");
+  const CGA_ORDER = ["black","blue","green","cyan","red","magenta","brown","ltgray",
+                     "dkgray","ltblue","ltgreen","ltcyan","ltred","ltmagenta","yellow","white"];
+  CGA_ORDER.forEach((k,i) => {
+    const hex = CGA[k];
+    const el = document.createElement("div"); el.className = "sw";
+    el.innerHTML = `<span class="chip" style="background:${hex}"></span>` +
+      `<span class="nm"><b>${NAME[hex]}</b>${i} · ${hex}</span>`;
+    ref.appendChild(el);
+  });
+
+  // ---- glyph → element class ----
+  function classOf(ch){
+    switch(ch){
+      case " ":  return "bg";
+      case "▓":  return "wall";
+      case "▒":  return "hard";
+      case "@":  return "flame";
+      case "#":  return "ember";
+      case "$":  return "vault";
+      case '"':  return "honey";
+      case "║":  return "beam";
+      case "═":  return "bus";
+      case "╬":  return "reticle";
+      case "─":  return "scan";
+      case "«": case "»": return "alarm";
+      case ".": case "_": return "dim";
+      case "[": case "]": return "frame";
+      default:   return "text";
+    }
+  }
+
+  // ---- three palette experiments (values are CGA-16 only) ----
+  const P1 = { // Palette 1: high-intensity cyan / magenta / white
+    bg:CGA.black, wall:CGA.ltcyan, hard:CGA.cyan, flame:CGA.ltmagenta, ember:CGA.magenta,
+    vault:CGA.white, honey:CGA.ltmagenta, beam:CGA.ltmagenta, bus:CGA.cyan, reticle:CGA.white,
+    scan:CGA.white, alarm:CGA.ltmagenta, dim:CGA.cyan, frame:CGA.ltcyan, text:CGA.ltcyan,
+  };
+  const P2 = { // Text-mode 16: one hue per material
+    bg:CGA.black, wall:CGA.ltgray, hard:CGA.blue, flame:CGA.ltgreen, ember:CGA.green,
+    vault:CGA.yellow, honey:CGA.ltred, beam:CGA.ltcyan, bus:CGA.brown, reticle:CGA.ltcyan,
+    scan:CGA.ltred, alarm:CGA.ltmagenta, dim:CGA.dkgray, frame:CGA.yellow, text:CGA.ltgray,
+  };
+  const P3 = { // Composite phosphor: green field, amber burn, red = threat
+    bg:CGA.black, wall:CGA.dkgray, hard:CGA.green, flame:CGA.yellow, ember:CGA.brown,
+    vault:CGA.yellow, honey:CGA.ltred, beam:CGA.green, bus:CGA.brown, reticle:CGA.ltgreen,
+    scan:CGA.ltred, alarm:CGA.ltred, dim:CGA.dkgray, frame:CGA.green, text:CGA.ltgreen,
+  };
+
+  const SPECS = [
+    { id:"EXP·01", name:"Palette 1 — High-Intensity", pal:P1,
+      tag:"the four-colour arcade look everyone remembers",
+      lineage:["King's Quest","Space Quest","Thexder","Alley Cat"],
+      body:"CGA's iconic 320×200 mode: black, two cyans, magenta, white. Cold cyan structure fills the board so the whole machine reads as one glowing lattice — and the intrusion burns magenta, the only warm mass on a cold grid. The lock reticle flashes white-hot. Your progress is legible as <em>heat</em> before you read a single number.",
+      risk:"Cyan-on-black is gorgeous but low-contrast for dense HUD text; the read-out leans on brightness, not hue." },
+    { id:"EXP·02", name:"Text-Mode 16 — Full Palette", pal:P2,
+      tag:"the shareware / BBS look — every element its own colour",
+      lineage:["ZZT","Kroz","Castle Adventure","BBS door games"],
+      body:"The complete IBM text palette, one hue per <em>material</em>: steel-grey walls, blue bedrock, copper buses, a yellow vault, red bait, and a green worm eating outward. You can read what the board is <em>made of</em> at a glance — the terrain teaches itself. The trace scan and honeypots share the palette's only red, so threat still stands apart.",
+      risk:"It's loud. Twelve colours on one screen means the spectacle competes with itself — the burn has to fight for attention." },
+    { id:"EXP·03", name:"Composite Phosphor — WOPR", pal:P3,
+      tag:"a green terminal that only speaks three signals",
+      lineage:["WarGames / WOPR","Impossible Mission","composite-monitor CGA"],
+      body:"A restrained green-phosphor terminal that knows exactly three things: a green field, an amber-and-yellow burn, and <em>red</em>. Red appears nowhere except the trace scan and its bait — so danger is pre-attentive, you feel the clock before you find it. Closest to the current amber build and the cheapest migration. It's also 1983, the year on the title screen.",
+      risk:"Deliberately narrow. Vault, flame and trace all skew warm, so a colourblind-unsafe pairing (amber vs red) needs a glyph or brightness backstop." },
+  ];
+
+  // legend rows: which element each mapping paints
+  const ELEMENTS = [
+    ["wall","▓","WALL"], ["hard","▒","HARD"], ["flame","@","FLAME"], ["ember","#","EMBER"],
+    ["reticle","╬","RETICLE"], ["beam","║","SCAN-BEAM"], ["bus","═","BUS"], ["scan","─","TRACE"],
+    ["vault","$","VAULT"], ["honey",'"',"HONEYPOT"], ["text","A","READ-OUT"],
+  ];
+
+  const esc = c => c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === "&" ? "&amp;" : c;
+
+  // colour one 80-wide line into run-length spans for a given palette
+  function paintLine(line, pal){
+    let out = "", buf = "", cur = null;
+    const flush = () => { if (buf){ out += `<span style="color:${cur}">${buf}</span>`; buf=""; } };
+    for (const ch of line){
+      const col = pal[classOf(ch)] || pal.text;
+      if (col !== cur){ flush(); cur = col; }
+      buf += esc(ch);
+    }
+    flush();
+    return out;
+  }
+
+  const BOARD = document.getElementById("board").textContent.replace(/^\n/,"").replace(/\n$/,"");
+  const LINES = BOARD.split("\n");
+  function paintBoard(pal){ return LINES.map(l => paintLine(l, pal)).join("\n"); }
+
+  // build the specimens
+  const host = document.getElementById("specimens");
+  SPECS.forEach((s, i) => {
+    const sec = document.createElement("section");
+    sec.className = "spec";
+    const lineage = s.lineage.map(g => `<b>${g}</b>`).join(" · ");
+    const legendRows = ELEMENTS.map(([cls,g,label]) => {
+      const hex = s.pal[cls];
+      return `<div class="lrow"><span class="g" style="color:${hex}">${esc(g)}</span>` +
+             `<span class="cn">${NAME[hex]||hex}</span><span class="el">${label}</span></div>`;
+    }).join("");
+    sec.innerHTML = `
+      <div class="spec-head">
+        <span class="spec-id">${s.id}</span>
+        <h2 class="spec-name">${s.name}</h2>
+        <p class="spec-tag">${s.tag}</p>
+      </div>
+      <div class="spec-body">
+        <div>
+          <div class="monitor"><div class="glass"><pre class="screen">${paintBoard(s.pal)}</pre></div></div>
+          <p class="caption">IBM 5153 · EXEC phase · IO.SYS «BURNING» · trace at row 9/33</p>
+        </div>
+        <div class="notes">
+          <h3>Read</h3>
+          <p>${s.body}</p>
+          <p class="lineage">DRAWN FROM — ${lineage}</p>
+          <p class="risk"><b>WATCH ▸</b> ${s.risk}</p>
+          <h3>Colour map</h3>
+          <div class="legend">${legendRows}</div>
+        </div>
+      </div>`;
+    host.appendChild(sec);
+  });
+
+  // CRT bench toggle
+  const crt = document.getElementById("crtToggle");
+  const applyCrt = () => document.body.classList.toggle("crt", crt.checked);
+  crt.addEventListener("change", applyCrt);
+  applyCrt();
+})();
+</script>
+
+</body>
+</html>
