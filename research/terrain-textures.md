@@ -189,3 +189,75 @@ Smallest useful step, in order:
 Nothing above touches the ping/burn/trace model — textures only change what the
 cost field *looks like* and how its HARD/WALL is arranged. The whole ember model
 (ember-model.md) applies verbatim on top.
+
+---
+
+## 6. Variety budget — how many visibly different fields per technique
+
+For evaluating each technique's payload when it fills a whole field on its own.
+"Visibly different" = a field a player would name as a *different kind* of texture
+at a glance, **not** the same look reshuffled by a new seed. That distinction is
+the whole point here, so every technique is scored on two axes:
+
+- **Archetypes** — how many genuinely different *looks* the dials reach.
+- **Seed distinctness** — does a fresh seed read as a new *board*, or just the
+  same texture on a different machine?
+
+| Technique | Dials that change the *look* | New seed reads as… | ~Archetypes |
+|-----------|------------------------------|--------------------|-------------|
+| **1D automata** | **rule** (the whole ballgame) + seed-mode (single cell vs random row) | reshuffle *within* a rule | **~30–50** |
+| **random shapes** | count, shape-mix (box/disc/line), fill vs outline, WALL:HARD | **a distinct board** | ~10–12 |
+| **heightmap** | ramp (ascii/blocks/relief) × elevation thresholds × noise freq | reshuffle | ~12–18 |
+| **voronoi crack** | seed count (few big cells ↔ many shards), wall-region % | **a distinct board** | ~8–12 |
+| **bus bars / lines** | orient (V/H/grid) × spacing × gaps | reshuffle | ~8–12 |
+| **value noise** *(current)* | blob size (freq) × density (2 thresholds) | reshuffle | ~6–9 |
+| **circuit traces** | trace count, turn probability, run length | **a distinct board** | ~6–8 |
+| **10 PRINT** | density (sparse scatter → solid labyrinth) | reshuffle (one iconic look) | ~3–5 |
+
+**Cellular automata alone does more than the other seven combined.** The rule
+*is* the archetype and it is a *categorical* dial, not a continuum — rule 90
+(nested triangles), rule 30 (chaos), rule 110 (drifting gliders) are three
+different worlds, not three settings of one look. Of the 256 elementary rules
+there are 88 independent classes after symmetry (left-right reflection + 0/1
+complement); ~30–40 of those produce something visually interesting rather than
+going uniform or trivially striped. Cross that with single-cell seeding (a growing
+fractal cone) vs random-row seeding (homogeneous chaos) and one technique clears
+40+ distinct looks. The 8 rules in `CA_RULES` are the greatest hits, not the
+ceiling. *(Un-verified count — worth confirming against the lab: sweep all 256
+rules, drop the ones that go uniform/period-2, tally what's left.)*
+
+**Everything else is a density / orientation continuum.** The honest archetype
+count is smaller than it first looks, because most of the apparent variety is one
+look at different densities.
+
+**The split that matters for design.** The techniques fall into two families, and
+a good texture table wants both:
+
+- *Archetype-rich, instance-poor* — CA, heightmap, lines, noise, 10 PRINT. Few
+  *kinds*, but each look is stable: a new seed = "same texture, new machine." Use
+  when a texture should *mean* something (this subsystem always looks like this).
+- *Archetype-poor, instance-rich* — shapes, voronoi, circuit. Only ~6–12 kinds,
+  but because they are *compositions* of scattered primitives, every seed reads as
+  a hand-placed board. Use when each machine should feel bespoke while reusing one
+  technique.
+
+10 PRINT is the extreme: essentially **one** unmistakable look, infinite instances
+that all say "10 PRINT." That is why it works as a *signature* texture, not a
+variety engine.
+
+**Cheap ways to raise the low numbers** (dials currently hardcoded):
+
+- *noise / heightmap* — the two lattice frequencies are fixed (11/6, 6/3).
+  Exposing them turns ~6–9 looks into coarse/medium/fine × density ≈ 15–20.
+- *voronoi* — swap the distance metric (Euclidean → Manhattan/Chebyshev): round
+  cells become faceted/diamond, ~doubling its archetypes.
+- *10 PRINT* — swap the glyph pair (diagonals → quarter-arc Truchet → box elbows):
+  2–3 clearly different weaves from the same algorithm.
+- *lines* — a type gradient (HARD edges → WALL core, or vice-versa) adds a depth
+  read plain stripes lack.
+
+**Bottom line:** summed across all eight, one-technique-per-field lands on the
+order of **80–120 distinguishable archetypes** — but that figure is misleading.
+It is ~40% CA, and the variety a player actually *feels* in play leans far more on
+the instance-rich techniques (shapes / voronoi / circuit), where every seed is a
+new board. All counts here are design-judgment estimates, not measured.
