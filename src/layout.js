@@ -30,6 +30,10 @@ export const DRAFT_CARDS = Array.from({ length: 3 }, (_, i) => ({
   x: DRAFT_X0 + i * 17, y: 9, w: 15, h: 8,
 }));
 
+// target phase: adjust aggression (risk/reward) before committing to a sector
+export const BTN_AGGRO_DOWN = { x: 2, y: 36, w: 22, h: 3, label: 'SAFER ◀' };
+export const BTN_AGGRO_UP = { x: 56, y: 36, w: 22, h: 3, label: '▶ HARDER' };
+
 // result / tier-clear / game-over: one continue button
 export const BTN_CONTINUE = { x: 31, y: 31, w: 18, h: 3, label: 'CONTINUE ▶' };
 

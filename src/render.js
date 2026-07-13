@@ -3,9 +3,9 @@
 //   exec / result    -> the sector burning.
 
 import { FIELD_W, FIELD_H, WALL, VAULT, idx, SECTORS, WIN_COVERAGE } from './terrain.js';
-import { CODE_DIGITS, crackPct, REDRAW_COST } from './battle.js';
+import { CODE_DIGITS, crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST } from './battle.js';
 import { evalProgram } from './cards.js';
-import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE } from './layout.js';
+import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, BTN_AGGRO_DOWN, BTN_AGGRO_UP } from './layout.js';
 import { CHARACTERS } from './characters.js';
 
 export { COLS, ROWS };
@@ -116,7 +116,12 @@ function drawTarget(g, game) {
     const label = s.conquered ? `${s.id} ·OWNED·` : `${s.id} ${s.difficulty}`;
     stamp(g, s.x0 + 1, FIELD_TOP, label.slice(0, s.x1 - s.x0));
   });
-  center(g, 38, `ENERGY/PING ${energy}  —  tap a sector · reach ${WIN_COVERAGE}% and hold before the trace finds you`);
+  const a = game.run.aggression;
+  drawButton(g, BTN_AGGRO_DOWN, game.run.points < AGGRO_REDUCE_COST);
+  drawButton(g, BTN_AGGRO_UP, false);
+  stamp(g, 26, 36, `E/PING ${energy}   AGGRO x${a.toFixed(2)}`);
+  stamp(g, 26, 37, `reward x${rewardMult(a).toFixed(2)} · ${draftPicks(a)} draft`);
+  center(g, 39, `tap a sector to commit · HARDER free (pays more) · SAFER -${AGGRO_REDUCE_COST} PTS`);
 }
 
 function drawBurning(g, game) {

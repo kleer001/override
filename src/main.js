@@ -4,10 +4,11 @@
 
 import { mulberry32, shuffle } from './rng.js';
 import { startingDeck, DRAFT_POOL, CARDS } from './cards.js';
-import { generateMachine, newCode, createNode, beginVolley, lobOne, advanceScan, resolveVolley, REDRAW_COST } from './battle.js';
+import { generateMachine, newCode, createNode, beginVolley, lobOne, advanceScan, resolveVolley, REDRAW_COST,
+  rewardMult, draftPicks, AGGRO_BASE, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
 import { buildScreen } from './render.js';
 import { installPointer } from './input.js';
-import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, inRect } from './layout.js';
+import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, BTN_AGGRO_DOWN, BTN_AGGRO_UP, inRect } from './layout.js';
 import { CHARACTERS } from './characters.js';
 import { WIN_COVERAGE } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
@@ -43,6 +44,7 @@ function startRun() {
     tier: 1, node: 1, root: loadRoot(), points: loadPoints(), deck: loadDeck(),
     machine, code: newCode(mulberry32((game.seed ^ 12345) >>> 0)),
     locked: new Array(8).fill(false), conquered: 0, char: null,
+    aggression: AGGRO_BASE, pendingDrafts: 0,
   };
   game.node = null;
   game.phase = 'charselect';
@@ -116,10 +118,25 @@ function gotoTarget() {
   draw();
 }
 
+// aggression = the difficulty dial (target phase). Raise is free (harder scan,
+// bigger reward); lower spends PTS (buy safety).
+function raiseAggro() {
+  if (game.phase !== 'target' || game.run.aggression >= AGGRO_MAX) return;
+  game.run.aggression = +(game.run.aggression + AGGRO_STEP).toFixed(2);
+  sfx.ui(); draw();
+}
+function lowerAggro() {
+  if (game.phase !== 'target' || game.run.aggression <= AGGRO_MIN) return;
+  if (game.run.points < AGGRO_REDUCE_COST) { game.message = `need ${AGGRO_REDUCE_COST} PTS to de-risk.`; draw(); return; }
+  game.run.points -= AGGRO_REDUCE_COST; savePoints(game.run.points);
+  game.run.aggression = +(game.run.aggression - AGGRO_STEP).toFixed(2);
+  sfx.ui(); draw();
+}
+
 function chooseSector(si) {
   const s = game.run.machine.sectors[si];
   if (!s || s.conquered) return;
-  game.node = createNode(game.run.machine, si, game.run.char);
+  game.node = createNode(game.run.machine, si, game.run.char, game.run.aggression);
   game.phase = 'exec';
   startExec();
 }
@@ -165,12 +182,14 @@ function showResult() {
   if (node.outcome === 'win') {
     r.conquered++;
     for (const d of node.sector.digits) r.locked[d] = true;
-    const reward = 40 + r.conquered * 10;
+    const mult = rewardMult(node.aggro);
+    const reward = Math.round((40 + r.conquered * 10) * mult);
     r.root += reward; saveRoot(r.root);
-    const bonus = Math.max(0, Math.round(node.crack - WIN_COVERAGE));
+    const bonus = Math.round(Math.max(0, node.crack - WIN_COVERAGE) * mult);
     r.points += bonus; savePoints(r.points);
+    r.pendingDrafts = draftPicks(node.aggro);
     sfx.lock(); sfx.win();
-    game.message = `>> ${node.sector.id} BREACHED. +${reward} ROOT, +${bonus} PTS (${node.crack.toFixed(0)}% burned). [ENTER] to continue.`;
+    game.message = `>> ${node.sector.id} BREACHED (aggro x${node.aggro.toFixed(2)}). +${reward} ROOT, +${bonus} PTS, ${r.pendingDrafts} draft. [ENTER].`;
     game.prompt = `${node.sector.id} cracked — its codes fall.`;
   } else {
     sfx.lose();
@@ -189,18 +208,20 @@ function advance() {
 }
 
 function startDraft() {
-  const rng = mulberry32((game.seed ^ (game.run.node * 777) ^ (game.run.conquered * 99991)) >>> 0);
+  const rng = mulberry32((game.seed ^ (game.run.node * 777) ^ (game.run.conquered * 99991) ^ (game.run.pendingDrafts * 131071)) >>> 0);
   game.draft = shuffle(DRAFT_POOL, rng).slice(0, 3);
   game.phase = 'draft';
-  game.prompt = '';
+  game.prompt = game.run.pendingDrafts > 1 ? `DRAFT — ${game.run.pendingDrafts} picks left (aggression bonus)` : '';
   draw();
 }
 function pickDraft(i) {
   if (game.phase !== 'draft' || !game.draft[i]) return;
   game.run.deck.push({ ...game.draft[i] });
   saveDeck(game.run.deck);
-  game.run.node += 1;
   sfx.lock();
+  game.run.pendingDrafts -= 1;
+  if (game.run.pendingDrafts > 0) { startDraft(); return; } // extra picks from cranked aggression
+  game.run.node += 1;
   newAssemble();
 }
 
@@ -224,6 +245,8 @@ function onTapCell(col, row) {
     if (inRect(col, row, BTN_UNDO)) return undoSlot();
     if (inRect(col, row, BTN_EXEC)) return gotoTarget();
   } else if (game.phase === 'target') {
+    if (inRect(col, row, BTN_AGGRO_DOWN)) return lowerAggro();
+    if (inRect(col, row, BTN_AGGRO_UP)) return raiseAggro();
     for (let i = 0; i < SECTOR_RECTS.length; i++) if (inRect(col, row, SECTOR_RECTS[i])) return chooseSector(i);
   } else if (game.phase === 'draft') {
     for (let i = 0; i < DRAFT_CARDS.length; i++) if (inRect(col, row, DRAFT_CARDS[i])) return pickDraft(i);
@@ -248,6 +271,8 @@ window.addEventListener('keydown', (e) => {
     else if (k === 'Enter') gotoTarget();
   } else if (game.phase === 'target') {
     if (k >= '1' && k <= '3') chooseSector(+k - 1);
+    else if (k === '+' || k === '=') raiseAggro();
+    else if (k === '-' || k === '_') lowerAggro();
   } else if (game.phase === 'draft') {
     if (k >= '1' && k <= '3') pickDraft(+k - 1);
   } else if (game.phase === 'result') {

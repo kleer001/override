@@ -17,24 +17,39 @@ export const REDRAW_COST = 10;      // points spent to reshuffle the hand in ass
 
 // Tier-1 tuning (later: per-tier / per-deck). See preview/ping.html to calibrate.
 export const PINGS_PER_PASS = 3;    // volley size before FORK / character bonuses
-export const SCAN_SPEED = 2;        // rows the trace scan descends per volley
-export const RECLAIM_PER_ROW = 5;   // burned cells the scan reclaims per row crossed
+export const SCAN_SPEED = 2;        // rows the trace scan descends per volley (at aggression 1)
+export const RECLAIM_PER_ROW = 5;   // burned cells the scan reclaims per row (at aggression 1)
 export const BREACH_HOLD = 2;       // volleys you must hold >= WIN_COVERAGE to win
+
+// --- AGGRESSION: the single difficulty dial. It scales the whole trace scan
+// (the enemy), mirroring how the accumulator scales your whole volley (you). The
+// player raises it for free (harder scan, bigger reward) or spends PTS to lower
+// it (safer). Per-tier baseline lives here for now (Tier 1 = 1.0).
+export const AGGRO_BASE = 1.0;
+export const AGGRO_STEP = 0.25;
+export const AGGRO_MIN = 0.5;
+export const AGGRO_MAX = 2.5;
+export const AGGRO_REDUCE_COST = 15;   // PTS to lower aggression one step
+
+export function rewardMult(aggro) { return aggro / AGGRO_BASE; }        // ROOT/PTS scale, 1.0 at baseline
+export function draftPicks(aggro) {                                    // extra cards for cranking up
+  return Math.max(1, 1 + Math.floor((aggro - AGGRO_BASE) / 0.5 + 1e-9));
+}
 
 export function newCode(rng) {
   return Array.from({ length: CODE_DIGITS }, () => Math.floor(rng() * 10));
 }
 
-export function createNode(machine, secIdx, char) {
+export function createNode(machine, secIdx, char, aggro = AGGRO_BASE) {
   const sector = machine.sectors[secIdx];
   return {
-    machine, secIdx, sector,
+    machine, secIdx, sector, aggro,
     tick: 0, crack: 0, outcome: null,
     scanRow: 0, scanAcc: 0, breachLeft: -1, honeyHit: 0,
     energy: 0, pings: 0, pingsLeft: 0, freeze: false,
     pingBonus: char ? (char.pingBonus || 0) : 0,
     energyBonus: char ? (char.energyBonus || 0) : 0,
-    log: [`> jacked into ${sector.id}. terrain: ${sector.difficulty}. trace inbound.`],
+    log: [`> jacked into ${sector.id}. terrain: ${sector.difficulty}. aggression x${aggro.toFixed(2)}.`],
   };
 }
 
@@ -65,10 +80,11 @@ export function lobOne(node) {
 // cells row by row. Returns cells reclaimed.
 export function advanceScan(node) {
   if (node.freeze) { push(node, `> INTERRUPT: trace scan stalled one beat.`); return 0; }
-  node.scanAcc += SCAN_SPEED;
+  node.scanAcc += SCAN_SPEED * node.aggro;                       // aggression = scan speed
+  const reclaim = Math.max(1, Math.round(RECLAIM_PER_ROW * node.aggro)); // and bite
   let reclaimed = 0;
   while (node.scanAcc >= 1 && node.scanRow < FIELD_H) {
-    reclaimed += reclaimRow(node.machine, node.sector, node.scanRow, RECLAIM_PER_ROW, node.machine.rng);
+    reclaimed += reclaimRow(node.machine, node.sector, node.scanRow, reclaim, node.machine.rng);
     node.scanRow++; node.scanAcc -= 1;
   }
   node.crack = sectorStats(node.machine, node.sector).pct;

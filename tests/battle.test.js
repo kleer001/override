@@ -2,19 +2,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { CARDS, evalProgram } from '../src/cards.js';
-import { generateMachine, createNode, runVolley } from '../src/battle.js';
+import { generateMachine, createNode, runVolley, rewardMult, draftPicks } from '../src/battle.js';
 import { WIN_COVERAGE, idx, FIELD_H, energyTo, COST, OPEN } from '../src/terrain.js';
 
 const COLD = [CARDS.XOR, CARDS.BRUTE, CARDS.BRUTE];   // value 6
 const GOOD = [CARDS.BRUTE, CARDS.BRUTE, CARDS.XOR];   // value 12
 const HOT = [CARDS.ADD5, CARDS.ADD5, CARDS.SHL];      // value 30
 
-function play(machine, si, program) {
+function play(machine, si, program, aggro) {
   machine.burned.fill(0);
   machine.sectors[si].conquered = false;
-  const node = createNode(machine, si);
+  const node = createNode(machine, si, undefined, aggro);
   let g = 0;
-  while (!node.outcome && g++ < 80) runVolley(node, program);
+  while (!node.outcome && g++ < 120) runVolley(node, program);
   return node;
 }
 
@@ -82,6 +82,25 @@ test('difficulty varies and is derived from energy-to-cover', () => {
   // energyTo is monotonic in coverage
   const m = generateMachine(7);
   assert.ok(energyTo(m, m.sectors[0], 80).energy >= energyTo(m, m.sectors[0], 40).energy);
+});
+
+test('aggression is a difficulty dial: higher aggression wins less', () => {
+  let low = 0, high = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    for (let si = 0; si < 3; si++) {
+      if (play(generateMachine(seed), si, HOT, 1.0).outcome === 'win') low++;
+      if (play(generateMachine(seed), si, HOT, 2.5).outcome === 'win') high++;
+    }
+  }
+  assert.ok(low > high, `aggression 1.0 wins (${low}) should exceed aggression 2.5 wins (${high})`);
+});
+
+test('aggression pays: reward multiplier and draft picks rise with it', () => {
+  assert.ok(rewardMult(2.0) > rewardMult(1.0));
+  assert.equal(draftPicks(1.0), 1);
+  assert.equal(draftPicks(1.5), 2);
+  assert.equal(draftPicks(2.5), 4);
+  assert.equal(draftPicks(0.5), 1);   // lowering never drops below one pick
 });
 
 test('deterministic: same seed => identical terrain', () => {
