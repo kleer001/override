@@ -40,7 +40,9 @@ const game = {
   playhead: -1, prompt: '', message: '', seed: 0, redrawCount: 0,
   // scanning gnomon: an automated targeting crosshair that sweeps the arena to
   // place each trace-ember (the player watches it aim, they don't drive it).
-  gnomon: { x: null, y: null, active: false },
+  // active = the reticle is on the board; beams = the long crosshair lines show
+  // (only while travelling/locking, so they don't cover a blooming ember).
+  gnomon: { x: null, y: null, active: false, beams: false },
 };
 
 const loadRoot = () => parseInt(localStorage.getItem(ROOT_KEY) || '120', 10) || 120;
@@ -208,7 +210,7 @@ const GNOMON_MS = 22;   // per-step of the scanning-gnomon sweep
 // makes the placement legible and deliberate. Snaps instantly under reduced motion.
 async function sweepGnomon(tx, ty) {
   const gn = game.gnomon;
-  gn.active = true;
+  gn.active = true; gn.beams = true;                          // beams on while it travels + locks
   if (gn.x == null) { gn.x = tx; gn.y = ty; }                 // first lob: crosshair snaps in
   const sx = gn.x, sy = gn.y;
   const dist = Math.abs(tx - sx) + Math.abs(ty - sy);
@@ -263,7 +265,7 @@ async function startExec() {
       if (!cells.length) { await sleep(GROW_MS * 3); continue; }
       const anchor = cells[0]; // planPing's first cell is where the ping lands
       await sweepGnomon(anchor % FIELD_W, (anchor / FIELD_W) | 0);
-      game.gnomon.active = false; // clear the scan lines so the bloom is unobscured
+      game.gnomon.beams = false; // drop the long beams; the reticle rides the target through the bloom
       const hit = clock(); // cluster anchor — the whole ember shares this pulse phase
       for (const c of cells) {
         node.machine.burned[c] = 1;
@@ -272,9 +274,8 @@ async function startExec() {
         draw();
         await sleep(GROW_MS);
       }
-      game.gnomon.active = true; // re-arm for the next ping's sweep
     }
-    game.gnomon.active = false;
+    game.gnomon.active = false; // scan phase — the gnomon steps off the board
     advanceScan(node); // the trace scan descends + reclaims
     draw();
     await sleep(140);
