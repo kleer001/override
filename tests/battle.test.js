@@ -2,19 +2,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { CARDS, evalProgram } from '../src/cards.js';
-import { generateMachine, createNode, runPass, LOCKDOWN, heatOf } from '../src/battle.js';
-import { SECTORS, WIN_COVERAGE, idx, FIELD_H } from '../src/terrain.js';
+import { generateMachine, createNode, runVolley } from '../src/battle.js';
+import { WIN_COVERAGE, idx, FIELD_H, energyTo, COST, OPEN } from '../src/terrain.js';
 
 const COLD = [CARDS.XOR, CARDS.BRUTE, CARDS.BRUTE];   // value 6
 const GOOD = [CARDS.BRUTE, CARDS.BRUTE, CARDS.XOR];   // value 12
 const HOT = [CARDS.ADD5, CARDS.ADD5, CARDS.SHL];      // value 30
 
-function conquer(machine, si, program) {
+function play(machine, si, program) {
   machine.burned.fill(0);
   machine.sectors[si].conquered = false;
   const node = createNode(machine, si);
   let g = 0;
-  while (!node.outcome && g++ < 40) runPass(node, program);
+  while (!node.outcome && g++ < 80) runVolley(node, program);
   return node;
 }
 
@@ -23,8 +23,16 @@ test('accumulator: order matters', () => {
   assert.equal(evalProgram(COLD).value, 6);
 });
 
-test('heat scales with the accumulator', () => {
-  assert.ok(heatOf(evalProgram(COLD)) < heatOf(evalProgram(HOT)));
+test('energy per ping scales with the accumulator', () => {
+  assert.ok(evalProgram(HOT).value > evalProgram(GOOD).value);
+  assert.ok(evalProgram(GOOD).value > evalProgram(COLD).value);
+});
+
+test('COST replaces the gate: OPEN is cheap, HARD is dear, WALL unaffordable', () => {
+  assert.equal(COST[OPEN], 1);
+  assert.ok(COST[1] > COST[OPEN]);          // HARD
+  assert.equal(COST[2], Infinity);          // WALL
+  assert.ok(COST[3] < 0);                    // BUS refunds
 });
 
 test('all six terrain types appear in every sector (16 seeds)', () => {
@@ -38,29 +46,42 @@ test('all six terrain types appear in every sector (16 seeds)', () => {
   }
 });
 
-test('win is coverage-based: reaching WIN_COVERAGE breaches the sector', () => {
-  // find any winnable sector across seeds and confirm the win fires at >= threshold
+test('a hot program breaches some sector, holding through the breach timer', () => {
   for (let seed = 1; seed <= 20; seed++) {
     const m = generateMachine(seed);
     for (let si = 0; si < 3; si++) {
-      const node = conquer(m, si, HOT);
+      const node = play(m, si, HOT);
       if (node.outcome === 'win') {
-        assert.ok(node.crack >= WIN_COVERAGE);
-        assert.ok(node.pass <= LOCKDOWN);
+        assert.ok(node.crack >= WIN_COVERAGE, 'win fires at/above coverage threshold');
+        assert.ok(node.scanRow <= FIELD_H, 'won before the trace fully descended');
         return;
       }
     }
   }
-  assert.fail('expected at least one winnable sector across 20 seeds');
+  assert.fail('expected at least one breachable sector across 20 seeds');
 });
 
-test('difficulty varies and is not positional (some non-EASY sectors exist)', () => {
-  const tally = {};
+test('a cold program loses far more often than a hot one', () => {
+  let coldWins = 0, hotWins = 0;
   for (let seed = 1; seed <= 20; seed++) {
+    for (let si = 0; si < 3; si++) {
+      if (play(generateMachine(seed), si, COLD).outcome === 'win') coldWins++;
+      if (play(generateMachine(seed), si, HOT).outcome === 'win') hotWins++;
+    }
+  }
+  assert.ok(hotWins > coldWins, `hot (${hotWins}) should beat cold (${coldWins})`);
+});
+
+test('difficulty varies and is derived from energy-to-cover', () => {
+  const tally = {};
+  for (let seed = 1; seed <= 24; seed++) {
     for (const s of generateMachine(seed).sectors) tally[s.difficulty] = (tally[s.difficulty] || 0) + 1;
   }
   assert.ok((tally.EASY || 0) > 0, 'some EASY sectors');
-  assert.ok((tally.HARD || 0) + (tally.BRUTAL || 0) > 0, 'some hard/brutal sectors');
+  assert.ok((tally.MED || 0) + (tally.HARD || 0) + (tally.BRUTAL || 0) > 0, 'some harder sectors');
+  // energyTo is monotonic in coverage
+  const m = generateMachine(7);
+  assert.ok(energyTo(m, m.sectors[0], 80).energy >= energyTo(m, m.sectors[0], 40).energy);
 });
 
 test('deterministic: same seed => identical terrain', () => {

@@ -4,12 +4,12 @@
 
 import { mulberry32, shuffle } from './rng.js';
 import { startingDeck, DRAFT_POOL, CARDS } from './cards.js';
-import { generateMachine, newCode, createNode, beginPass, endPass, burnMore, jackEmbers, REDRAW_COST } from './battle.js';
+import { generateMachine, newCode, createNode, beginVolley, lobOne, advanceScan, resolveVolley, REDRAW_COST } from './battle.js';
 import { buildScreen } from './render.js';
 import { installPointer } from './input.js';
 import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, inRect } from './layout.js';
 import { CHARACTERS } from './characters.js';
-import { FIELD_H, WIN_COVERAGE } from './terrain.js';
+import { WIN_COVERAGE } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
 const screen = document.getElementById('screen');
@@ -111,7 +111,7 @@ function undoSlot() {
 function gotoTarget() {
   if (game.selection.length < 3) return;
   game.phase = 'target';
-  game.prompt = 'CHOOSE TARGET — match your heat to the terrain';
+  game.prompt = 'CHOOSE TARGET — match your energy to the terrain';
   sfx.ui();
   draw();
 }
@@ -119,49 +119,9 @@ function gotoTarget() {
 function chooseSector(si) {
   const s = game.run.machine.sectors[si];
   if (!s || s.conquered) return;
-  game.node = createNode(game.run.machine, si);
-  startJackin();
-}
-
-// --- jack-in targeting: oscillating gnomons, lock X then Y ---
-let jackRAF = null;
-function startJackin() {
-  game.phase = 'jackin';
-  game.jack = { step: 'x', pos: 0, col: null, row: null, lockedX: null };
-  game.jackStart = performance.now();
-  resumeAudio();
-  sfx.exec();
-  loopJackin();
-}
-function loopJackin() {
-  if (game.phase !== 'jackin') return;
-  const j = game.jack, s = game.node.sector, ch = game.run.char;
-  const phase = ((performance.now() - game.jackStart) / ch.period) % 1;
-  const tri = phase < 0.5 ? phase * 2 : 2 - phase * 2; // 0..1..0 ping-pong
-  if (j.step === 'x') {
-    const lo = ch.deep ? s.x0 + Math.floor((s.x1 - s.x0) * 0.45) : s.x0;
-    j.col = lo + Math.round(tri * (s.x1 - lo));
-  } else {
-    j.row = Math.round(tri * (FIELD_H - 1));
-  }
-  draw();
-  jackRAF = requestAnimationFrame(loopJackin);
-}
-function lockJackin() {
-  if (game.phase !== 'jackin') return;
-  const j = game.jack;
-  if (j.step === 'x') {
-    j.lockedX = j.col;
-    j.step = 'y';
-    game.jackStart = performance.now();
-    sfx.load();
-  } else {
-    if (jackRAF) cancelAnimationFrame(jackRAF);
-    sfx.lock();
-    game.node.embers = jackEmbers(game.run.machine, game.node.sector, j.lockedX, j.row, game.run.char);
-    game.phase = 'exec';
-    startExec();
-  }
+  game.node = createNode(game.run.machine, si, game.run.char);
+  game.phase = 'exec';
+  startExec();
 }
 
 async function startExec() {
@@ -170,6 +130,7 @@ async function startExec() {
   await sleep(220);
   const node = game.node;
   while (!node.outcome) {
+    const ev = beginVolley(node, game.program.slice());
     for (let i = 0; i < 3; i++) {
       game.playhead = i;
       const k = game.program[i].kind;
@@ -182,32 +143,20 @@ async function startExec() {
     }
     game.playhead = -1;
     const before = node.crack;
-    const ev = beginPass(node, game.program.slice());
-    for (let s = 0; s < node.steps; s++) { // draw every spread layer
-      const added = burnMore(node);
+    while (node.pingsLeft > 0) { // lob each finite ping, animate its spread
+      lobOne(node);
       draw();
       await sleep(BURN_MS);
-      if (added === 0) break;
     }
-    endPass(node, ev);
+    advanceScan(node); // the trace scan descends + reclaims
+    draw();
+    await sleep(140);
+    resolveVolley(node, ev);
     if (node.crack > before) sfx.crack();
     draw();
     await sleep(260);
   }
-  if (node.outcome === 'win') await burnToCompletion(node);
   showResult();
-}
-
-// Win is already secured; keep spreading the fire to its natural limit so
-// coverage past WIN_COVERAGE can bank as points. Lockdown no longer applies.
-async function burnToCompletion(node) {
-  game.prompt = `${node.sector.id} BREACHED — burning to completion for bonus…`;
-  for (let guard = 0; guard < 300; guard++) {
-    const added = burnMore(node);
-    draw();
-    await sleep(BURN_MS);
-    if (added === 0) break;
-  }
 }
 
 function showResult() {
@@ -226,7 +175,7 @@ function showResult() {
   } else {
     sfx.lose();
     const kept = Math.floor(r.root * 0.5); saveRoot(kept);
-    game.message = `>> FAIL: your terminal burns out. banked ${kept} ROOT. [ENTER] to jack in again.`;
+    game.message = `>> TRACED: they found you in ${node.sector.id}. banked ${kept} ROOT. [ENTER] to jack in again.`;
     game.prompt = 'TRACE COMPLETE.';
   }
   draw();
@@ -269,8 +218,6 @@ function onTapCell(col, row) {
   resumeAudio();
   if (game.phase === 'charselect') {
     for (let i = 0; i < CHARACTERS.length; i++) if (inRect(col, row, DRAFT_CARDS[i])) return pickChar(i);
-  } else if (game.phase === 'jackin') {
-    return lockJackin(); // any tap locks the moving gnomon (timing skill)
   } else if (game.phase === 'assemble') {
     for (let i = 0; i < HAND_CARDS.length; i++) if (inRect(col, row, HAND_CARDS[i])) return loadSlot(i);
     if (inRect(col, row, BTN_REDRAW)) return redraw();
@@ -294,8 +241,6 @@ window.addEventListener('keydown', (e) => {
   const k = e.key;
   if (game.phase === 'charselect') {
     if (k >= '1' && k <= '3') pickChar(+k - 1);
-  } else if (game.phase === 'jackin') {
-    if (k === ' ' || k === 'Enter') { e.preventDefault(); lockJackin(); }
   } else if (game.phase === 'assemble') {
     if (k >= '1' && k <= '5') loadSlot(+k - 1);
     else if (k === 'r' || k === 'R') redraw();
