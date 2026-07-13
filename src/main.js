@@ -13,7 +13,7 @@ import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
 import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
 import { CHARACTERS } from './characters.js';
-import { WIN_COVERAGE, sectorStats } from './terrain.js';
+import { WIN_COVERAGE, sectorStats, FIELD_W } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
 const screen = document.getElementById('screen');
@@ -38,6 +38,9 @@ const game = {
   phase: 'assemble', run: null, node: null,
   program: [null, null, null], selection: [], hand: [], draft: [],
   playhead: -1, prompt: '', message: '', seed: 0, redrawCount: 0,
+  // scanning gnomon: an automated targeting crosshair that sweeps the arena to
+  // place each trace-ember (the player watches it aim, they don't drive it).
+  gnomon: { x: null, y: null, active: false },
 };
 
 const loadRoot = () => parseInt(localStorage.getItem(ROOT_KEY) || '120', 10) || 120;
@@ -197,9 +200,36 @@ function chooseSector(si) {
   startExec();
 }
 
+const GNOMON_MS = 22;   // per-step of the scanning-gnomon sweep
+
+// The automated targeting crosshair travels from its last lock to (tx,ty) with a
+// smoothstep ease, then locks on — this is the "aim" the player watches instead
+// of driving. Cells still come from planLob (random placement); the gnomon just
+// makes the placement legible and deliberate. Snaps instantly under reduced motion.
+async function sweepGnomon(tx, ty) {
+  const gn = game.gnomon;
+  gn.active = true;
+  if (gn.x == null) { gn.x = tx; gn.y = ty; }                 // first lob: crosshair snaps in
+  const sx = gn.x, sy = gn.y;
+  const dist = Math.abs(tx - sx) + Math.abs(ty - sy);
+  const steps = reduceMotion ? 1 : Math.min(9, Math.max(2, Math.round(dist / 5)));
+  for (let s = 1; s <= steps; s++) {
+    const e = s / steps, k = e * e * (3 - 2 * e);             // smoothstep
+    gn.x = Math.round(sx + (tx - sx) * k);
+    gn.y = Math.round(sy + (ty - sy) * k);
+    draw();
+    await sleep(GNOMON_MS);
+  }
+  gn.x = tx; gn.y = ty;
+  sfx.ping();                                                  // radar lock on the target
+  draw();
+  await sleep(reduceMotion ? 0 : 60);                          // a beat on the locked crosshair
+}
+
 async function startExec() {
   resumeAudio();
   sfx.exec();
+  game.gnomon = { x: null, y: null, active: false };           // fresh scan per node
   await sleep(220);
   const node = game.node;
   while (!node.outcome) {
@@ -227,10 +257,14 @@ async function startExec() {
     game.playhead = -1;
     const before = node.crack;
     const honeyBefore = node.honeyHit;
-    while (node.pingsLeft > 0) { // each ember lands, then grows outward one cell at a time
+    game.gnomon.active = true;
+    while (node.pingsLeft > 0) { // gnomon scans to each landing site, then the ember blooms
       const cells = planLob(node);
-      const hit = clock(); // cluster anchor — the whole ember shares this pulse phase
       if (!cells.length) { await sleep(GROW_MS * 3); continue; }
+      const anchor = cells[0]; // planPing's first cell is where the ping lands
+      await sweepGnomon(anchor % FIELD_W, (anchor / FIELD_W) | 0);
+      game.gnomon.active = false; // clear the scan lines so the bloom is unobscured
+      const hit = clock(); // cluster anchor — the whole ember shares this pulse phase
       for (const c of cells) {
         node.machine.burned[c] = 1;
         node.machine.bornAt[c] = hit;
@@ -238,7 +272,9 @@ async function startExec() {
         draw();
         await sleep(GROW_MS);
       }
+      game.gnomon.active = true; // re-arm for the next ping's sweep
     }
+    game.gnomon.active = false;
     advanceScan(node); // the trace scan descends + reclaims
     draw();
     await sleep(140);

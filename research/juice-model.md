@@ -147,12 +147,28 @@ wraps burned field cells in opacity spans (`composeBoard`). It already delivers:
   row (`juice.js:57`) so juice never clobbers legibility. **Any new juice must
   keep both invariants.**
 
-**The gap** is everything on the ladder that isn't the breach: the `×` detonation
-stack (§3 ▅), the pass-hold freeze, the CRT-container shake, glyph-ramp promotion,
-vault/CODE-lock pops, the honeypot jolt, and the trace-line doom. And critically,
-**the audio in AUDIO-APPENDIX is speced but not wired to these visual beats** — the
-biggest cheap win is firing the existing synth recipes *in sync* with the visual
-punches (Nijman's whole point: shake + flash + sound as one event, never staggered).
+A second layer has since landed on top of the compositor:
+
+- **The `×` detonation stack (§3 ▅)** — the frame a mult card lands fires sound +
+  a white-hot flash across the burned mass + a trauma shake + a ~90 ms pass-hold,
+  all on one frame (`juice.js` `detonate()`, `main.js` exec loop).
+- **Trauma-based CRT shake** — a pure decaying scalar (`src/shake.js`, Eiserloh),
+  sampled each frame into a CSS transform on the `.crt` container; events add
+  trauma by ladder weight.
+- **Negative juice** — the honeypot warning jolt (▄) and the trace-complete doom
+  (█): new sawtooth/flatline sfx paired with a hard shake.
+- **The scanning gnomon** — an automated targeting crosshair (`render.js`
+  `drawGnomon`, `main.js` `sweepGnomon`) sweeps the arena to each random ping
+  landing site and locks on before the ember blooms. This is the **anticipation /
+  wind-up** row of §2, done grid-native: the placement is *telegraphed* so a
+  random lob reads as a deliberate strike. The player watches it aim — they never
+  drive it (the old user-driven aiming gnomon is not back; this is its ghost).
+- **Reduced-motion path** — `prefers-reduced-motion` drops the shake, pass-hold
+  and rapid flashes and slows the breathing pulse, keeping the brightness *states*.
+
+**The remaining gap:** vault/CODE-lock pop-text (§5.5), glyph-ramp *sprays*, the
+`FORK()` beachhead flash, the tier-clear zoom-out, and the graphical overlay
+(§5.7). Audio is now wired in sync with the visual beats it fires beside.
 
 ---
 

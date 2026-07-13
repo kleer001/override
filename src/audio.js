@@ -60,6 +60,7 @@ export const sfx = {
     for (let i = 0; i < 3 + m; i++) setTimeout(() => blip(500 + i * 120, 0.05, 'square', 0.13), i * 45);
   },
   crack: () => blip(820, 0.04, 'square', 0.1),
+  ping: () => blip(1500, 0.03, 'sine', 0.05, 900), // scanning-gnomon lock — a soft radar tick
   lock: () => blip(1040, 0.09, 'triangle', 0.16),
   fork: () => { blip(360, 0.05, 'square', 0.14); setTimeout(() => blip(540, 0.05, 'square', 0.14), 60); },
   ice: () => noise(0.09, 0.1),
