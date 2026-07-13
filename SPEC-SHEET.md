@@ -13,6 +13,13 @@ doubled row count makes each cell's on-screen footprint near-square, and it lift
 the board to **3,200 cells**. It's a game — the *look* sells "1983 terminal"
 (VT100/IBM-PC-ish), not the exact row count.
 
+What's BANKED is the **80×40 logical grid as the CA/coordinate substrate** — the
+game logic, hit-testing, and CA field are addressed in these cells. It is **not** a
+rule that all *rendering* must be glyphs: a graphical layer (canvas / WebGL) can be
+mounted over the grid for real particles, bloom, shake, and color on the payoff
+beats. The grid is what elements are *positioned on*, not the limit of how they're
+*drawn*. See [`research/juice-model.md`](research/juice-model.md) §2.
+
 ### Row budget (40 rows)
 
 | Rows | Region | Cells |
