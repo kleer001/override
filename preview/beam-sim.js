@@ -78,7 +78,8 @@ export function defaultParams() {
     probMode: 'prob',                            // 'prob' (additive %) | 'mask' (every-Nth)
     prob: 50,                                     // merged emission probability %
     maskN: 5,                                     // every-Nth deterministic mask
-    reach: 10,                                     // REACH budget per ember
+    pool: 180,                                     // REACH pool for the whole packet (§4)
+    reachCap: 24,                                  // max REACH any one ember may hold
     scanSpeed: 0.5,                                // scan rows advanced per tick
     reclaim: 6,                                     // reclaimed cells per scanned row
     breachHold: 18,                                 // ticks held ≥win to breach
@@ -118,8 +119,25 @@ function burn(sim, x, y, strength) {
   if (strength > sim.heat[c]) sim.heat[c] = strength;         // hottest wins (near-spine glow)
 }
 
+// Shared REACH pool split across the packet's EXPECTED ember count (§4): many
+// embers (wide / high-prob / many directions) → each shallow; few embers (a
+// lance) → each deep, up to reachCap. Uses the expected count rather than a
+// pre-rolled plan so live slider tweaks take effect on the running sim.
+function emberShare(sim) {
+  const p = sim.params;
+  let rows = 0;
+  for (let y = 0; y < FIELD_H; y++)
+    if (sim.machine.t[idx(spineX(p, y), y)] !== WALL) rows++;
+  const hitRate = p.probMode === 'mask'
+    ? 1 / Math.max(1, p.maskN)
+    : Math.min(100, p.prob) / 100;
+  const expected = Math.max(1, rows * hitRate * Math.max(1, p.dirs.size));
+  return Math.min(p.reachCap, p.pool / expected);
+}
+
 // Emit one spine row: roll merged probability, and on a hit spawn one ember per
-// unioned direction (§3–§4). Burns the spine contact cell itself.
+// unioned direction (§3–§4), each with its share of the packet REACH pool. Burns
+// the spine contact cell itself.
 function emitSpineRow(sim, y) {
   const p = sim.params;
   const sx = spineX(p, y);
@@ -134,10 +152,11 @@ function emitSpineRow(sim, y) {
   }
   if (!hit) return;
 
-  burn(sim, sx, y, p.reach);                                  // spine contact cell
+  const share = emberShare(sim);
+  burn(sim, sx, y, share);                                    // spine contact cell
   for (const dir of p.dirs) {
     const [dx, dy] = DIRVEC[dir];
-    sim.embers.push({ x: sx, y, dx, dy, budget: p.reach, alive: true });
+    sim.embers.push({ x: sx, y, dx, dy, budget: share, alive: true });
   }
 }
 
