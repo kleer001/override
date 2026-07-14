@@ -78,11 +78,23 @@ grows toward an equilibrium vs. the scan (curtain hi-peak 55% → 83% as reprodu
   default **emission rate**, **slot curve** (start 1, +1/breach, cap ~3 T1),
   **card-rarity** weights.
 
-### 4. Port the sim into the real game (`src/`)
-- `preview/beam-sim.js` is the reference implementation; the live game (`src/battle.js`
-  et al.) still runs the retired accumulator model. Build the Tier-1 vertical slice on
-  the new sim (SPEC-SHEET §"MVP build order" is updated for this).
-- Author the ~25–30 card pool (`ember-model.md` §5) as real card data.
+### 4. Port the sim into the real game (`src/`) — ✅ DONE (2026-07-14)
+- ✅ Sim is now canonical at `src/beam.js` (moved from `preview/beam-sim.js`),
+  generalized with `createSimOn(machine, sector, params, rng)` so battles run on the
+  run's persistent shared machine. Sandbox + balance harness import from `src/beam.js`.
+- ✅ `src/cards.js` = the §5 quad pool + GROWTH table + `mergeBeam()` (merge rules).
+  `src/battle.js` = createNode/fire/stepBattle over the shared machine, aggression
+  scales the scan, CODE digits lock on breach. `src/characters.js` = beam meta-stat
+  bonuses. Accumulator (`evalProgram`, opcodes, planPing/spreadPing) fully retired.
+- ✅ UI ported: assemble shows the merged BEAM; target aims a turret column; exec is
+  the idle watch (fire one packet → spine → embers spread/reproduce → scan). Shop
+  unlocks ROOTKIT/PAYLOAD/0DAY.
+- ✅ Tests rewritten for the beam model (30/30). Verified end-to-end in a real browser:
+  win + loss paths, no console errors; one packet → embers 7→593 → coverage 1%→56% →
+  breach.
+- ⏭ **Still open:** the ~25–30 card pool is a 15-card slice so far (enough for the
+  slice); the vault/CODE win path (LANCE/FENCE payoff) is not yet wired — sectors still
+  win purely on coverage, and CODE digits lock on breach rather than per vault cell.
 
 ### 5. Cosmetic / cleanup — ✅ DONE
 - ✅ SPEC-SHEET board mock redrawn to the neutral/scan aesthetic: `#` is now a single
@@ -95,6 +107,9 @@ grows toward an equilibrium vs. the scan (curtain hi-peak 55% → 83% as reprodu
 ## Files touched by this overhaul
 - Design: `research/ember-model.md`, `research/weapon-design-references.md`,
   `GAME-SHEET.md`, `SPEC-SHEET.md`
+- Game (ported to the beam model): `src/beam.js` (canonical sim), `src/cards.js`,
+  `src/battle.js`, `src/characters.js`, `src/render.js`, `src/main.js`, `src/shop.js`,
+  `src/terrain.js`, `tests/battle.test.js`, `tests/shop.test.js`
 - Sandbox: `preview/beam.html`, `preview/beam.js`, `preview/beam-sim.js`,
   `preview/beam-balance.js` (headless balance harness)
 - Unchanged/old-model (needs porting): `src/battle.js`, `src/cards.js`, `src/characters.js`
