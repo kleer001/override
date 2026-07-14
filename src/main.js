@@ -13,7 +13,7 @@ import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
 import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
 import { CHARACTERS } from './characters.js';
-import { WIN_COVERAGE, sectorStats, FIELD_W } from './terrain.js';
+import { WIN_COVERAGE, sectorStats, FIELD_W, FIELD_H, WALL, idx } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
 const screen = document.getElementById('screen');
@@ -40,9 +40,15 @@ const game = {
   playhead: -1, prompt: '', message: '', seed: 0, redrawCount: 0,
   // scanning gnomon: an automated targeting crosshair that sweeps the arena to
   // place each trace-ember (the player watches it aim, they don't drive it).
-  // active = the reticle is on the board; beams = the long crosshair lines show
-  // (only while travelling/locking, so they don't cover a blooming ember).
-  gnomon: { x: null, y: null, active: false, beams: false },
+  // It stays live for the whole EXEC phase, roving between candidate ignition
+  // points so the arena always reads as "being scanned"; when a real ember is
+  // ready it locks onto that site, blooms, then resumes hunting. Fields:
+  //   active  — the reticle is on the board
+  //   beams   — the long crosshair lines show (off during a bloom so they don't
+  //             cover the ember; on while scanning/travelling/locking)
+  //   locking — an ember placement owns the position (idle drift stands down)
+  //   wx,wy   — the current idle scan waypoint it's drifting toward
+  gnomon: { x: null, y: null, active: false, beams: false, locking: false, wx: null, wy: null },
 };
 
 const loadRoot = () => parseInt(localStorage.getItem(ROOT_KEY) || '120', 10) || 120;
@@ -202,15 +208,43 @@ function chooseSector(si) {
   startExec();
 }
 
-const GNOMON_MS = 22;   // per-step of the scanning-gnomon sweep
+const GNOMON_MS = 22;      // per-step of the scanning-gnomon lock-on sweep
+const GNOMON_IDLE = 0.018; // cells/ms — calm radar drift between entry points while it hunts
 
-// The automated targeting crosshair travels from its last lock to (tx,ty) with a
-// smoothstep ease, then locks on — this is the "aim" the player watches instead
-// of driving. Cells still come from planLob (random placement); the gnomon just
-// makes the placement legible and deliberate. Snaps instantly under reduced motion.
+// While no ember is being placed, the crosshair keeps roving to a fresh non-WALL
+// cell in the sector under attack — an always-on scan that hunts the next entry
+// point. Driven per-frame from the animation loop so it stays alive even during
+// the awaited beats (card playback, trace scan) when the exec loop is asleep.
+function idleWaypoint(node) {
+  const s = node.sector, m = node.machine;
+  for (let tries = 0; tries < 40; tries++) {
+    const x = s.x0 + Math.floor(Math.random() * (s.x1 - s.x0 + 1));
+    const y = Math.floor(Math.random() * FIELD_H);
+    if (m.t[idx(x, y)] !== WALL) return { x, y };
+  }
+  return { x: s.entry.x, y: s.entry.y };
+}
+function stepGnomonScan(dt) {
+  const gn = game.gnomon, node = game.node;
+  if (!node || game.phase !== 'exec' || !gn.active || gn.locking || gn.x == null) return;
+  if (reduceMotion) return;                                   // accessibility: hold, don't drift
+  if (gn.wx == null || (Math.abs(gn.x - gn.wx) < 0.6 && Math.abs(gn.y - gn.wy) < 0.6)) {
+    const w = idleWaypoint(node); gn.wx = w.x; gn.wy = w.y;    // arrived → hunt the next entry point
+  }
+  const dx = gn.wx - gn.x, dy = gn.wy - gn.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  const step = Math.min(dist, GNOMON_IDLE * dt);
+  gn.x += (dx / dist) * step; gn.y += (dy / dist) * step;
+}
+
+// The automated targeting crosshair travels from its last position to (tx,ty)
+// with a smoothstep ease, then locks on — this is the "aim" the player watches
+// instead of driving. Cells still come from planLob (random placement); the
+// gnomon just makes the placement legible and deliberate. Snaps under reduced
+// motion. locking = true parks the idle drift so this owns the position.
 async function sweepGnomon(tx, ty) {
   const gn = game.gnomon;
-  gn.active = true; gn.beams = true;                          // beams on while it travels + locks
+  gn.active = true; gn.beams = true; gn.locking = true;       // beams on while it travels + locks
   if (gn.x == null) { gn.x = tx; gn.y = ty; }                 // first lob: crosshair snaps in
   const sx = gn.x, sy = gn.y;
   const dist = Math.abs(tx - sx) + Math.abs(ty - sy);
@@ -231,9 +265,11 @@ async function sweepGnomon(tx, ty) {
 async function startExec() {
   resumeAudio();
   sfx.exec();
-  game.gnomon = { x: null, y: null, active: false };           // fresh scan per node
-  await sleep(220);
   const node = game.node;
+  // fresh scan per node: the crosshair jacks in at the sector entry and is live
+  // immediately, scanning the arena for the whole burn (stepGnomonScan drives it).
+  game.gnomon = { x: node.sector.entry.x, y: node.sector.entry.y, active: true, beams: true, locking: false, wx: null, wy: null };
+  await sleep(220);
   while (!node.outcome) {
     const ev = beginVolley(node, game.program.slice());
     for (let i = 0; i < 3; i++) {
@@ -259,7 +295,6 @@ async function startExec() {
     game.playhead = -1;
     const before = node.crack;
     const honeyBefore = node.honeyHit;
-    game.gnomon.active = true;
     while (node.pingsLeft > 0) { // gnomon scans to each landing site, then the ember blooms
       const cells = planLob(node);
       if (!cells.length) { await sleep(GROW_MS * 3); continue; }
@@ -274,9 +309,11 @@ async function startExec() {
         draw();
         await sleep(GROW_MS);
       }
+      // ember placed — hand the crosshair back to the idle scan so it roves on to
+      // the next entry point (beams back on) instead of parking.
+      game.gnomon.locking = false; game.gnomon.beams = true; game.gnomon.wx = null;
     }
-    game.gnomon.active = false; // scan phase — the gnomon steps off the board
-    advanceScan(node); // the trace scan descends + reclaims
+    advanceScan(node); // the trace scan descends + reclaims (gnomon keeps scanning)
     draw();
     await sleep(140);
     resolveVolley(node, ev);
@@ -285,6 +322,7 @@ async function startExec() {
     draw();
     await sleep(260);
   }
+  game.gnomon.active = false;                                       // burn resolved — scan powers down
   if (node.outcome === 'lose') { sfx.flatline(); kick(0.9); }        // █ trace doom — caught
   showResult();
 }
@@ -461,6 +499,7 @@ function animLoop(t) {
   const dt = lastFrame ? t - lastFrame : 16;
   lastFrame = t;
   applyShake(dt);
+  stepGnomonScan(dt);   // keep the crosshair roving between entry points every frame
   if (needsAnim() && t - lastPaint >= 33) { lastPaint = t; paint(t); }
   requestAnimationFrame(animLoop);
 }

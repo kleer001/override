@@ -154,7 +154,7 @@ function drawTarget(g, game) {
 // clobbers them. main.js owns the position + on/off timing.
 function drawGnomon(g, node, gn) {
   if (!gn || !gn.active || gn.x == null) return;
-  const s = node.sector, gx = gn.x, gy = gn.y;
+  const s = node.sector, gx = Math.round(gn.x), gy = Math.round(gn.y); // idle drift is fractional
   if (gx < s.x0 || gx > s.x1 || gy < 0 || gy >= FIELD_H) return;
   if (gn.beams) {
     for (let y = 0; y < FIELD_H; y++) g[FIELD_TOP + y][gx] = '║';   // vertical scan beam
