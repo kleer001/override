@@ -3,6 +3,12 @@
 Technical spec for the buildable vertical slice. Numbers are starting points to
 tune, not gospel.
 
+> **Authoritative core:** the battle loop, card model, ignition, and win/lose
+> clock described below follow [`research/ember-model.md`](research/ember-model.md)
+> (the "Beam-Card Model," core locked 2026-07-14). Where a section here still
+> describes the retired ordered-accumulator design, treat `ember-model.md` as
+> the source of truth and this doc as the section that needs porting.
+
 ---
 
 ## Grid (BANKED: 80×40 logical)
@@ -24,9 +30,9 @@ beats. The grid is what elements are *positioned on*, not the limit of how they'
 
 | Rows | Region | Cells |
 |------|--------|-------|
-| 1–3 | HUD: status · lockdown + CODE bar · drifting address ticker | 240 |
+| 1–3 | HUD: status · trace-scan + CODE bar · drifting address ticker | 240 |
 | **4–36** | **the CA field (living board)** | **33 × 80 = 2,640** |
-| 37 | program track (the 3-card sequence + playhead) | 80 |
+| 37 | slot track (merged beam readout) + turret | 80 |
 | 38 | CRACK / TERRITORY bar | 80 |
 | 39–40 | scrolling log | 160 |
 
@@ -41,35 +47,49 @@ HUD and controls are fixed furniture the CA never touches.
 
 ## The living board (cellular automaton)
 
+*Ignition and the win/lose clock are settled by
+[`research/ember-model.md`](research/ember-model.md) §1, §4, §9 — one packet
+fires a beam that emits and spreads embers over time, and a top-down **trace
+scan** (not a passes-based lockdown) is the run clock. The CA field mechanics
+below (infect/grow/decay, islands, links, CODE bar) still describe the living
+board itself.*
+
 **Core idea:** crack % *is* territory on a living CA field, so the number going up
 is literally a stain spreading across the screen.
 
-Three factions fight over cells: your **intrusion** (spreading worm), the
-system's **ICE** (pushing back), and **neutral memory**. The 3-card program feeds
-*infection pressure* into the CA each pass. **Crack % = fraction of the grid you
-hold.** Win by controlling the core sector / resolving the CODE; lose if ICE
-reclaims your beachhead or lockdown runs out.
+Your **intrusion** (spreading embers) claims cells from **neutral memory**; the
+**trace scan** reclaims burned cells back to neutral as it descends. **Crack %
+= fraction of the grid you hold.** Win by holding **≥50% coverage** through the
+breach timer / resolving the CODE; lose if the trace scan reaches the bottom
+before you get there (traced).
 
 ### Cell model & CA rules (per tick)
 
-Each cell = `{ owner: none | worm | ice, strength: 0–9 }`. Double-buffered grid,
-deterministic under seeded RNG.
+Each cell = `{ owner: none | worm, strength: 0–9 }`. Double-buffered grid,
+deterministic under seeded RNG. **Settled: Tier 1 has one active faction — your
+intrusion (`worm`) against neutral memory — and the antagonist is the descending
+trace scan, not a second spreading CA player. A rival spreading faction
+(hardened ICE that infects your cells back) is a later-tier escalation (§ later
+tiers of `ember-model.md`), not the base board. "ICE" at Tier 1 is the trace /
+countermeasures, i.e. the scan itself.**
 
-- **Infect:** a cell spreads to an orthogonal neighbor when
-  `myStrength > neighborStrength`. Both worm and ICE do this, so borders churn.
-- **Grow:** an interior cell (all neighbors same owner) slowly gains strength →
-  held territory hardens.
-- **Decay/die:** an isolated cell (surrounded by enemy) loses strength each tick
-  and flips → no static blobs.
-- **Border war:** contested cells flicker between owners tick to tick — this is
-  most of the on-screen motion.
+- **Spread:** a burned cell's embers advance into open neighbours, spending REACH
+  against the terrain cost — the moving frontier is where most motion lives.
+- **Grow:** an interior burned cell (all neighbours held) slowly gains strength →
+  held territory hardens (the render ramp climbs).
+- **Reclaim/die:** a cell the trace scan crosses is set back to neutral and its
+  strength resets → no static blobs; the scan band is a travelling wipe.
+- **Churn:** the advancing frontier, the scan's moving reclaim line, drifting
+  addresses and ticking strength digits keep the board alive without a second
+  faction. (Later tiers reintroduce a true border war once ICE spreads.)
 
 ### Islands & links
 
 The grid splits into 2–4 **sectors** ("islands": `KERNEL`, `IO.SYS`, `SWAP`…)
 joined by **link lines**. Your infection can only cross to a new island through a
-link you control; **ICE cutting a link** isolates (and starves) your cells on the
-far side. `FORK()` seeds a beachhead on a fresh island → two fronts.
+link you control; a link goes dead when the **trace scan reclaims its cells**,
+isolating (and starving) your cells on the far side. `FORK()` seeds a beachhead on
+a fresh island → two fronts. (Later-tier ICE can actively sever links.)
 
 ### Overlays that never stop moving
 
@@ -84,7 +104,7 @@ far side. `FORK()` seeds a beachhead on a fresh island → two fronts.
 ### Board mock (80 wide; ~14 of the 33 field rows)
 
 ```
- TIER 1: THE MACHINE     NODE 1/3     ROOT:120        LOCKDOWN[####......] 6/10
+ TIER 1: THE MACHINE     NODE 1/3     ROOT:120         TRACE SCAN[####......]
  CODE  7 _ 4 _ _ 1 _ _    ::  vault cells resolve digits    ADDR 0x7F3A -> 0xA10C +
 +------------------------------------------------------------------------------+
 | 0x7F3A ·:·=+*@@%#4  @@·      ══╗          2 #X#:·..  ·:=+*@@@%#  0xA10C  ·:· |
@@ -100,90 +120,125 @@ far side. `FORK()` seeds a beachhead on a fresh island → two fronts.
 | #X#:·.. @@@@ 5 @@@@%*=     ║            +*@@@@%#X#:  @@·   ·:=+*@@@%#=·  ==+*@ |
 | ·:=+*@@@@@%#=· @@@· 3      ══════╗      @@@%#X#:·.  ·:=+*@@@@%#X#:· @@@@ 6 @@· |
 +------------------------------------------------------------------------------+
-| PROGRAM  [ BRUTE+3 ][ XOR x2 ][ FORK() ]   ^                                  |
-| CRACK [##################################################............] 71%    |
-| > FORK seeded beachhead in SWAP (0xA10C). worm +14 cells.                     |
-| > ICE cut KERNEL<->IO.SYS link. isolated cells starving. code digit 4 LOCKED. |
+| SLOTS  [ SCRIPT.COM ][ SCRIPT.SYS ][ WORM ]  MERGED: Lin+Sin · L+R · 75%      |
+| COVERAGE [##################################################............] 71% |
+| > packet fired col 34. beam spine drawn, embers spreading. worm +14 cells.    |
+| > trace scan crossed KERNEL<->IO.SYS link. cells reclaimed. code digit 4 LOCKED.|
 +------------------------------------------------------------------------------+
 ```
 
 Legend (monochrome density ramp): `· : = + * @ %` = your infection rising in
-strength · `# X █` = ICE · `═ ║ ╬ ╗ ╝` = links · digits = per-cell strength / CODE.
+strength · `#` = trace-scan line · `X` = just-reclaimed cell · `█` = firewall (WALL)
+· `═ ║ ╬ ╗ ╝` = links / bus · digits = per-cell strength / CODE.
 
 ---
 
 ## Battle model
 
-- The 3-card program sits on a track. A **playhead** sweeps left→right, firing
-  each card, then loops. One full sweep = **1 pass**.
-- **Accumulator** resets to 0 at the start of each pass. Cards apply in order:
-  `+` adds, `×` multiplies the accumulator-so-far. At pass end, the accumulator
-  becomes this pass's **infection pressure**, applied to the CA.
-- **Two fail clocks (the DEFCON tension):** `LOCKDOWN = 10 passes` (timeout) **and**
-  ICE reclaiming your beachhead / core sector.
-- **Timing:** ~1.5 s/pass (3 cards × ~0.4 s beat + a gap). A Tier-1 battle runs
-  ~12–15 s. Snappy now; deeper tiers add lanes/islands, passes, and card slots.
+*Full mechanic: [`research/ember-model.md`](research/ember-model.md) §1–4, §9.
+The ordered accumulator and its pass loop are retired.*
+
+- Slotted cards **merge** into one beam before the battle starts: probability
+  adds (capped at 100%), direction unions, shape sums (Fourier superposition).
+  This merge is a one-time computation, not a per-tick loop — order doesn't
+  matter.
+- A **turret** slides along the bottom edge. One tap fires **one packet** at
+  column `p`. The packet draws the beam **spine** upward,
+  `x(y) = p + Σ shape(y)`; at each spine cell it rolls the merged probability,
+  and on a hit emits ember(s) in the merged direction(s).
+- Emitted embers then **spread hands-off**, burning cells and spending
+  **REACH** against the terrain COST table (§ below) each tick — no further
+  input.
+- **One clock, not two:** a top-down **trace scan** descends the field,
+  reclaiming burned cells to neutral as it crosses them. Its single descent
+  from top to bottom *is* the run clock (replaces the old `LOCKDOWN = 10
+  passes` counter). Honeypots spike the scan's speed.
+- **Win = reach, then hold:** hit **≥50% coverage** → a **breach timer**
+  starts; hold ≥50% until it expires → breached. Drop under 50% and the timer
+  pauses/resets. Scan bottoms out first → traced, run ends.
+- **Timing:** the fire is instantaneous; the watch phase (emission + spread +
+  scan) runs the length of a Tier-1 battle, on the order of ~12–15 s. Snappy
+  now; deeper tiers add rate/branch/hold aspects (§8 of the ember model), not
+  more phases.
 
 ---
 
-## Cards drive the CA (5-draw / 3-slot, unchanged)
+## Cards drive the beam (bundled triples, per `ember-model.md` §3, §5)
 
-| Card | Effect on the field |
-|------|---------------------|
-| `BRUTE +3` | +3 infection strength this pass → your cells overpower more borders |
-| `XOR ×2` | ×2 **spread rate** this pass → worm jumps 2 cells instead of 1 |
-| `NOP` sled | primes a burst: next card's CA effect doubled (2+ NOPs in a row) |
-| `FORK()` | seed a new infection cluster on another island (second front) |
-| `INTERRUPT` | freeze ICE spread for 1 pass (whole enemy field stalls) |
-| `GOTO ↑` | re-apply the previous card's CA effect |
+Every card is a complete beam — `(shape, direction, probability)` — not a CA
+effect applied in sequence. Slotting several **merges** them into one beam
+before the packet fires.
 
-Accumulator/order still rule: adds early build strength, `×` late detonates
-spread. Same math as a bare bar — now visible as a spreading stain.
+| Card | Shape | Direction | Probability | Identity / wrinkle |
+|------|-------|-----------|-------------|---------------------|
+| `SCRIPT.COM` | Linear | ← | 25% | the starter forbidden card |
+| `SCRIPT.SYS` | Linear | → | 25% | the mirror — opens a curtain |
+| `BUFFER.OVR` | Linear | ←→ | 50% | overflow; the curtain workhorse |
+| `WORM` | Sine | ←→ | 25% | wide, thin — the Morris spread |
+| `NOP.SLED` | Linear | — (none) | 50% | high prob, no direction — inert alone, bad on purpose |
 
-### Tier-1 starting deck (10 cards)
+Merge rules: probability **adds** (capped at 100%), direction **unions** (each
+unioned direction emits its own ember per firing cell — more directions = more
+surface area), shape **sums** (superposition — two sines reinforce; a line +
+sine wavers; sine + 3rd-harmonic starts squaring). Order does not matter — see
+§3 of the ember model for the full merge rules and the discipline behind
+"some cards are bad on purpose." Later tiers add new card *aspects* — rate
+(T2), `FORK()` branching (T3), hold/IQ (T4) — per §8; Tier 1 is shape +
+direction + probability only.
 
-| Card | Effect | Type |
+### Tier-1 starting deck (9 cards, indicative)
+
+| Card | Bundle | Type |
 |------|--------|------|
-| `BRUTE +3` ×4 | +3 to accumulator | add |
-| `XOR ×2` ×2 | ×2 accumulator so far | mult |
-| `NOP` ×2 | nothing; 2+ in a row → next card ×2 (sled) | filler / combo |
-| `FORK()` ×1 | spawn beachhead on another island | offense/utility |
-| `INTERRUPT` ×1 | stun ICE spread 1 pass | defense |
+| `SCRIPT.COM` ×4 | Linear · ← · 25% | curtain starter |
+| `SCRIPT.SYS` ×2 | Linear · → · 25% | curtain mirror |
+| `BUFFER.OVR` ×2 | Linear · ←→ · 50% | curtain workhorse |
+| `NOP.SLED` ×1 | Linear · — · 50% | enabler; bad alone |
 
-Core tension in 3 slots: pure offense races the ICE vs. spending a slot on
-`FORK`/`INTERRUPT` to survive longer and grind. Both viable → real decisions from
-turn one.
+Core tension in a handful of scarce slots: stacking probability/direction on
+one bundle for raw coverage vs. spreading across bundles for a wider curtain —
+every card is welded to its own trade-off, so the deck you can field is the
+decision, not the order you'd fire it in.
 
 ---
 
 ## Economy / progression
 
-- **Win node** → draft 1 of 3 new cards into the deck; +ROOT.
-- **Clear 3 nodes** → zoom out to Tier 2 (adds a 2nd island cluster + upgrades the
-  loop toward `HAND 6 / SEQ 4`).
+- **Win node** → draft 1 of 3 new cards (warez looted off the breached
+  machine) into the deck; earn a slot; +ROOT.
+- **Clear 3 nodes** → zoom out to Tier 2 (adds a 2nd island cluster + upgrades
+  toward more slots and the rate aspect, per `ember-model.md` §8).
 - **Lose battle** → fail skin, run ends, keep ~50% ROOT.
-- **ROOT (persistent)** buys: extra starting cards, +1 hand size, unlock new card
-  types in drafts, retry-from-a-deeper-tier.
+- **ROOT (persistent)** buys, at the black-market BBS shop: extra starting
+  cards, +1 slot, +REACH, unlock new card types in drafts,
+  retry-from-a-deeper-tier.
 
 ---
 
 ## Data model (sketch)
 
+*Reflects the bundled-triple card model and turret/reach/scan battle loop —
+see `ember-model.md` §3–4, §9.*
+
 ```js
-Cell   = { owner: 'none'|'worm'|'ice', strength: 0 } // 0–9
-Card   = { id, name, kind: 'add'|'mult'|'filler'|'defense'|'utility', value, fx(state) }
-Board  = { w: 80, h: 33, cells: [...],            // double-buffered
+Cell   = { owner: 'none'|'worm', strength: 0 }          // 0–9; scan reclaims to 'none'
+Card   = { id, name, shape, direction, probability }     // the bundled triple
+Board  = { w: 80, h: 33, cells: [...],                  // double-buffered
            islands: [{ id, addr, rect }], links: [{ a, b, owner }] }
-Battle = { crack: 0, target: 100, pass: 0, lockdown: 10,
+Beam   = { shape, direction, probability }               // the merged result of slotted cards
+Battle = { coverage: 0, winCoverage: 50, reach: 0,
            board: Board, code: [7,null,4,null,null,1,null,null],
-           program: [Card, Card, Card], playhead: 0 }
-Run    = { tier: 1, node: 1, deck: [...], root: 120 }
+           slots: [Card, Card, Card], beam: Beam,
+           turretCol: null, scanRow: 0, breachTimer: null }
+Run    = { tier: 1, node: 1, deck: [...], slots: 3, root: 120 }
 ```
 
-Resolution is a deterministic tick loop: apply the current playhead card to
-infection pressure → run one CA pass → advance the playhead → check win/fail.
-Pure function of state → trivially unit-testable with `node --test` (same harness
-as `finding_numbers`).
+Resolution is a deterministic tick loop: merge slotted cards into `beam` once
+→ fire the packet at `turretCol` to seed the spine and initial embers → each
+tick, spread embers (spend `reach` against terrain COST) and advance the trace
+`scanRow` → check coverage vs. `winCoverage` (breach timer) and `scanRow` vs.
+board bottom (traced) for win/fail. Pure function of state → trivially
+unit-testable with `node --test` (same harness as `finding_numbers`).
 
 ---
 
@@ -198,10 +253,11 @@ RNG for reproducible draws, boards, and runs.
 ## MVP build order
 
 1. Port grid renderer + CRT filter; render a static 80×40 Tier-1 screen.
-2. Card data + ASSEMBLE (draw 5 / place 3).
-3. Battle tick loop: accumulator + CRACK bar (no CA yet) — tune the number feel.
+2. Card data + slot arrangement (draw / merge bundled triples into one beam).
+3. Battle tick loop: turret fire → spine + emission → spread against REACH +
+   COVERAGE bar (no CA yet) — tune the number feel.
 4. Add the CA living board + islands/links (the territory war replaces any lane).
-5. Result screen + fail skin + node advance.
+5. Trace scan + breach timer; result screen + fail skin + node advance.
 6. Draft-between-nodes + ROOT meta.
 
 → Steps 1–6 = a complete Tier-1 vertical slice.
@@ -210,9 +266,15 @@ RNG for reproducible draws, boards, and runs.
 
 ## Living board v2 — terrain & burn (prototyped in `preview/`)
 
+*Ignition, reach, and the cost model here are settled by
+[`research/ember-model.md`](research/ember-model.md) §2 and §4 — this section's
+terrain generation and CA plumbing still stand; the "heat = accumulator" gate
+and the oscillating-gnomon jack-in minigame below are retired in favor of
+REACH and the Peggle turret.*
+
 The MVP board is homogeneous, so a point ignition spreads as a Manhattan-distance
 diamond. v2 replaces the uniform field with a generated **memory terrain** the
-fire must burn *through*. Prototype: `preview/terrain.js`, `ignite.js`, `burn.js`
+beam must burn *through*. Prototype: `preview/terrain.js`, `ignite.js`, `burn.js`
 (open `preview/index.html?arch=fortress&heat=8`).
 
 **Layered generation** — each technique does its one job:
@@ -223,20 +285,27 @@ fire must burn *through*. Prototype: `preview/terrain.js`, `ignite.js`, `burn.js
 3. objectives = vaults placed at BFS-deepest reachable cells (routing matters);
 4. fairness = flood-fill guard so a vault is never fully walled off.
 
-**Terrain resistance** (`RESIST` by type): OPEN 0 · VAULT 1 · BUS −2 (accelerant)
-· HARD 5 (needs a hot program) · WALL 99 (firebreak, never) · HONEY 0 (bait that
-triggers ICE). A per-burn ±1 jitter keeps fronts fingered, not round.
+**Terrain cost** (`COST` by type, per `ember-model.md` §4 — a spend curve, not a
+gate): OPEN 1 (baseline) · HONEY 1 (random placement, spikes the trace) · VAULT 2
+(toll for the prize — resolves a CODE digit) · HARD 6 (a curve, not a wall; deep
+reach affords a few) · BUS −1 (refund — accelerant) · WALL ∞ (unaffordable
+firebreak). A per-burn ±1 jitter keeps fronts fingered, not round. Supersedes the
+earlier `RESIST` table and its heat-gate framing.
 
-**Heat = the accumulator.** A cell ignites when `heat > terrainResist`. So a cold
-program (low accumulator) creeps through open memory and **stalls at every
-encrypted block**; a hot one burns through. Verified in the prototype: on one
-fortress node a cold fire (heat 5) maxes at 116 cells; a hot fire (heat 8) can
-reach 2,155. This is the bridge between deck-skill and the board.
+**Reach = the terminal stat.** Each emitted ember spends a **REACH** budget as it
+travels, `budget -= COST[cell.terrain]` per step, until it hits 0 or a WALL (see
+`ember-model.md` §4). There is no ignition threshold to clear — REACH is a smooth
+cost curve, not a gate. REACH is a script-kiddie fiction: a faster CPU / more RAM
+lets embers travel further, and it's largely a terminal (meta-progression) stat
+rather than a per-card number. This replaces "heat = the accumulator"; the old
+cold/hot-fire numbers (116 cells @ heat 5, 2,155 cells @ heat 8) were measured
+under the retired gate model and need a fresh pass under the cost-curve model.
 
-**Surface area = spread rate.** Growth ∝ (ignition points) × (front perimeter) ×
-(heat vs. resistance). Hence `FORK` (an extra ember = a whole new front) and the
-jack-in characters (War-dialer / Shotgunner / Catapultist ember patterns) are
-surface-area tools, not just flat bonuses.
+**Surface area = spread rate.** Growth ∝ (emission points) × (front perimeter) ×
+(REACH vs. terrain cost). Hence direction-union stacking (more unioned
+directions = more emitted embers = more fronts), later `FORK()` (T3, an extra
+spine = a whole new front), and the jack-in characters (War-dialer / Shotgunner /
+Catapultist beam shapes) are surface-area tools, not just flat bonuses.
 
 **Live generation (src/terrain.js).** Each sector generates independently:
 - **Three independent noise fields** (different seeds & frequencies) place WALL
@@ -245,29 +314,32 @@ surface-area tools, not just flat bonuses.
   of *nearby* islands link, so distant islands stay stranded.
 - **Horizontal shear** — thin bands of 1–2 rows shifted a big **4–18 columns**
   for an aggressive, torn, digital look.
-- **Honeypots bite:** burning a HONEY cell trips the trace — each newly-burned
-  honeypot adds +2 to a trace penalty that counts against LOCKDOWN (surfaced in
-  the lockdown meter). Honey sits in open reachable ground, so honey-dense
-  sectors cost you time.
+- **Honeypots bite:** burning a HONEY cell trips the trace scan — each
+  newly-burned honeypot speeds the scan's descent (surfaced in the trace-scan
+  meter). Honey sits in open reachable ground, so honey-dense sectors cost you
+  time.
 - **All six terrain types in every sector** (OPEN, HARD, WALL, BUS, VAULT, HONEY),
   guaranteed — verified 120/120 sectors.
 
-**Win = coverage.** Breach a sector by burning **≥ WIN_COVERAGE% (50%)** of its
-claimable cells before lockdown — not by reaching a point. Difficulty is emergent
-from the heat gate (HARD needs heat > 5) and **connectivity** (how much is linked
-to your entry). Labels: EASY (h≥4) · HARD (h≥6) · **BRUTAL** (can't reach 50% at
-any heat). **Runs are not guaranteed winnable** — ~1 in 8 machines has a BRUTAL
-sector, making that run impossible to fully clear (Candy-Crush rules). Difficulty
-is randomized per sector, not positional.
+**Win = coverage, held.** Breach a sector by holding **≥ WIN_COVERAGE% (50%)** of
+its claimable cells through the breach timer before the trace scan reaches the
+bottom (`ember-model.md` §9) — not by reaching a point. Difficulty is emergent
+from the terrain cost curve (HARD's cost of 6 needs real REACH to afford) and
+**connectivity** (how much is linked to your entry). Labels: EASY · HARD ·
+**BRUTAL** (can't reach 50% at any REACH). **Runs are not guaranteed winnable** —
+~1 in 8 machines has a BRUTAL sector, making that run impossible to fully clear
+(Candy-Crush rules). Difficulty is randomized per sector, not positional.
 
-**Jack-in (built).** You pick a **character** at run start, then aim each
-ignition with an **oscillating-gnomon** minigame: a vertical gnomon sweeps
-left↔right (tap/SPACE to lock X), then a horizontal gnomon sweeps up↕down (lock
-Y); your ember(s) land at the intersection (settled off walls) and the burn
-begins. Characters (`src/characters.js`) tune sweep speed + ember pattern:
-War-dialer (slow/precise, 1 ember), Shotgunner (fast, 5 scattered), Catapultist
-(medium, 1 ember, aim limited to the far half — lob deep). Wired through
-`createNode(…embers)` → `jackEmbers()`.
+**Jack-in (settled: Peggle turret, replaces the oscillating-gnomon minigame).**
+You pick a **character** at run start, then aim with a turret that **slides**
+along the bottom edge; one tap **fires a single packet** at your chosen column —
+no two-axis lock-in, one input. The packet draws the beam spine, and the
+character defines that spine's shape: War-dialer draws a thin, precise **lance**;
+Shotgunner draws a wide **spray** off the spine; Catapultist draws a deep **lob**
+that plants the spine far from the turret. Characters (`src/characters.js`) tune
+the spine shape rather than a scattered landing pattern. Wired through
+`createNode(…)` → the turret-fire path (supersedes `jackEmbers()`'s
+gnomon-locked landing).
 
 The `preview/` archetypes remain a tuning sandbox; the live game uses the
 generator above.

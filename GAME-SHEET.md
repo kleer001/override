@@ -12,47 +12,66 @@ world, blah blah.
 
 ---
 
-## The core loop (three beats)
+## The core loop (one screen)
 
-1. **ASSEMBLE** — Draw **5** instruction cards, slot **3** into an execution
-   sequence. Order is everything.
-2. **EXEC** — The sequence auto-runs on a loop, left→right, hands-off. Your
-   intrusion spreads across the board, crack % climbs, defenders hold, ICE pushes
-   back, the lockdown clock ticks. You watch.
-3. **RESULT** — Crack the target before you're overrun → **breach**, draft a card,
-   advance. Get overrun or time out → **fail skin**, the run ends, bank meta, go
-   again.
+*Settled in [`research/ember-model.md`](research/ember-model.md) — the "Beam-Card
+Model." No ASSEMBLE / EXEC / RESULT cutaways; it's one screen, one shot.*
 
-Fully idle: assemble, watch, result. No clicking during EXEC in the base game.
+1. **Arrange** — slot your cards into your earned slots. They **merge** into one
+   beam: probability adds, direction unions, shape sums. Order doesn't matter —
+   which cards you have slots for does.
+2. **Aim & fire** — a turret slides along the bottom edge; tap once to fire a
+   single packet at the column of your choice. That's the only positional call
+   in the whole battle.
+3. **Watch** — the packet draws a beam spine up the field; embers emit off it
+   and spread outward, burning terrain and racking up coverage while a top-down
+   **trace scan** bears down. Hold **≥50% coverage** through the breach timer →
+   **breach**, loot a card, earn a slot, advance. Scan reaches the bottom first
+   → traced, **fail skin**, the run ends, bank meta, go again.
+
+Fully idle after the fire: arrange, slide, fire, watch. No clicking once the
+packet is away.
 
 ---
 
 ## Cards = the dawn of computing
 
-Every card is a real machine instruction or hacking-history artifact, and they
-execute on a running **accumulator** exactly like a CPU — so *sequence is the
-strategy*. Adds early build the value; multipliers late detonate it.
+Every card is a real machine instruction or hacking-history artifact — pirated,
+forbidden warez traded on a BBS. Unlike an accumulator, each card is a
+**complete, self-contained beam**: it bundles a shape (the spine's curve), a
+direction (which way embers emit off the spine), and a probability (which
+spine cells fire). Playing several cards **merges** them into one beam —
+probability adds (capped at 100%), direction unions, shape sums like harmonics
+building a waveform. **Order doesn't matter; which cards you have slots for
+does.**
 
-Examples: `BRUTE +3`, `XOR ×2`, `NOP` (sled synergy), `GOTO ↑` (re-run the prior
-card), `FORK()` (spawn a second front), `INTERRUPT` (stun the enemy), `2600Hz`
-(phreak the line — draw cards), `PUNCHCARD` (one-shot bomb). The lore is an
-endless, free card-name pipeline: LISP recursion, the Morris Worm, Turing's
-Bombe, Ken Thompson's compiler backdoor, blue boxes, buffer overflows.
+Examples: `SCRIPT.COM` (the starter forbidden program — Linear, Left, 25%),
+`WORM` (a wide, thin sine spread — the Morris Worm), `HARMONIC`/`PHREAK`
+(stacking sine harmonics into a literal Fourier synthesis), `NOP.SLED` (all
+probability, no direction — inert alone, a deliberately bad card), `FORK()`
+(spawn a second beam spine), `0DAY` (the legendary grail: Sine, both
+directions, 100%). The lore is an endless, free card-name pipeline: LISP
+recursion, the Morris Worm, Turing's Bombe, Ken Thompson's compiler backdoor,
+blue boxes, buffer overflows.
 
-**Why order matters (worked example):**
-`[BRUTE+3][BRUTE+3][XOR×2]` → (0+3+3)×2 = **12** per pass.
-`[XOR×2][BRUTE+3][BRUTE+3]` → ((0×2)+3+3) = **6** per pass.
-Same three cards, half the result.
+**Why the bundle matters (worked example):**
+`SCRIPT.COM` alone = Linear · Left · 25% — a thin, unreliable trickle.
+`SCRIPT.COM` + a second copy of `SCRIPT.COM` **merges** to Linear · Left ·
+**50%** — same shape and direction, but probability stacks. Two cards, one
+beam, twice the hit rate. There's no order to choose — the trade-off is
+entirely which cards you have slots for: a gorgeous shape can arrive welded to
+a bad direction or a starved probability. Some cards are bad on purpose.
 
 ---
 
 ## A run
 
-Roguelike climb (Balatro / Slay-the-Spire shape): clear nodes, draft one card
-between battles, zoom out a whole tier when a system falls. **One lost battle
-ends the run.** A persistent meta-currency (**ROOT**) survives — spend it between
-runs on permanent unlocks (extra starting cards, bigger hand, new card types,
-retry-from-a-deeper-tier).
+Roguelike climb (Balatro / Slay-the-Spire shape): clear nodes, loot a card and
+earn a slot between battles, zoom out a whole tier when a system falls. **One
+lost battle ends the run.** A persistent meta-currency (**ROOT**) survives —
+spend it between runs at the black-market BBS (the ROOT shop) on permanent
+unlocks (extra forbidden cards, more terminal-memory slots, deeper REACH,
+new card types, retry-from-a-deeper-tier).
 
 ---
 
@@ -65,7 +84,7 @@ subsystem, not just bigger numbers.
 
 | # | Tier | Scale | New subsystem it teaches | Fail skin (flavor only) |
 |---|------|-------|--------------------------|-------------------------|
-| 1 | THE MACHINE   | one computer            | base board / accumulator      | terminal burns out          |
+| 1 | THE MACHINE   | one computer            | base board / bundled-beam merge | terminal burns out          |
 | 2 | THE LAN       | homes, BBSes            | multiple nodes — pick targets | grounded for a week         |
 | 3 | THE CORP      | company mainframes      | heat — traced back, you bleed | dad loses his job           |
 | 4 | THE GRID      | NORAD / the WOPR        | the DEFCON two-clock: stall vs. crack | jail time           |
@@ -82,23 +101,29 @@ the same game, and the actual win is *stopping the machine*.
 The fail skins double as a depth gauge — the consequence tells you how deep you
 got. Pure comedy, zero real stakes.
 
+Every card is forbidden, pirated software; your terminal-memory slots are the
+RAM you've expanded by hacking; the seven tiers are the fractal climb from a
+nobody script kiddie on a bedroom terminal to the hacker the FBI is quietly
+building a case against.
+
 ---
 
 ## Jack-in characters (run-start meta)
 
-You pick *how you break in* at the start of a run — a character with an upgrade
-tree, defined by its **ignition pattern** (where embers land on the memory
-field):
+You pick *how you break in* at the start of a run — a character with an
+upgrade tree, defined by the **shape of the beam** its turret draws when it
+fires:
 
-- **War-dialer** — one precise ember at your chosen edge point. Safe, small
-  starting surface area. Upgrades: pick-your-entry, hotter first ember.
-- **Shotgunner** — 3–5 embers scattered in a cone; big initial surface area but
-  you don't pick where (may hit hard terrain or a honeypot). Upgrades: +embers,
-  wider spread, tighter grouping.
-- **Catapultist** — lobs one ember deep into the field; gamble for depth (lands
-  near a vault, or in a dead-end). Upgrades: +lobs, aim assist, deeper throw.
+- **War-dialer** — a thin, precise lance. Small surface area, but every ember
+  counts. Upgrades: pick-your-entry, hotter first ember.
+- **Shotgunner** — a wide spray off the spine; big initial surface area, but
+  scattershot (may hit hard terrain or a honeypot). Upgrades: +embers, wider
+  spread, tighter grouping.
+- **Catapultist** — a deep lob that plants the spine far from the turret;
+  gamble for depth (lands near a vault, or in a dead-end). Upgrades: aim
+  assist, deeper throw.
 
-Ignition patterns are prototyped in `preview/` — see the terrain screenshots.
+Beam/trail shapes are prototyped in `preview/` — see the terrain screenshots.
 
 ## Look & feel
 
@@ -117,7 +142,11 @@ Ignition patterns are prototyped in `preview/` — see the terrain screenshots.
 ## Design pillars (do not lose these)
 
 1. **You write it, then watch it.** The joy is spectacle, not clicking.
-2. **Order is the game.** The accumulator makes sequencing the core skill.
+2. **The deck is bundled triples.** Every card is a complete beam — shape,
+   direction, and probability welded together. Merging cards adds probability,
+   unions direction, and sums shape like Fourier harmonics; order is
+   commutative. The skill is scarce-slot allocation and accepting bundled
+   trade-offs — some cards are bad on purpose.
 3. **The number is visible.** Crack % is territory on a living field, never a
    bare bar.
 4. **Fractal reuse.** One battle engine, seven reskins + one new rule each —
