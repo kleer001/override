@@ -9,7 +9,9 @@
 
 import { mulberry32, randInt } from './rng.js';
 
-export const FIELD_W = 80, FIELD_H = 33;
+// The play field is ONE memory block (a run = one block). Its dimensions fit the
+// 64-wide field panel beside the status gutter (see src/layout.js): 62×28 interior.
+export const FIELD_W = 62, FIELD_H = 28;
 export const OPEN = 0, HARD = 1, WALL = 2, BUS = 3, HONEY = 4;
 // REACH a beam ember SPENDS to infect each cell (ember-model.md §4). WALL is
 // unaffordable; BUS refunds (accelerant). OPEN must cost >=1 or the free flood
@@ -18,11 +20,11 @@ export const COST = [1, 6, Infinity, -1, 1];
 export const idx = (x, y) => y * FIELD_W + x;
 export const WIN_COVERAGE = 50; // % of a sector's claimable cells to breach it
 
-export const FIREWALLS = [26, 53];
+// One block spanning the whole field — no inter-sector firewalls (WALL still
+// arises from the noise). SECTORS stays an array of one so the sim/renderer that
+// iterate sectors keep working unchanged.
 export const SECTORS = [
-  { id: 'KERNEL', x0: 0,  x1: 25 },
-  { id: 'IO.SYS', x0: 27, x1: 52 },
-  { id: 'SWAP',   x0: 54, x1: 79 },
+  { id: 'THE MACHINE', x0: 0, x1: FIELD_W - 1 },
 ];
 
 const cx = (c) => c % FIELD_W, cy = (c) => (c / FIELD_W) | 0;
@@ -180,7 +182,6 @@ function genSector(t, s, rng) {
 export function generateMachine(seed) {
   const rng = mulberry32(seed >>> 0);
   const t = new Uint8Array(FIELD_W * FIELD_H);
-  for (const wx of FIREWALLS) for (let y = 0; y < FIELD_H; y++) t[idx(wx, y)] = WALL;
   const sectors = SECTORS.map((s) => genSector(t, s, rng));
   const machine = { seed: seed >>> 0, t, sectors, burned: new Uint8Array(FIELD_W * FIELD_H), bornAt: new Float64Array(FIELD_W * FIELD_H), rng };
   for (const s of machine.sectors) s.difficulty = difficultyOf(machine, s);

@@ -68,51 +68,42 @@ test('all five terrain types appear in every sector (16 seeds)', () => {
   }
 });
 
-test('a strong beam breaches some sector, holding through the breach timer', () => {
-  for (let seed = 1; seed <= 20; seed++) {
-    const m = generateMachine(seed);
-    for (let si = 0; si < 3; si++) {
-      const node = play(m, si, STRONG);
-      if (node.outcome === 'win') {
-        assert.ok(node.crack >= WIN_COVERAGE, 'win fires at/above coverage threshold');
-        assert.ok(node.sim.scanRow <= FIELD_H, 'won before the trace fully descended');
-        return;
-      }
+test('a strong beam breaches the block, holding through the breach timer', () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const node = play(generateMachine(seed), 0, STRONG);
+    if (node.outcome === 'win') {
+      assert.ok(node.crack >= WIN_COVERAGE, 'win fires at/above coverage threshold');
+      assert.ok(node.sim.scanRow <= FIELD_H, 'won before the trace fully descended');
+      return;
     }
   }
-  assert.fail('expected at least one breachable sector across 20 seeds');
+  assert.fail('expected at least one breachable block across 40 seeds');
 });
 
 test('a weak beam loses far more often than a strong one', () => {
   let weakWins = 0, strongWins = 0;
-  for (let seed = 1; seed <= 16; seed++) {
-    for (let si = 0; si < 3; si++) {
-      if (play(generateMachine(seed), si, WEAK).outcome === 'win') weakWins++;
-      if (play(generateMachine(seed), si, STRONG).outcome === 'win') strongWins++;
-    }
+  for (let seed = 1; seed <= 40; seed++) {
+    if (play(generateMachine(seed), 0, WEAK).outcome === 'win') weakWins++;
+    if (play(generateMachine(seed), 0, STRONG).outcome === 'win') strongWins++;
   }
   assert.ok(strongWins > weakWins, `strong (${strongWins}) should beat weak (${weakWins})`);
-  assert.equal(weakWins, 0, 'the one-card starter should never breach a full sector');
+  assert.equal(weakWins, 0, 'the one-card starter should never breach the block');
 });
 
 test('GROWTH is load-bearing: stripping reproduce collapses coverage', () => {
   let withGrowth = 0, without = 0;
-  for (let seed = 1; seed <= 12; seed++) {
-    for (let si = 0; si < 3; si++) {
-      withGrowth += runBattlePeak(nodeFor(generateMachine(seed), si, STRONG)).peak;
-      without += runBattlePeak(nodeFor(generateMachine(seed), si, STRONG, (p) => { p.reproduce = 0; })).peak;
-    }
+  for (let seed = 1; seed <= 30; seed++) {
+    withGrowth += runBattlePeak(nodeFor(generateMachine(seed), 0, STRONG)).peak;
+    without += runBattlePeak(nodeFor(generateMachine(seed), 0, STRONG, (p) => { p.reproduce = 0; })).peak;
   }
   assert.ok(withGrowth > without * 1.3, `growth should lift total peak coverage (${withGrowth.toFixed(0)} vs ${without.toFixed(0)})`);
 });
 
 test('aggression is a difficulty dial: higher aggression wins less', () => {
   let low = 0, high = 0;
-  for (let seed = 1; seed <= 20; seed++) {
-    for (let si = 0; si < 3; si++) {
-      if (play(generateMachine(seed), si, STRONG, 0.5).outcome === 'win') low++;
-      if (play(generateMachine(seed), si, STRONG, 2.5).outcome === 'win') high++;
-    }
+  for (let seed = 1; seed <= 40; seed++) {
+    if (play(generateMachine(seed), 0, STRONG, 0.5).outcome === 'win') low++;
+    if (play(generateMachine(seed), 0, STRONG, 2.5).outcome === 'win') high++;
   }
   assert.ok(low > high, `aggression 0.5 wins (${low}) should exceed aggression 2.5 wins (${high})`);
 });

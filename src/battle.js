@@ -18,12 +18,13 @@ export { generateMachine };
 export const REDRAW_COST = 10;      // points spent to reshuffle the hand in assemble
 export const SLOTS = 3;             // beam slots in assemble (Tier 1)
 
-// --- Tier-1 shared terminal/scan constants (validated in beam-balance.js) ---
-export const POOL = 800;            // base REACH pool (terminal meta-stat)
+// --- Tier-1 shared terminal/scan constants (validated in beam-balance.js on the
+// single 62×28 block: HARMONIC ~90% / CURTAIN ~60% strong, weak starter 0%). ---
+export const POOL = 1000;           // base REACH pool (terminal meta-stat)
 export const REACH_CAP = 20;        // max REACH any one ember may hold
-export const SCAN_SPEED = 0.5;      // scan rows/tick at aggression 1
+export const SCAN_SPEED = 0.40;     // scan rows/tick at aggression 1
 export const RECLAIM = 6;           // reclaimed cells/row at aggression 1
-export const BREACH_HOLD = 18;      // ticks held ≥WIN_COVERAGE to breach
+export const BREACH_HOLD = 15;      // ticks held ≥WIN_COVERAGE to breach
 
 // --- AGGRESSION: the single difficulty dial. It scales the whole trace scan (the
 // enemy), mirroring how your deck scales the whole beam. The player raises it for

@@ -84,11 +84,11 @@ const DECKS = {
 // Every value is env-overridable for quick sweeps, e.g.  POOL=1000 RECLAIM=5 node …
 const envN = (k, d) => (process.env[k] !== undefined ? +process.env[k] : d);
 const TUNE = {
-  pool: envN('POOL', 800),              // REACH pool (terminal meta-stat, shared by every deck)
+  pool: envN('POOL', 1000),             // REACH pool (terminal meta-stat, shared by every deck)
   reachCap: envN('REACHCAP', 20),       // max REACH any one ember may hold
-  scanSpeed: envN('SCANSPEED', 0.5),    // scan rows advanced per tick
+  scanSpeed: envN('SCANSPEED', 0.40),   // scan rows advanced per tick
   reclaim: envN('RECLAIM', 6),          // reclaimed cells per scanned row
-  breachHold: envN('BREACHHOLD', 18),   // ticks held ≥win to breach
+  breachHold: envN('BREACHHOLD', 15),   // ticks held ≥win to breach
   winCoverage: envN('WINCOV', 50),      // % of claimable cells to breach
 };
 // GROWTH_SCALE multiplies every deck's merged reproduce (ablation: 0 = no growth).

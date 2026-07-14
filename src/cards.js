@@ -77,12 +77,14 @@ export function mergeBeam(cards) {
 }
 
 const SHAPE_ABBR = { linear: 'Lin', sine: 'Sin', sine2: 'Sin2', sine3: 'Sin3', rect: 'Rect', tan: 'Tan', saw: 'Saw' };
+const GROWTH_ABBR = { None: 'N', Low: 'L', Med: 'M', High: 'H' };
 
-// A compact aspect line for a single card (assemble hand / draft).
+// A compact aspect line for a single card — fits a 13-col card interior (growth
+// compresses to a 1-letter code N/L/M/H).
 export function cardLabel(card) {
   const dir = card.dirs.length ? card.dirs.join('') : '—';
   const density = card.mask ? `1/${card.mask}` : `${card.prob}%`;
-  return `${SHAPE_ABBR[card.shape]}·${dir}·${density}·${card.growth}`;
+  return `${SHAPE_ABBR[card.shape]}·${dir}·${density}·${GROWTH_ABBR[card.growth]}`;
 }
 
 // A short one-line readout of a merged beam for the assemble UI.
@@ -93,6 +95,16 @@ export function beamLabel(merged) {
   const density = merged.probMode === 'mask' ? `1/${merged.maskN}` : `${merged.prob}%`;
   const gr = merged.reproduce <= 0 ? 'gr—' : `gr${Math.round(merged.reproduce * 100)}%`;
   return `${sh} · ${dir} · ${density} · ${gr}`;
+}
+
+// Two short lines describing a merged beam, sized for the ~13-col status gutter:
+// line 1 = shapes + direction, line 2 = density + growth.
+export function beamGutterLines(merged) {
+  const sh = Object.keys(merged.shapes).filter((k) => merged.shapes[k]).map((k) => SHAPE_ABBR[k]).join('+') || '—';
+  const dir = [...merged.dirs].join('') || '—';
+  const density = merged.probMode === 'mask' ? `1/${merged.maskN}` : `${merged.prob}%`;
+  const gr = merged.reproduce <= 0 ? 'gr—' : `gr${Math.round(merged.reproduce * 100)}%`;
+  return [`${sh} ${dir}`, `${density} ${gr}`];
 }
 
 // Tier-1 starting deck (9 cards) — the curtain starter, per SPEC-SHEET.

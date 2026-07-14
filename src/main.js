@@ -1,7 +1,9 @@
 // OVERRIDE — Tier-1 vertical slice (Beam-Card model, research/ember-model.md).
-// A run = conquering the three sectors of THE MACHINE, one at a time. You draw a
-// blind loadout, slot cards into a merged beam, aim the turret at a sector column,
-// fire ONE packet, and WATCH it spread + reproduce against the descending trace.
+// A run = ONE intrusion on ONE memory block. You pick a jack-in, draw a blind
+// loadout, slot cards into a merged beam, aim the turret at a column, fire a single
+// packet, and WATCH it spread + reproduce against the descending trace. Win or get
+// traced; either way you bank meta, draft/shop, and jack in again. The deck grows
+// between runs.
 
 import { mulberry32, shuffle } from './rng.js';
 import { startingDeck, DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
@@ -12,9 +14,10 @@ import { buildScreen } from './render.js';
 import { composeBoard, detonate, setReducedMotion } from './juice.js';
 import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
-import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
+import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_AIM, BTN_CONTINUE, FIELD_FIRE, FIELD_OX,
+  BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
 import { CHARACTERS } from './characters.js';
-import { WIN_COVERAGE } from './terrain.js';
+import { FIELD_W, WIN_COVERAGE } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
 const screen = document.getElementById('screen');
@@ -23,21 +26,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const TICK_MS = 60;   // watch-phase pace: ms per sim tick (emit → spread → scan)
 
 // --- game feel (research/juice-model.md) ---
-// One trauma scalar drives the CRT-container shake; reduced-motion drops the shake
-// and rapid flashes but keeps the brightness states (accessibility, §6).
 const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 setReducedMotion(reduceMotion);
 const trauma = createTrauma();
 const kick = (amount) => { if (!reduceMotion) trauma.add(amount); };
 const ROOT_KEY = 'override.root';
-const DECK_KEY = 'override.deck';     // persistent deck: card ids, survives runs
-const POINTS_KEY = 'override.points'; // persistent points bank
-const PLAYS_KEY = 'override.plays';   // runs started — drives the onboarding ramp
+const DECK_KEY = 'override.deck';
+const POINTS_KEY = 'override.points';
+const PLAYS_KEY = 'override.plays';
 
 const game = {
   phase: 'assemble', run: null, node: null,
   program: new Array(SLOTS).fill(null), selection: [], hand: [], draft: [],
-  prompt: '', message: '', seed: 0, redrawCount: 0,
+  message: '', bannerLines: [], seed: 0, redrawCount: 0,
 };
 
 const loadRoot = () => parseInt(localStorage.getItem(ROOT_KEY) || '120', 10) || 120;
@@ -55,13 +56,13 @@ const clock = () => performance.now();
 const paint = (now) => { screen.innerHTML = composeBoard(buildScreen(game), game, now); };
 const draw = () => paint(clock());
 
-// --- ROOT shop persistence (permanent unlocks + held consumables) ---
-const CHARS_KEY = 'override.chars';   // unlocked jack-in ids
-const CARDS_KEY = 'override.cards';   // unlocked draft-card ids
-const RETRY_KEY = 'override.retry';   // held retry tokens
-const OC_KEY = 'override.overclock';  // overclock armed for next run
+// --- ROOT shop persistence ---
+const CHARS_KEY = 'override.chars';
+const CARDS_KEY = 'override.cards';
+const RETRY_KEY = 'override.retry';
+const OC_KEY = 'override.overclock';
 const loadJSON = (k, d) => { const r = localStorage.getItem(k); return r ? JSON.parse(r) : d; };
-const unlockedChars = () => loadJSON(CHARS_KEY, ['wardial']);      // War-dialer free
+const unlockedChars = () => loadJSON(CHARS_KEY, ['wardial']);
 const unlockedCards = () => loadJSON(CARDS_KEY, []);
 const loadRetry = () => parseInt(localStorage.getItem(RETRY_KEY) || '0', 10) || 0;
 const saveRetry = (v) => localStorage.setItem(RETRY_KEY, String(v));
@@ -72,13 +73,10 @@ const draftPool = () => DRAFT_POOL.concat(unlockedCards().map((id) => SHOP_CARDS
 function shopOwned(item) {
   if (item.kind === 'char') return unlockedChars().includes(CHAR_UNLOCK[item.id]);
   if (item.kind === 'card') return unlockedCards().includes(CARD_UNLOCK[item.id]);
-  return false; // consumables are repeatable
+  return false;
 }
 
-// Onboarding ramp: the first couple of runs are gentle, then ease up to the real
-// baseline over a few more. NOT performance-based rubber-banding — a fixed
-// tutorial curve keyed to how many runs you've started. The player still owns the
-// aggression dial on top of whatever base this returns.
+// Onboarding ramp: fixed tutorial curve keyed to runs started (not rubber-banding).
 function onboardingBase(plays) {
   const EASY = 0.5, REAL = AGGRO_BASE;
   if (plays <= 1) return EASY;
@@ -91,19 +89,20 @@ function startRun() {
   const machine = generateMachine(game.seed);
   const plays = loadPlays();
   let baseAggro = onboardingBase(plays);
-  const overclock = localStorage.getItem(OC_KEY) === '1';        // armed in the shop
+  const overclock = localStorage.getItem(OC_KEY) === '1';
   if (overclock) { localStorage.removeItem(OC_KEY); baseAggro = Math.min(AGGRO_MAX, +(baseAggro + 0.25).toFixed(2)); }
   game.run = {
-    tier: 1, node: 1, root: loadRoot(), points: loadPoints(), deck: loadDeck(),
-    machine, conquered: 0, char: null,
+    tier: 1, root: loadRoot(), points: loadPoints(), deck: loadDeck(),
+    machine, char: null,
     aggression: baseAggro, baseAggro, pendingDrafts: 0, plays,
     availChars: availChars(), overclockPool: overclock ? 300 : 0, retry: loadRetry(),
   };
   savePlays(plays + 1);
-  trauma.reset();                     // never carry shake across runs
+  trauma.reset();
   game.node = null;
+  game.bannerLines = [];
   game.phase = 'charselect';
-  game.prompt = overclock ? 'OVERCLOCK ARMED — bigger REACH pool, faster trace this run.' : '';
+  game.message = overclock ? 'OVERCLOCK: bigger REACH, faster trace.' : '';
   draw();
 }
 
@@ -114,10 +113,9 @@ function pickChar(i) {
   newAssemble();
 }
 
-// draw five cards off the deck; redrawCount varies the shuffle per redraw
 function dealHand() {
   const r = game.run;
-  const rng = mulberry32((game.seed ^ (r.node * 40503) ^ (r.conquered * 2654435761) ^ (game.redrawCount * 2246822519)) >>> 0);
+  const rng = mulberry32((game.seed ^ (r.plays * 40503) ^ (game.redrawCount * 2246822519)) >>> 0);
   game.hand = shuffle(r.deck, rng).slice(0, 5).map((c) => ({ name: c.name, card: c, used: false }));
   game.program = new Array(SLOTS).fill(null);
   game.selection = [];
@@ -128,7 +126,7 @@ function newAssemble() {
   game.redrawCount = 0;
   dealHand();
   game.message = '';
-  game.prompt = '';
+  game.bannerLines = [];
   game.phase = 'assemble';
   draw();
 }
@@ -136,7 +134,7 @@ function newAssemble() {
 function redraw() {
   if (game.phase !== 'assemble') return;
   const r = game.run;
-  if (r.points < REDRAW_COST) { game.message = `need ${REDRAW_COST} PTS to redraw (have ${r.points}).`; draw(); return; }
+  if (r.points < REDRAW_COST) { game.message = `need ${REDRAW_COST} PTS to redraw.`; draw(); return; }
   r.points -= REDRAW_COST; savePoints(r.points);
   game.redrawCount++;
   dealHand();
@@ -167,13 +165,11 @@ function undoSlot() {
 function gotoTarget() {
   if (!game.program.some(Boolean)) return;
   game.phase = 'target';
-  game.prompt = 'AIM — tap a sector column to fire the turret there';
+  game.message = 'tap a column on the block to fire';
   sfx.ui();
   draw();
 }
 
-// aggression = the difficulty dial (target phase). Raise is free (harder scan,
-// bigger reward); lower spends PTS (buy safety).
 function raiseAggro() {
   if (game.phase !== 'target' || game.run.aggression >= AGGRO_MAX) return;
   game.run.aggression = +(game.run.aggression + AGGRO_STEP).toFixed(2);
@@ -187,41 +183,34 @@ function lowerAggro() {
   sfx.ui(); draw();
 }
 
-// Commit: fire the turret at sector `si` from trigger column `col` (the tapped
-// column; defaults to sector centre on keyboard select).
-function chooseSector(si, col) {
-  const r = game.run, s = r.machine.sectors[si];
-  if (!s || s.conquered) return;
-  const triggerCol = col == null ? undefined : col;
-  game.node = createNode(r.machine, si, r.char, r.aggression, r.baseAggro, game.program.slice(),
+// Fire the turret at a block column (0..FIELD_W-1). This commits the run's single packet.
+function fireAt(blockCol) {
+  const r = game.run;
+  const triggerCol = Math.max(0, Math.min(FIELD_W - 1, blockCol | 0));
+  game.node = createNode(r.machine, 0, r.char, r.aggression, r.baseAggro, game.program.slice(),
     { triggerCol, poolBonus: r.overclockPool });
   game.phase = 'exec';
   startExec();
 }
 
-// The watch: fire one packet, then tick the sim (emit → spread → reproduce → scan)
-// on a fixed cadence, drawing each tick, until the battle resolves. Fully idle —
-// no input once the packet is away.
 async function startExec() {
   resumeAudio();
   sfx.exec();
   const node = game.node;
-  game.prompt = `WATCH — the beam spreads across ${node.sector.id}; hold coverage through the breach.`;
+  game.message = 'WATCH — the beam spreads; hold coverage through the breach.';
   await sleep(200);
   fire(node);
   kick(0.35);
   draw();
   await sleep(200);
 
-  let lastHoney = 0, wasBreaching = false, wasBreachedThisRun = false;
+  let lastHoney = 0, wasBreaching = false, breached = false;
   while (!node.outcome) {
     const snap = stepBattle(node);
-    // honeypot tripped → the trace lurches; a bad-surprise jolt (§9)
     if (node.sim.honeyBurned > lastHoney) { lastHoney = node.sim.honeyBurned; sfx.honeypot(); kick(0.4); }
-    // crossing into the breach hold — you hit coverage, now survive the timer
     if (snap.breachLeft >= 0 && !wasBreaching) {
       wasBreaching = true;
-      if (!wasBreachedThisRun) { wasBreachedThisRun = true; sfx.crack(); if (!reduceMotion) detonate(clock(), 0.7); kick(0.5); }
+      if (!breached) { breached = true; sfx.crack(); if (!reduceMotion) detonate(clock(), 0.7); kick(0.5); }
     } else if (snap.breachLeft < 0) wasBreaching = false;
     draw();
     await sleep(reduceMotion ? 0 : TICK_MS);
@@ -235,44 +224,40 @@ function showResult() {
   game.phase = 'result';
   node.crack = coverage(node.sim);
   if (node.outcome === 'win') {
-    r.conquered++;
     const mult = rewardMult(node.aggro, node.baseAggro);
-    const reward = Math.round((40 + r.conquered * 10) * mult);
+    const reward = Math.round(50 * mult);
     r.root += reward; saveRoot(r.root);
     const bonus = Math.round(Math.max(0, node.crack - WIN_COVERAGE) * mult);
     r.points += bonus; savePoints(r.points);
     r.pendingDrafts = draftPicks(node.aggro, node.baseAggro);
-    kick(0.7);                        // ▆ breach — the sector falls, celebrate it
+    kick(0.7);
     sfx.lock(); sfx.win();
-    game.message = `>> ${node.sector.id} BREACHED (aggro x${node.aggro.toFixed(2)}). +${reward} ROOT, +${bonus} PTS, ${r.pendingDrafts} draft. [ENTER].`;
-    game.prompt = `${node.sector.id} cracked — its codes fall.`;
+    game.bannerLines = ['>> THE MACHINE BREACHED <<', `+${reward} ROOT · +${bonus} PTS · ${r.pendingDrafts} card draft`];
+    game.message = `breached at ${node.crack.toFixed(0)}% (aggro x${node.aggro.toFixed(2)}).`;
   } else if (r.retry > 0) {
     r.retry -= 1; saveRetry(r.retry);
     game.retried = true;
     sfx.ui();
-    game.message = `>> TRACED in ${node.sector.id} — RETRY TOKEN spent, you slip away. [ENTER] to reassemble.`;
-    game.prompt = `close call. retry tokens left: ${r.retry}.`;
+    game.bannerLines = ['>> TRACED — RETRY TOKEN spent <<', `you slip away · ${r.retry} tokens left`];
+    game.message = 'close call.';
   } else {
     sfx.lose();
     const kept = Math.floor(r.root * 0.5); saveRoot(kept);
-    game.message = `>> TRACED: they found you in ${node.sector.id}. banked ${kept} ROOT. [ENTER] for the shop.`;
-    game.prompt = 'TRACE COMPLETE.';
+    game.bannerLines = ['>> TRACED — they found you <<', `banked ${kept} ROOT`];
+    game.message = 'run over.';
   }
   draw();
 }
 
 function advance() {
-  if (game.node.outcome === 'win') {
-    if (game.run.conquered >= 3) return tierClear();
-    startDraft();
-  } else if (game.retried) {
-    game.retried = false; newAssemble();     // retry token spent — same run continues
-  } else openShop();                          // run ended by the trace — shop before next run
+  if (game.node.outcome === 'win') startDraft();      // bank a card, then the shop
+  else if (game.retried) { game.retried = false; newAssemble(); }   // retry: re-run the same block
+  else openShop();
 }
 
 // --- ROOT shop ---
 function refreshShop() {
-  if (game.run) game.run.root = loadRoot();   // keep the header in sync with purchases
+  if (game.run) game.run.root = loadRoot();
   game.shopData = {
     root: loadRoot(), retry: loadRetry(), overclock: localStorage.getItem(OC_KEY) === '1',
     items: SHOP_ITEMS.map((it) => ({ id: it.id, name: it.name, desc: it.desc, cost: it.cost, kind: it.kind, owned: shopOwned(it) })),
@@ -280,7 +265,7 @@ function refreshShop() {
 }
 function openShop() {
   game.phase = 'shop';
-  game.prompt = 'ROOT SHOP — permanent unlocks stick forever; consumables are single-use.';
+  game.bannerLines = [];
   game.message = '';
   refreshShop();
   draw();
@@ -291,23 +276,24 @@ function buyShop(id) {
   if (!item) return;
   if (shopOwned(item)) { game.message = 'already unlocked.'; draw(); return; }
   const root = loadRoot();
-  if (root < item.cost) { game.message = `need ${item.cost} ROOT (have ${root}).`; sfx.undo(); draw(); return; }
+  if (root < item.cost) { game.message = `need ${item.cost} ROOT.`; sfx.undo(); draw(); return; }
   saveRoot(root - item.cost);
   if (item.kind === 'char') { const u = unlockedChars(); u.push(CHAR_UNLOCK[item.id]); localStorage.setItem(CHARS_KEY, JSON.stringify(u)); }
   else if (item.kind === 'card') { const u = unlockedCards(); u.push(CARD_UNLOCK[item.id]); localStorage.setItem(CARDS_KEY, JSON.stringify(u)); }
   else if (item.kind === 'retry') { saveRetry(loadRetry() + 1); }
   else if (item.kind === 'curse') { localStorage.setItem(OC_KEY, '1'); }
   sfx.lock();
-  game.message = `bought ${item.name}.  ROOT left: ${loadRoot()}.`;
+  game.message = `bought ${item.name}.`;
   refreshShop();
   draw();
 }
 
 function startDraft() {
-  const rng = mulberry32((game.seed ^ (game.run.node * 777) ^ (game.run.conquered * 99991) ^ (game.run.pendingDrafts * 131071)) >>> 0);
+  const rng = mulberry32((game.seed ^ (game.run.plays * 777) ^ (game.run.pendingDrafts * 131071)) >>> 0);
   game.draft = shuffle(draftPool(), rng).slice(0, 3);
   game.phase = 'draft';
-  game.prompt = game.run.pendingDrafts > 1 ? `DRAFT — ${game.run.pendingDrafts} picks left (aggression bonus)` : '';
+  game.bannerLines = [];
+  game.message = game.run.pendingDrafts > 1 ? `${game.run.pendingDrafts} picks left (aggression bonus)` : '';
   draw();
 }
 function pickDraft(i) {
@@ -316,18 +302,8 @@ function pickDraft(i) {
   saveDeck(game.run.deck);
   sfx.lock();
   game.run.pendingDrafts -= 1;
-  if (game.run.pendingDrafts > 0) { startDraft(); return; } // extra picks from cranked aggression
-  game.run.node += 1;
-  newAssemble();
-}
-
-function tierClear() {
-  game.phase = 'tierclear';
-  game.run.root += 100; saveRoot(game.run.root);
-  sfx.win();
-  game.message = '>> THE MACHINE IS YOURS. +100 ROOT. [ENTER] for the shop.';
-  game.prompt = 'the codes were a front. something deeper is listening…';
-  draw();
+  if (game.run.pendingDrafts > 0) { startDraft(); return; }
+  openShop();                                          // draft done → the shop → jack in again
 }
 
 // --- pointer input (mouse + touch) ---
@@ -339,11 +315,11 @@ function onTapCell(col, row) {
     for (let i = 0; i < HAND_CARDS.length; i++) if (inRect(col, row, HAND_CARDS[i])) return loadSlot(i);
     if (inRect(col, row, BTN_REDRAW)) return redraw();
     if (inRect(col, row, BTN_UNDO)) return undoSlot();
-    if (inRect(col, row, BTN_EXEC)) return gotoTarget();
+    if (inRect(col, row, BTN_AIM)) return gotoTarget();
   } else if (game.phase === 'target') {
     if (inRect(col, row, BTN_AGGRO_DOWN)) return lowerAggro();
     if (inRect(col, row, BTN_AGGRO_UP)) return raiseAggro();
-    for (let i = 0; i < SECTOR_RECTS.length; i++) if (inRect(col, row, SECTOR_RECTS[i])) return chooseSector(i, col);
+    if (inRect(col, row, FIELD_FIRE)) return fireAt(col - FIELD_OX);
   } else if (game.phase === 'draft') {
     for (let i = 0; i < DRAFT_CARDS.length; i++) if (inRect(col, row, DRAFT_CARDS[i])) return pickDraft(i);
   } else if (game.phase === 'shop') {
@@ -351,8 +327,6 @@ function onTapCell(col, row) {
     if (inRect(col, row, BTN_JACKIN)) return startRun();
   } else if (game.phase === 'result') {
     if (inRect(col, row, BTN_CONTINUE)) return advance();
-  } else if (game.phase === 'tierclear' || game.phase === 'gameover') {
-    if (inRect(col, row, BTN_CONTINUE)) return openShop();
   }
 }
 installPointer(screen, onTapCell);
@@ -369,7 +343,8 @@ window.addEventListener('keydown', (e) => {
     else if (k === 'Backspace') { e.preventDefault(); undoSlot(); }
     else if (k === 'Enter') gotoTarget();
   } else if (game.phase === 'target') {
-    if (k >= '1' && k <= '3') chooseSector(+k - 1);           // keyboard = fire from sector centre
+    if (k >= '1' && k <= '9') fireAt(Math.round((+k - 1) / 8 * (FIELD_W - 1)));   // 1..9 = columns L→R
+    else if (k === 'Enter' || k === ' ') fireAt(FIELD_W >> 1);                     // centre
     else if (k === '+' || k === '=') raiseAggro();
     else if (k === '-' || k === '_') lowerAggro();
   } else if (game.phase === 'draft') {
@@ -379,15 +354,10 @@ window.addEventListener('keydown', (e) => {
     else if (k === 'Enter') startRun();
   } else if (game.phase === 'result') {
     if (k === 'Enter') advance();
-  } else if (game.phase === 'tierclear' || game.phase === 'gameover') {
-    if (k === 'Enter') openShop();
   }
 });
 
-// pulse loop: repaint (~30fps) while the field is live so captures breathe and
-// the conquer celebration plays. Other screens repaint on demand via draw().
-// The shake runs every frame (60fps) so a jolt settles smoothly even between
-// paints and even on static screens (breach/doom fire outside the exec loop).
+// pulse loop: repaint while the field is live so captures breathe; shake every frame.
 const needsAnim = () => game.node && (game.phase === 'exec' || game.phase === 'result');
 let lastPaint = 0, lastFrame = 0, shaking = false;
 function applyShake(dt) {

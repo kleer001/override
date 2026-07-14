@@ -79,13 +79,13 @@ export function defaultParams() {
     probMode: 'prob',                            // 'prob' (additive %) | 'mask' (every-Nth)
     prob: 60,                                     // merged emission probability %
     maskN: 5,                                     // every-Nth deterministic mask
-    pool: 800,                                     // REACH pool for the whole packet (§4; calibrated start)
+    pool: 1000,                                    // REACH pool for the whole packet (§4; calibrated on the 62×28 block)
     reachCap: 20,                                  // max REACH any one ember may hold
     spreadReach: 6,                                // GROWTH: reach of a child spawned when an ember reproduces
     reproduce: 0.15,                               // GROWTH: per-step chance a burning ember spawns a spreading child
-    scanSpeed: 0.5,                                // scan rows advanced per tick
+    scanSpeed: 0.40,                               // scan rows advanced per tick
     reclaim: 6,                                     // reclaimed cells per scanned row
-    breachHold: 18,                                 // ticks held ≥win to breach
+    breachHold: 15,                                 // ticks held ≥win to breach
     winCoverage: 50,                                // % of claimable cells to breach
   };
 }

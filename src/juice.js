@@ -9,7 +9,7 @@
 // The board is rendered via innerHTML, so every emitted char is HTML-escaped.
 
 import { FIELD_W, FIELD_H, SECTORS, idx } from './terrain.js';
-import { FIELD_TOP, COLS } from './layout.js';
+import { FIELD_TOP, FIELD_OX, COLS } from './layout.js';
 
 const TWO_PI = Math.PI * 2;
 const PERIOD = 1400;      // active-burn pulse: one dim->bright->dim cycle (ms)
@@ -36,7 +36,7 @@ const pulsePeriod = () => (reduced ? PERIOD * 2 : PERIOD);
 const wave = (dt, p) => 0.5 - 0.5 * Math.cos(TWO_PI * dt / p); // 0 at dt=0, 1 at p/2
 const round2 = (v) => Math.round(v * 100) / 100;
 
-// column -> sector index (firewall gaps stay -1)
+// BLOCK column -> sector index (single block => all 0; any gap stays -1)
 const SECTOR_OF = new Int8Array(FIELD_W).fill(-1);
 SECTORS.forEach((s, i) => { for (let x = s.x0; x <= s.x1; x++) SECTOR_OF[x] = i; });
 
@@ -58,10 +58,10 @@ export function detonate(now, strength = 1) {
 const esc = (ch) => ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '&' ? '&amp;' : ch;
 const escLine = (ln) => ln.replace(/[<>&]/g, esc);
 
-// render.js draws the field for the target phase and any node-bearing exec/result
+// the memory block is drawn in the FIELD panel for every phase except the shop
+// (which fills the field area with the item list instead)
 function boardShown(game) {
-  return game.phase === 'target' ||
-    (game.node && ['exec', 'result', 'tierclear', 'gameover'].includes(game.phase));
+  return !!(game.run && game.run.machine) && game.phase !== 'shop';
 }
 
 // mark each conquered sector's celebration start the first frame we see it owned
@@ -69,13 +69,10 @@ function markConquered(machine, now) {
   for (const sec of machine.sectors) if (sec.conquered && !state.celeb.has(sec.id)) state.celeb.set(sec.id, now);
 }
 
-function cellStyle(row, x, y, machine, now) {
-  const ch = row[x] ?? ' ';
+// x,y are BLOCK coordinates (0..FIELD_W-1, 0..FIELD_H-1); ch is the glyph there.
+function cellStyle(ch, x, y, machine, now) {
   const si = SECTOR_OF[x];
-  if (si < 0) return { cls: '', op: 1, ch };                 // firewall gap
-  // field row 0 carries the sector labels (buildScreen stamps them there) —
-  // leave it unstyled so a burn never dims or clobbers the label text.
-  if (y === 0) return { cls: '', op: 1, ch };
+  if (si < 0) return { cls: '', op: 1, ch };
   const sec = machine.sectors[si];
   const burned = machine.burned[idx(x, y)] === 1;
   if (sec.conquered) {
@@ -107,7 +104,10 @@ function cellStyle(row, x, y, machine, now) {
   return { cls: '', op: 1, ch };
 }
 
-function composeRow(row, y, machine, now) {
+// `line` is the full 80-wide screen row; `y` is the block row. Only screen columns
+// that fall inside the block (offset by FIELD_OX) get brightness spans; the field
+// borders, the gutter, and everything else pass through raw.
+function composeRow(line, y, machine, now) {
   let out = '', buf = '', key = null, cls = '', op = 1;
   const flush = () => {
     if (!buf) return;
@@ -115,8 +115,10 @@ function composeRow(row, y, machine, now) {
     else out += (cls ? `<span class="${cls}" style="opacity:${op}">` : `<span style="opacity:${op}">`) + buf + '</span>';
     buf = '';
   };
-  for (let x = 0; x < COLS; x++) {
-    const s = cellStyle(row, x, y, machine, now);
+  for (let sx = 0; sx < COLS; sx++) {
+    const ch = line[sx] ?? ' ';
+    const bx = sx - FIELD_OX;
+    const s = (bx < 0 || bx >= FIELD_W) ? { cls: '', op: 1, ch } : cellStyle(ch, bx, y, machine, now);
     const k = (s.cls === '' && s.op === 1) ? 'RAW' : `${s.cls}|${s.op}`;
     if (k !== key) { flush(); key = k; cls = s.cls; op = s.op; }
     buf += escLine(s.ch);

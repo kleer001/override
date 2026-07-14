@@ -3,18 +3,19 @@ import assert from 'node:assert/strict';
 
 import { composeBoard, detonate, setReducedMotion } from '../src/juice.js';
 import { generateMachine, idx } from '../src/terrain.js';
-import { FIELD_TOP, COLS, ROWS } from '../src/layout.js';
+import { FIELD_TOP, FIELD_OX, COLS, ROWS } from '../src/layout.js';
 
-const BX = 5, BY = 2;   // a KERNEL cell, off the sector-label row (field y=0)
+const BX = 5, BY = 2;   // a block cell (block coords)
 
 // Build a blank 80x40 screen with one burned frontier cell ('@') and a game
-// object the compositor will style. bornAt=0 pins the breathing phase.
+// object the compositor will style. bornAt=0 pins the breathing phase. The block
+// draws at a FIELD_OX/FIELD_TOP inset, so the glyph lands at the offset screen cell.
 function scene(seed) {
   const machine = generateMachine(seed);
   machine.burned[idx(BX, BY)] = 1;
   machine.bornAt[idx(BX, BY)] = 0;
   const grid = Array.from({ length: ROWS }, () => new Array(COLS).fill(' '));
-  grid[FIELD_TOP + BY][BX] = '@';
+  grid[FIELD_TOP + BY][FIELD_OX + BX] = '@';
   const text = grid.map((r) => r.join('')).join('\n');
   return { machine, text, game: { phase: 'exec', node: {}, run: { machine } } };
 }
