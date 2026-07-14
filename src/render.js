@@ -2,7 +2,7 @@
 //   assemble / draft -> card panels · target -> the machine (pick a sector) ·
 //   exec / result    -> the sector burning.
 
-import { FIELD_W, FIELD_H, WALL, VAULT, idx, SECTORS, WIN_COVERAGE } from './terrain.js';
+import { FIELD_W, FIELD_H, WALL, VAULT, idx, SECTORS, FIREWALLS, WIN_COVERAGE } from './terrain.js';
 import { CODE_DIGITS, crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE } from './battle.js';
 import { evalProgram } from './cards.js';
 import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN } from './layout.js';
@@ -122,6 +122,11 @@ function drawMachineBoard(g, machine) {
     else ch = TERRAIN_G[machine.t[c]];
     g[FIELD_TOP + y][x] = ch;
   }
+  // The firewalls between sectors are single WALL columns that vanish into dense
+  // terrain — the board then reads as one field instead of three. Draw them as a
+  // solid divider so the three sectors are always legible (they're WALL and never
+  // burn, so this never clobbers a live ember).
+  for (const fx of FIREWALLS) for (let y = 0; y < FIELD_H; y++) g[FIELD_TOP + y][fx] = '║';
 }
 
 function drawTarget(g, game) {

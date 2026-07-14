@@ -1,5 +1,16 @@
-/* CRT amber-phosphor look. A CSS approximation for the MVP; the finding_numbers
-   WebGL CRT shader can be dropped in later for real curvature/bloom. */
+/* CRT amber-phosphor look. A CSS approximation for the MVP; a WebGL CRT
+   shader can be dropped in later for real curvature/bloom. */
+
+/* The renderer draws an 80x40 character grid, so every glyph MUST share one
+   advance width. The default system monospace on many phones (Android's
+   Roboto/Droid Sans Mono) lacks the block-shade (▒▓) and box-drawing glyphs the
+   board uses; the browser then substitutes them from a proportional fallback
+   and the whole grid shears sideways. Ship the glyphs ourselves so it can't. */
+@font-face {
+  font-family: "Override Mono";
+  src: url("fonts/override-mono.woff2") format("woff2");
+  font-display: block;
+}
 
 :root {
   --amber: #ffb000;
@@ -40,8 +51,13 @@ html, body {
 #screen {
   margin: 0;
   color: var(--amber);
-  /* size so all 80 columns fit the viewport width, capped on desktop */
-  font-size: min(1.95vw, 13px);
+  font-family: "Override Mono", ui-monospace, "Courier New", monospace;
+  /* Size to fit BOTH axes: ~1.95vw keeps all 80 columns inside the width;
+     ~1.75vh keeps all 40 rows (x1.18 line-height ≈ 47vh of text) inside the
+     height with room to spare for the padding + caption, so the board never
+     clips in landscape; 13px caps it on desktop. Whichever is smallest wins, so
+     the grid is always fully on-screen in any orientation. */
+  font-size: min(1.95vw, 1.75vh, 13px);
   line-height: 1.18;
   letter-spacing: 0;
   white-space: pre;
