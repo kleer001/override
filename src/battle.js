@@ -86,6 +86,26 @@ export function planLob(node) {
   return planPing(node.machine, node.sector, node.energy, node.machine.rng);
 }
 
+// Plan EVERY ping in the volley up front — each one's landing site (the "mark")
+// and the ordered cells it will burn — so the targeting gnomon can aim ahead
+// through the whole salvo instead of only discovering each mark as it fires.
+// Each ping is temporarily applied so the next plans against it (matching the
+// live per-ping flow), then all the temp burns are rolled back so the animation
+// still reveals them one at a time. The RNG is left advanced exactly as the
+// animated per-ping version would leave it, so outcomes stay identical.
+export function planVolley(node) {
+  const { machine } = node;
+  const marks = [], applied = [];
+  while (node.pingsLeft > 0) {
+    node.pingsLeft--;
+    const cells = planPing(machine, node.sector, node.energy, machine.rng);
+    for (const c of cells) if (!machine.burned[c]) { machine.burned[c] = 1; applied.push(c); }
+    marks.push({ anchor: cells.length ? cells[0] : null, cells });
+  }
+  for (const c of applied) machine.burned[c] = 0;   // roll back; the bloom re-reveals them
+  return marks;
+}
+
 // Advance the trace scan one volley's worth (unless INTERRUPT froze it), reclaiming
 // cells row by row. Returns cells reclaimed.
 export function advanceScan(node) {
