@@ -22,7 +22,7 @@ export const HAND_CARDS = Array.from({ length: 5 }, (_, i) => ({
 // assemble action buttons
 export const BTN_REDRAW = { x: 2, y: 24, w: 14, h: 3, label: `REDRAW -${REDRAW_COST}` };
 export const BTN_UNDO = { x: 18, y: 24, w: 14, h: 3, label: 'UNDO' };
-export const BTN_EXEC = { x: 46, y: 24, w: 16, h: 3, label: 'TARGET ▶' };
+export const BTN_EXEC = { x: 46, y: 24, w: 16, h: 3, label: 'AIM ▶' };
 
 // draft: three cards centered (15 wide, 2-col gaps -> pitch 17), y=9
 const DRAFT_X0 = Math.floor((COLS - (3 * 15 + 2 * 2)) / 2);

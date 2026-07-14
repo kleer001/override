@@ -189,12 +189,10 @@ export function generateMachine(seed) {
   const t = new Uint8Array(FIELD_W * FIELD_H);
   for (const wx of FIREWALLS) for (let y = 0; y < FIELD_H; y++) t[idx(wx, y)] = WALL;
   const sectors = SECTORS.map((s) => genSector(t, s, rng));
-  const machine = { t, sectors, burned: new Uint8Array(FIELD_W * FIELD_H), bornAt: new Float64Array(FIELD_W * FIELD_H), rng };
+  const machine = { seed: seed >>> 0, t, sectors, burned: new Uint8Array(FIELD_W * FIELD_H), bornAt: new Float64Array(FIELD_W * FIELD_H), rng };
   for (const s of machine.sectors) s.difficulty = difficultyOf(machine, s);
   return machine;
 }
-
-const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 // Energy to claim the cheapest `pct`% of a sector's claimable cells. Random ping
 // placement means connectivity no longer gates (a ping can land on any island),
@@ -214,60 +212,6 @@ export function energyTo(machine, s, pct) {
 function difficultyOf(machine, s) {
   const { perCell } = energyTo(machine, s, WIN_COVERAGE);
   return perCell < 1.4 ? 'EASY' : perCell < 2.2 ? 'MED' : perCell < 3.5 ? 'HARD' : 'BRUTAL';
-}
-
-// --- burn: finite energy-metered pings ---
-// One ping: land at a random non-WALL cell in the sector, then spend `energy`
-// infecting new ground. Conduit rule (ember-model.md §3 tier 1): already-burned
-// cells are free conduits — no cost, no re-infection — so energy only ever buys
-// NEW ground.
-//
-// planPing computes the ordered list of NEW cells this ping will burn WITHOUT
-// mutating the field, so the caller can reveal them one at a time (organic
-// growth). spreadPing applies the whole plan at once (headless / tests).
-export function planPing(machine, s, energy, rng) {
-  const { t, burned } = machine;
-  let sx, sy, tries = 0;
-  do { sx = randInt(rng, s.x0, s.x1); sy = randInt(rng, 0, FIELD_H - 1); tries++; }
-  while (t[idx(sx, sy)] === WALL && tries < 40);
-  if (t[idx(sx, sy)] === WALL) return [];
-
-  const order = [], newly = new Set();
-  const isBurned = (c) => burned[c] === 1 || newly.has(c);
-  let spend = energy;
-  const start = idx(sx, sy);
-  if (!burned[start]) {
-    const c = COST[t[start]];
-    if (c > spend) return [];
-    spend -= c; newly.add(start); order.push(start);
-  }
-  const frontier = [start];
-  const seen = new Set([start]);
-  while (spend > 0 && frontier.length) {
-    const fi = randInt(rng, 0, frontier.length - 1);
-    const c = frontier[fi], fx = cx(c), fy = cy(c);
-    const opts = [];
-    for (const [dx, dy] of DIRS) {
-      const nx = fx + dx, ny = fy + dy;
-      if (nx < s.x0 || nx > s.x1 || ny < 0 || ny >= FIELD_H) continue;
-      const nc = idx(nx, ny);
-      if (seen.has(nc) || t[nc] === WALL) continue;
-      opts.push(nc);
-    }
-    if (!opts.length) { frontier.splice(fi, 1); continue; }
-    const nc = opts[randInt(rng, 0, opts.length - 1)];
-    seen.add(nc);
-    if (isBurned(nc)) { frontier.push(nc); continue; }   // free conduit hop
-    const cost = COST[t[nc]];
-    if (cost > spend) continue;                           // can't afford this cell
-    spend -= cost; newly.add(nc); order.push(nc); frontier.push(nc);
-  }
-  return order;
-}
-export function spreadPing(machine, s, energy, rng) {
-  const order = planPing(machine, s, energy, rng);
-  for (const c of order) machine.burned[c] = 1;
-  return order.length;
 }
 
 // The trace scan crossing one row: reclaim up to `budget` burned cells back to

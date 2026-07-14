@@ -13,7 +13,7 @@
 // ~5/6, a weak deck 0/6, terrain still gates (~1/8 BRUTAL). Deck shapes come from
 // cards; pool/reachCap/scan are terminal meta-stats shared by every deck.
 
-import { createSim, stepSim, coverage, SECTORS } from './beam-sim.js';
+import { createSim, stepSim, coverage, SECTORS } from '../src/beam.js';
 import { generateMachine } from '../src/terrain.js';
 
 // --- GROWTH aspect: level → (reproduce chance, child spread-reach) (§3). Cards

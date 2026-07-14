@@ -1,16 +1,18 @@
 // Compose the whole 80x40 screen. Central region is contextual:
-//   assemble / draft -> card panels · target -> the machine (pick a sector) ·
-//   exec / result    -> the sector burning.
+//   assemble / draft -> card panels · target -> the machine (aim a turret) ·
+//   exec / result    -> the sector burning under the beam.
 
-import { FIELD_W, FIELD_H, WALL, VAULT, idx, SECTORS, WIN_COVERAGE } from './terrain.js';
-import { CODE_DIGITS, crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE } from './battle.js';
-import { evalProgram } from './cards.js';
+import { FIELD_W, FIELD_H, WALL, VAULT, idx, WIN_COVERAGE } from './terrain.js';
+import { CODE_DIGITS, crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, SLOTS, spineX, coverage } from './battle.js';
+import { mergeBeam, beamLabel, cardLabel } from './cards.js';
 import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN } from './layout.js';
 import { CHARACTERS } from './characters.js';
 
 export { COLS, ROWS };
 
 const TERRAIN_G = [' ', '▒', '▓', '═', '$', '"']; // OPEN HARD WALL BUS VAULT HONEY
+const RAMP = ['·', ':', '=', '+', '*', '@', '%'];  // cold → hot burn strength
+const rampGlyph = (heat) => (heat <= 0 ? RAMP[0] : RAMP[Math.min(RAMP.length - 1, 1 + Math.floor(heat / 3))]);
 
 function blank() { return Array.from({ length: ROWS }, () => new Array(COLS).fill(' ')); }
 function stamp(g, x, y, s) { if (y < 0 || y >= ROWS) return; for (let i = 0; i < s.length; i++) if (x + i >= 0 && x + i < COLS) g[y][x + i] = s[i]; }
@@ -27,6 +29,7 @@ function wrap(text, w) {
   return out;
 }
 
+// A card panel showing the bundled quad (shape·dir·prob·growth) + identity.
 function drawCard(g, x, y, key, card, spent) {
   const w = 15, h = 8;
   stamp(g, x, y, '┌' + `[${key}]` + '─'.repeat(w - 2 - (key.length + 2)) + '┐');
@@ -34,8 +37,8 @@ function drawCard(g, x, y, key, card, spent) {
   stamp(g, x, y + h - 1, '└' + '─'.repeat(w - 2) + '┘');
   if (spent) { stamp(g, x + 2, y + 3, 'SPENT'); return; }
   stamp(g, x + 2, y + 1, card.name.slice(0, w - 3));
-  wrap(card.desc, w - 4).slice(0, 3).forEach((ln, i) => stamp(g, x + 2, y + 3 + i, ln));
-  stamp(g, x + 2, y + h - 2, card.kind.toUpperCase());
+  if (card.dirs) stamp(g, x + 2, y + 2, cardLabel(card).slice(0, w - 3));      // the quad
+  wrap(card.desc, w - 4).slice(0, 3).forEach((ln, i) => stamp(g, x + 2, y + 4 + i, ln));
 }
 
 function drawButton(g, r, dim) {
@@ -46,46 +49,39 @@ function drawButton(g, r, dim) {
   stamp(g, r.x + Math.max(1, Math.floor((r.w - t.length) / 2)), r.y + 1, t);
 }
 
-function accPreview(program) {
-  const loaded = program.filter(Boolean);
-  if (!loaded.length) return { expr: '(load cards to preview)', value: 0 };
-  const tok = loaded.map((c) => c.kind === 'add' ? `+${c.value}` : c.kind === 'mult' ? `x${c.value}`
-    : c.kind === 'nop' ? '(nop)' : c.kind === 'goto' ? '(goto)' : c.kind === 'fork' ? '(fork)' : '(int)');
-  return { expr: '0 ' + tok.join(' '), value: evalProgram(loaded).value };
-}
-
 function drawAssemble(g, game) {
-  center(g, 3, 'ASSEMBLE INTRUSION');
-  center(g, 4, 'instructions run left→right on a CPU accumulator — adds early, x late');
+  center(g, 3, 'ASSEMBLE THE BEAM');
+  center(g, 4, 'slotted cards MERGE into one beam — order does not matter, which cards do');
   stamp(g, 2, 5, `DECK: ${game.run.deck.length} cards    PTS: ${game.run.points}`);
   // badge shows how many copies of this card the deck holds
   game.hand.forEach((h, i) => {
     const n = game.run.deck.filter((c) => c.id === h.card.id).length;
     drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, `x${n}`, h.card, h.used);
   });
-  stamp(g, 6, 17, 'PROGRAM');
-  stamp(g, 16, 17, [0, 1, 2].map((i) => `[ ${(game.program[i] ? game.program[i].name : '......').padEnd(9).slice(0, 9)} ]`).join(' → '));
-  const p = accPreview(game.program);
-  stamp(g, 6, 19, 'ACCUMULATOR');
-  stamp(g, 18, 19, `${p.expr}   =  ${p.value}   (energy / ping)`);
-  center(g, 22, 'tap a card to load · then choose which sector to hit');
+  stamp(g, 6, 17, 'SLOTS');
+  stamp(g, 16, 17, Array.from({ length: SLOTS }, (_, i) =>
+    `[ ${(game.program[i] ? game.program[i].name : '......').padEnd(10).slice(0, 10)} ]`).join(' + '));
+  const merged = mergeBeam(game.program.filter(Boolean));
+  stamp(g, 6, 19, 'BEAM');
+  stamp(g, 16, 19, game.program.some(Boolean) ? beamLabel(merged) : '(slot cards to compose a beam)');
+  center(g, 22, 'tap a card to slot it · then AIM the turret at a sector');
   drawButton(g, BTN_REDRAW, game.run.points < REDRAW_COST);
   drawButton(g, BTN_UNDO, false);
-  drawButton(g, BTN_EXEC, game.selection.length < 3);
+  drawButton(g, BTN_EXEC, !game.program.some(Boolean));
 }
 
 function drawDraft(g, game) {
-  center(g, 3, 'DRAFT — bank an instruction into your deck');
+  center(g, 3, 'DRAFT — warez off the breached machine; bank one into your deck');
   game.draft.forEach((c, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1), c, false));
   center(g, 19, 'tap a card to keep it');
 }
 
 function drawCharSelect(g, game) {
   center(g, 3, 'SELECT YOUR JACK-IN');
-  center(g, 4, 'how you break in — your ignition style for this whole run');
+  center(g, 4, 'how you break in — your turret style for this whole run');
   const chars = (game.run && game.run.availChars) || CHARACTERS;
   chars.slice(0, 3).forEach((ch, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1),
-    { name: ch.name, desc: ch.desc, kind: 'jack-in' }, false));
+    { name: ch.name, desc: ch.desc }, false));
   center(g, 19, chars.length < CHARACTERS.length ? 'tap a jack-in · unlock more in the ROOT shop' : 'tap a jack-in to begin');
 }
 
@@ -104,80 +100,60 @@ function drawShop(g, game) {
   center(g, 38, 'tap an item to buy · number keys buy · [ENTER] / JACK IN starts the next run');
 }
 
-function frontier(machine, x, y) {
-  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-    const nx = x + dx, ny = y + dy;
-    if (nx < 0 || nx >= FIELD_W || ny < 0 || ny >= FIELD_H) continue;
-    const n = idx(nx, ny);
-    if (!machine.burned[n] && machine.t[n] !== WALL) return true;
+// The board: terrain, plus (during exec) the beam's burn heat, pending spine, the
+// descending trace scan, and reclaim flashes. `sim` present => a battle is live.
+function drawBoard(g, machine, sim, sector) {
+  const params = sim ? sim.params : null;
+  for (let y = 0; y < FIELD_H; y++) {
+    const spineCol = (sim && sector && y <= sim.spineRow) ? spineX(params, y) : -1;   // not-yet-emitted beam
+    for (let x = 0; x < FIELD_W; x++) {
+      const c = idx(x, y);
+      let ch;
+      if (sim && sector && y === sim.scanRow && sim.scanRow < FIELD_H && x >= sector.x0 && x <= sector.x1) ch = '#';  // scan line
+      else if (sim && sim.reclaimed && sim.reclaimed.has(c)) ch = 'X';                // reclaim flash
+      else if (machine.burned[c]) ch = machine.t[c] === VAULT ? '$' : sim ? rampGlyph(sim.heat[c]) : '#';
+      else if (x === spineCol) ch = '|';                                              // pending spine
+      else ch = TERRAIN_G[machine.t[c]];
+      g[FIELD_TOP + y][x] = ch;
+    }
   }
-  return false;
 }
 
-function drawMachineBoard(g, machine) {
-  for (let y = 0; y < FIELD_H; y++) for (let x = 0; x < FIELD_W; x++) {
-    const c = idx(x, y);
-    let ch;
-    if (machine.burned[c]) ch = machine.t[c] === VAULT ? '$' : frontier(machine, x, y) ? '@' : '#';
-    else ch = TERRAIN_G[machine.t[c]];
-    g[FIELD_TOP + y][x] = ch;
-  }
+// The turret marker: a ▲ on the bottom field row under the trigger column.
+function drawTurret(g, col) {
+  if (col == null || col < 0 || col >= FIELD_W) return;
+  g[FIELD_TOP + FIELD_H - 1][col] = '▲';
 }
 
 function drawTarget(g, game) {
   const { machine } = game.run;
-  drawMachineBoard(g, machine);
-  const energy = evalProgram(game.program).value;
+  drawBoard(g, machine, null, null);
   machine.sectors.forEach((s) => {
     const label = s.conquered ? `${s.id} ·OWNED·` : `${s.id} ${s.difficulty}`;
     stamp(g, s.x0 + 1, FIELD_TOP, label.slice(0, s.x1 - s.x0));
   });
+  const merged = mergeBeam(game.program.filter(Boolean));
   const a = game.run.aggression, base = game.run.baseAggro;
   drawButton(g, BTN_AGGRO_DOWN, game.run.points < AGGRO_REDUCE_COST);
   drawButton(g, BTN_AGGRO_UP, false);
-  stamp(g, 26, 36, `E/PING ${energy}  ·  AGGRO x${a.toFixed(2)}`);
-  stamp(g, 26, 37, `reward x${rewardMult(a, base).toFixed(2)}  ·  ${draftPicks(a, base)} draft`);
-  if (base < AGGRO_BASE) stamp(g, 26, 38, 'TRAINING RUN — trace runs slow');
-  center(g, 39, `tap a sector to commit · HARDER free (pays more) · SAFER -${AGGRO_REDUCE_COST} PTS`);
-}
-
-// the scanning gnomon: a crosshair converging on the cell it's about to ignite.
-// With beams on (travelling/locking) it draws a vertical beam down the target
-// column and a horizontal beam across the sector; with beams off (during a
-// bloom) only the '╬' reticle remains, so the crosshair is continuously on
-// screen without covering the burn. Drawn before the sector labels so it never
-// clobbers them. main.js owns the position + on/off timing.
-function drawGnomon(g, node, gn) {
-  if (!gn || !gn.active || gn.x == null) return;
-  const s = node.sector, gx = gn.x, gy = gn.y;
-  if (gx < s.x0 || gx > s.x1 || gy < 0 || gy >= FIELD_H) return;
-  if (gn.beams) {
-    for (let y = 0; y < FIELD_H; y++) g[FIELD_TOP + y][gx] = '║';   // vertical scan beam
-    for (let x = s.x0; x <= s.x1; x++) g[FIELD_TOP + gy][x] = '═';  // horizontal scan beam
-  }
-  g[FIELD_TOP + gy][gx] = '╬';                                      // the lock reticle
+  stamp(g, 24, 36, `BEAM ${beamLabel(merged)}`.slice(0, COLS - 24));
+  stamp(g, 24, 37, `AGGRO x${a.toFixed(2)}  ·  reward x${rewardMult(a, base).toFixed(2)}  ·  ${draftPicks(a, base)} draft`);
+  if (base < AGGRO_BASE) stamp(g, 24, 38, 'TRAINING RUN — trace runs slow');
+  center(g, 39, `tap a sector column to fire the turret there · HARDER free · SAFER -${AGGRO_REDUCE_COST} PTS`);
 }
 
 function drawBurning(g, game) {
-  const node = game.node;
-  drawMachineBoard(g, game.run.machine);
-  // the descending TRACE SCAN, overlaid across the target sector
-  if (node.scanRow < FIELD_H) {
-    for (let x = node.sector.x0; x <= node.sector.x1; x++) g[FIELD_TOP + node.scanRow][x] = '─';
-  }
-  drawGnomon(g, node, game.gnomon);
-  game.run.machine.sectors.forEach((s) => {
+  const node = game.node, sim = node.sim;
+  drawBoard(g, node.machine, sim, node.sector);
+  drawTurret(g, sim.params.p);
+  node.machine.sectors.forEach((s) => {
     const tag = s.conquered ? `${s.id} ·OWNED·` : s === node.sector ? `${s.id} «BURNING»` : s.id;
     stamp(g, s.x0 + 1, FIELD_TOP, tag.slice(0, s.x1 - s.x0));
   });
-  stamp(g, 0, 36, 'PROGRAM  ');
-  stamp(g, 9, 36, [0, 1, 2].map((i) => {
-    const name = (game.program[i] ? game.program[i].name : '......').padEnd(9).slice(0, 9);
-    return game.phase === 'exec' && game.playhead === i ? `[>${name}<]` : `[ ${name} ]`;
-  }).join(''));
+  stamp(g, 0, 36, `EMBERS ${String(sim.embers.length).padStart(4)}   BEAM ${beamLabel(mergeBeam(node.program.filter(Boolean)))}`.slice(0, COLS));
   const cp = crackPct(node);
-  const breach = node.breachLeft > 0 ? ` HOLD ${node.breachLeft}` : node.breachLeft === 0 ? ' BREACH!' : '';
-  stamp(g, 0, 37, `CRACK ${bar(cp, 30)} ${cp.toFixed(0)}%/${WIN_COVERAGE}%  E${node.energy}${breach}`);
+  const breach = sim.breachLeft > 0 ? ` HOLD ${sim.breachLeft}` : sim.breachLeft === 0 ? ' BREACH!' : '';
+  stamp(g, 0, 37, `COVERAGE ${bar(cp, 28)} ${cp.toFixed(0)}%/${WIN_COVERAGE}%${breach}`);
   const log = node.log.slice(-2);
   stamp(g, 0, 38, (log[0] || '').slice(0, COLS));
   stamp(g, 0, 39, (log[1] || game.message || '').slice(0, COLS));
@@ -187,9 +163,9 @@ export function buildScreen(game) {
   const g = blank();
   const { phase, run, node } = game;
 
-  const tracePct = node ? (node.scanRow / FIELD_H) * 100 : 0;
+  const tracePct = node ? (node.sim.scanRow / FIELD_H) * 100 : 0;
   stamp(g, 0, 0, `TIER ${run.tier}: THE MACHINE   CONQUERED ${run.conquered}/3   ROOT:${run.root}`);
-  if (node) stamp(g, 54, 0, `TRACE${bar(tracePct, 8)} ${node.scanRow}/${FIELD_H}`);
+  if (node) stamp(g, 54, 0, `TRACE${bar(tracePct, 8)} ${node.sim.scanRow}/${FIELD_H}`);
 
   let code = 'CODE  ';
   for (let i = 0; i < CODE_DIGITS; i++) code += (run.locked[i] ? String(run.code[i]) : '_') + ' ';

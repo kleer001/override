@@ -6,7 +6,7 @@
 import {
   createSim, stepSim, coverage, spineX, shapeOffset, defaultParams,
   FIELD_W, FIELD_H, SECTORS, WALL, idx, DIR_KEYS, SHAPE_KEYS,
-} from './beam-sim.js';
+} from '../src/beam.js';
 import { OPEN, HARD, BUS, VAULT, HONEY } from '../src/terrain.js';
 
 const q = new URLSearchParams(location.search);

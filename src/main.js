@@ -1,11 +1,12 @@
-// OVERRIDE — Tier-1 vertical slice.
+// OVERRIDE — Tier-1 vertical slice (Beam-Card model, research/ember-model.md).
 // A run = conquering the three sectors of THE MACHINE, one at a time. You draw a
-// blind loadout, see all three terrains, and choose which to assault.
+// blind loadout, slot cards into a merged beam, aim the turret at a sector column,
+// fire ONE packet, and WATCH it spread + reproduce against the descending trace.
 
 import { mulberry32, shuffle } from './rng.js';
-import { startingDeck, BASE_DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
+import { startingDeck, DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
 import { SHOP_ITEMS, CHAR_UNLOCK, CARD_UNLOCK } from './shop.js';
-import { generateMachine, newCode, createNode, beginVolley, planLob, advanceScan, resolveVolley, REDRAW_COST,
+import { generateMachine, newCode, createNode, fire, stepBattle, coverage, REDRAW_COST, SLOTS,
   rewardMult, draftPicks, AGGRO_BASE, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
 import { buildScreen } from './render.js';
 import { composeBoard, detonate, setReducedMotion } from './juice.js';
@@ -13,14 +14,13 @@ import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
 import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
 import { CHARACTERS } from './characters.js';
-import { WIN_COVERAGE, sectorStats, FIELD_W } from './terrain.js';
+import { WIN_COVERAGE } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
 const screen = document.getElementById('screen');
 const crtEl = document.querySelector('.crt');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const GROW_MS = 14; // per-cell reveal — an ember lands then grows one cell at a time
-const DET_HOLD = 90; // pass-hold: extra ms the frame freezes when a mult detonates
+const TICK_MS = 60;   // watch-phase pace: ms per sim tick (emit → spread → scan)
 
 // --- game feel (research/juice-model.md) ---
 // One trauma scalar drives the CRT-container shake; reduced-motion drops the shake
@@ -36,20 +36,15 @@ const PLAYS_KEY = 'override.plays';   // runs started — drives the onboarding 
 
 const game = {
   phase: 'assemble', run: null, node: null,
-  program: [null, null, null], selection: [], hand: [], draft: [],
-  playhead: -1, prompt: '', message: '', seed: 0, redrawCount: 0,
-  // scanning gnomon: an automated targeting crosshair that sweeps the arena to
-  // place each trace-ember (the player watches it aim, they don't drive it).
-  // active = the reticle is on the board; beams = the long crosshair lines show
-  // (only while travelling/locking, so they don't cover a blooming ember).
-  gnomon: { x: null, y: null, active: false, beams: false },
+  program: new Array(SLOTS).fill(null), selection: [], hand: [], draft: [],
+  prompt: '', message: '', seed: 0, redrawCount: 0,
 };
 
 const loadRoot = () => parseInt(localStorage.getItem(ROOT_KEY) || '120', 10) || 120;
 const saveRoot = (v) => localStorage.setItem(ROOT_KEY, String(v));
 const loadDeck = () => {
   const raw = localStorage.getItem(DECK_KEY);
-  return raw ? JSON.parse(raw).map((id) => ({ ...CARDS[id] })) : startingDeck();
+  return raw ? JSON.parse(raw).map((id) => ({ ...CARDS[id] })).filter((c) => c.id) : startingDeck();
 };
 const saveDeck = (deck) => localStorage.setItem(DECK_KEY, JSON.stringify(deck.map((c) => c.id)));
 const loadPoints = () => parseInt(localStorage.getItem(POINTS_KEY) || '0', 10) || 0;
@@ -72,7 +67,7 @@ const loadRetry = () => parseInt(localStorage.getItem(RETRY_KEY) || '0', 10) || 
 const saveRetry = (v) => localStorage.setItem(RETRY_KEY, String(v));
 
 const availChars = () => CHARACTERS.filter((c) => unlockedChars().includes(c.id));
-const draftPool = () => BASE_DRAFT_POOL.concat(unlockedCards().map((id) => SHOP_CARDS[id]).filter(Boolean));
+const draftPool = () => DRAFT_POOL.concat(unlockedCards().map((id) => SHOP_CARDS[id]).filter(Boolean));
 
 function shopOwned(item) {
   if (item.kind === 'char') return unlockedChars().includes(CHAR_UNLOCK[item.id]);
@@ -103,13 +98,13 @@ function startRun() {
     machine, code: newCode(mulberry32((game.seed ^ 12345) >>> 0)),
     locked: new Array(8).fill(false), conquered: 0, char: null,
     aggression: baseAggro, baseAggro, pendingDrafts: 0, plays,
-    availChars: availChars(), overclockEnergy: overclock ? 2 : 0, retry: loadRetry(),
+    availChars: availChars(), overclockPool: overclock ? 300 : 0, retry: loadRetry(),
   };
   savePlays(plays + 1);
   trauma.reset();                     // never carry shake across runs
   game.node = null;
   game.phase = 'charselect';
-  game.prompt = overclock ? 'OVERCLOCK ARMED — hotter pings, faster trace this run.' : '';
+  game.prompt = overclock ? 'OVERCLOCK ARMED — bigger REACH pool, faster trace this run.' : '';
   draw();
 }
 
@@ -125,7 +120,7 @@ function dealHand() {
   const r = game.run;
   const rng = mulberry32((game.seed ^ (r.node * 40503) ^ (r.conquered * 2654435761) ^ (game.redrawCount * 2246822519)) >>> 0);
   game.hand = shuffle(r.deck, rng).slice(0, 5).map((c) => ({ name: c.name, card: c, used: false }));
-  game.program = [null, null, null];
+  game.program = new Array(SLOTS).fill(null);
   game.selection = [];
 }
 
@@ -133,7 +128,6 @@ function newAssemble() {
   game.node = null;
   game.redrawCount = 0;
   dealHand();
-  game.playhead = -1;
   game.message = '';
   game.prompt = '';
   game.phase = 'assemble';
@@ -155,7 +149,7 @@ function redraw() {
 function loadSlot(i) {
   if (game.phase !== 'assemble') return;
   const h = game.hand[i];
-  if (!h || h.used || game.selection.length >= 3) return;
+  if (!h || h.used || game.selection.length >= SLOTS) return;
   h.used = true;
   game.program[game.selection.length] = h.card;
   game.selection.push(i);
@@ -172,9 +166,9 @@ function undoSlot() {
 }
 
 function gotoTarget() {
-  if (game.selection.length < 3) return;
+  if (!game.program.some(Boolean)) return;
   game.phase = 'target';
-  game.prompt = 'CHOOSE TARGET — match your energy to the terrain';
+  game.prompt = 'AIM — tap a sector column to fire the turret there';
   sfx.ui();
   draw();
 }
@@ -194,104 +188,53 @@ function lowerAggro() {
   sfx.ui(); draw();
 }
 
-function chooseSector(si) {
-  const s = game.run.machine.sectors[si];
+// Commit: fire the turret at sector `si` from trigger column `col` (the tapped
+// column; defaults to sector centre on keyboard select).
+function chooseSector(si, col) {
+  const r = game.run, s = r.machine.sectors[si];
   if (!s || s.conquered) return;
-  game.node = createNode(game.run.machine, si, game.run.char, game.run.aggression, game.run.baseAggro, game.run.overclockEnergy);
+  const triggerCol = col == null ? undefined : col;
+  game.node = createNode(r.machine, si, r.char, r.aggression, r.baseAggro, game.program.slice(),
+    { triggerCol, poolBonus: r.overclockPool });
   game.phase = 'exec';
   startExec();
 }
 
-const GNOMON_MS = 22;   // per-step of the scanning-gnomon sweep
-
-// The automated targeting crosshair travels from its last lock to (tx,ty) with a
-// smoothstep ease, then locks on — this is the "aim" the player watches instead
-// of driving. Cells still come from planLob (random placement); the gnomon just
-// makes the placement legible and deliberate. Snaps instantly under reduced motion.
-async function sweepGnomon(tx, ty) {
-  const gn = game.gnomon;
-  gn.active = true; gn.beams = true;                          // beams on while it travels + locks
-  if (gn.x == null) { gn.x = tx; gn.y = ty; }                 // first lob: crosshair snaps in
-  const sx = gn.x, sy = gn.y;
-  const dist = Math.abs(tx - sx) + Math.abs(ty - sy);
-  const steps = reduceMotion ? 1 : Math.min(9, Math.max(2, Math.round(dist / 5)));
-  for (let s = 1; s <= steps; s++) {
-    const e = s / steps, k = e * e * (3 - 2 * e);             // smoothstep
-    gn.x = Math.round(sx + (tx - sx) * k);
-    gn.y = Math.round(sy + (ty - sy) * k);
-    draw();
-    await sleep(GNOMON_MS);
-  }
-  gn.x = tx; gn.y = ty;
-  sfx.ping();                                                  // radar lock on the target
-  draw();
-  await sleep(reduceMotion ? 0 : 60);                          // a beat on the locked crosshair
-}
-
+// The watch: fire one packet, then tick the sim (emit → spread → reproduce → scan)
+// on a fixed cadence, drawing each tick, until the battle resolves. Fully idle —
+// no input once the packet is away.
 async function startExec() {
   resumeAudio();
   sfx.exec();
-  game.gnomon = { x: null, y: null, active: false };           // fresh scan per node
-  await sleep(220);
   const node = game.node;
+  game.prompt = `WATCH — the beam spreads across ${node.sector.id}; hold coverage through the breach.`;
+  await sleep(200);
+  fire(node);
+  kick(0.35);
+  draw();
+  await sleep(200);
+
+  let lastHoney = 0, wasBreaching = false, wasBreachedThisRun = false;
   while (!node.outcome) {
-    const ev = beginVolley(node, game.program.slice());
-    for (let i = 0; i < 3; i++) {
-      game.playhead = i;
-      const card = game.program[i];
-      const k = card.kind;
-      if (k === 'mult') {
-        // DETONATION (§3 ▅): sound + flash + shake + pass-hold, all on one frame.
-        sfx.mult(card.value);
-        const power = Math.min(1, node.energy / 120) * (card.value / 2); // ∝ result & multiplier
-        kick(0.35 + 0.45 * power);
-        if (!reduceMotion) detonate(clock(), 0.6 + power);
-        draw();
-        await sleep(190 + (reduceMotion ? 0 : DET_HOLD));               // freeze so the hit lands
-      } else {
-        if (k === 'fork') sfx.fork();
-        else if (k === 'interrupt') sfx.ice();
-        else sfx.add(i);
-        draw();
-        await sleep(190);
-      }
-    }
-    game.playhead = -1;
-    const before = node.crack;
-    const honeyBefore = node.honeyHit;
-    game.gnomon.active = true;
-    while (node.pingsLeft > 0) { // gnomon scans to each landing site, then the ember blooms
-      const cells = planLob(node);
-      if (!cells.length) { await sleep(GROW_MS * 3); continue; }
-      const anchor = cells[0]; // planPing's first cell is where the ping lands
-      await sweepGnomon(anchor % FIELD_W, (anchor / FIELD_W) | 0);
-      game.gnomon.beams = false; // drop the long beams; the reticle rides the target through the bloom
-      const hit = clock(); // cluster anchor — the whole ember shares this pulse phase
-      for (const c of cells) {
-        node.machine.burned[c] = 1;
-        node.machine.bornAt[c] = hit;
-        node.crack = sectorStats(node.machine, node.sector).pct;
-        draw();
-        await sleep(GROW_MS);
-      }
-    }
-    game.gnomon.active = false; // scan phase — the gnomon steps off the board
-    advanceScan(node); // the trace scan descends + reclaims
+    const snap = stepBattle(node);
+    // honeypot tripped → the trace lurches; a bad-surprise jolt (§9)
+    if (node.sim.honeyBurned > lastHoney) { lastHoney = node.sim.honeyBurned; sfx.honeypot(); kick(0.4); }
+    // crossing into the breach hold — you hit coverage, now survive the timer
+    if (snap.breachLeft >= 0 && !wasBreaching) {
+      wasBreaching = true;
+      if (!wasBreachedThisRun) { wasBreachedThisRun = true; sfx.crack(); if (!reduceMotion) detonate(clock(), 0.7); kick(0.5); }
+    } else if (snap.breachLeft < 0) wasBreaching = false;
     draw();
-    await sleep(140);
-    resolveVolley(node, ev);
-    if (node.crack > before) sfx.crack();
-    if (node.honeyHit > honeyBefore) { sfx.honeypot(); kick(0.5); } // ▄ warning jolt — a bad surprise
-    draw();
-    await sleep(260);
+    await sleep(reduceMotion ? 0 : TICK_MS);
   }
-  if (node.outcome === 'lose') { sfx.flatline(); kick(0.9); }        // █ trace doom — caught
+  if (node.outcome === 'lose') { sfx.flatline(); kick(0.9); }
   showResult();
 }
 
 function showResult() {
   const node = game.node, r = game.run;
   game.phase = 'result';
+  node.crack = coverage(node.sim);
   if (node.outcome === 'win') {
     r.conquered++;
     for (const d of node.sector.digits) r.locked[d] = true;
@@ -402,7 +345,7 @@ function onTapCell(col, row) {
   } else if (game.phase === 'target') {
     if (inRect(col, row, BTN_AGGRO_DOWN)) return lowerAggro();
     if (inRect(col, row, BTN_AGGRO_UP)) return raiseAggro();
-    for (let i = 0; i < SECTOR_RECTS.length; i++) if (inRect(col, row, SECTOR_RECTS[i])) return chooseSector(i);
+    for (let i = 0; i < SECTOR_RECTS.length; i++) if (inRect(col, row, SECTOR_RECTS[i])) return chooseSector(i, col);
   } else if (game.phase === 'draft') {
     for (let i = 0; i < DRAFT_CARDS.length; i++) if (inRect(col, row, DRAFT_CARDS[i])) return pickDraft(i);
   } else if (game.phase === 'shop') {
@@ -428,7 +371,7 @@ window.addEventListener('keydown', (e) => {
     else if (k === 'Backspace') { e.preventDefault(); undoSlot(); }
     else if (k === 'Enter') gotoTarget();
   } else if (game.phase === 'target') {
-    if (k >= '1' && k <= '3') chooseSector(+k - 1);
+    if (k >= '1' && k <= '3') chooseSector(+k - 1);           // keyboard = fire from sector centre
     else if (k === '+' || k === '=') raiseAggro();
     else if (k === '-' || k === '_') lowerAggro();
   } else if (game.phase === 'draft') {

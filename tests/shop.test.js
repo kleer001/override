@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SHOP_ITEMS, CHAR_UNLOCK, CARD_UNLOCK } from '../src/shop.js';
-import { BASE_DRAFT_POOL, SHOP_CARDS } from '../src/cards.js';
+import { DRAFT_POOL, SHOP_CARDS } from '../src/cards.js';
 import { CHARACTERS } from '../src/characters.js';
 
 // Mirrors the persistence + composition logic in main.js against an in-memory
@@ -14,7 +14,7 @@ function makeShop(root = 1000) {
   const unlockedChars = () => getJSON('chars', ['wardial']);
   const unlockedCards = () => getJSON('cards', []);
   const availChars = () => CHARACTERS.filter((c) => unlockedChars().includes(c.id));
-  const draftPool = () => BASE_DRAFT_POOL.concat(unlockedCards().map((id) => SHOP_CARDS[id]).filter(Boolean));
+  const draftPool = () => DRAFT_POOL.concat(unlockedCards().map((id) => SHOP_CARDS[id]).filter(Boolean));
   let retry = 0;
   const owned = (it) => it.kind === 'char' ? unlockedChars().includes(CHAR_UNLOCK[it.id])
     : it.kind === 'card' ? unlockedCards().includes(CARD_UNLOCK[it.id]) : false;
@@ -43,7 +43,7 @@ test('shop catalog is well-formed and self-consistent', () => {
 test('defaults: only War-dialer unlocked, base draft pool only', () => {
   const s = makeShop();
   assert.deepEqual(s.availChars().map((c) => c.id), ['wardial']);
-  assert.equal(s.draftPool().length, BASE_DRAFT_POOL.length);
+  assert.equal(s.draftPool().length, DRAFT_POOL.length);
 });
 
 test('permanent: buying a character unlock adds it to the roster (no double-charge)', () => {
@@ -58,9 +58,9 @@ test('permanent: buying a character unlock adds it to the roster (no double-char
 test('permanent: buying a card unlock expands the draft pool', () => {
   const s = makeShop();
   const before = s.draftPool().length;
-  assert.ok(s.buy('card_PUNCH'));
+  assert.ok(s.buy('card_PAYLOAD'));
   assert.equal(s.draftPool().length, before + 1);
-  assert.ok(s.draftPool().some((c) => c.id === 'PUNCH'));
+  assert.ok(s.draftPool().some((c) => c.id === 'PAYLOAD'));
 });
 
 test('consumables: retry tokens stack, overclock arms', () => {
