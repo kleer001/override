@@ -11,8 +11,8 @@
 
 import { mulberry32 } from './rng.js';
 import { generateMachine, sectorStats, FIELD_H, WIN_COVERAGE } from './terrain.js';
-import { createSimOn, stepSim, coverage, spineX, defaultParams } from './beam.js';
-import { mergeBeam } from './cards.js';
+import { createSimOn, stepSim, coverage, spineX } from './beam.js';
+import { mergeBeam, beamGutterLines } from './cards.js';
 
 export { generateMachine };
 export const REDRAW_COST = 10;      // points spent to reshuffle the hand in assemble
@@ -42,42 +42,47 @@ export function draftPicks(aggro, base = AGGRO_BASE) {
   return Math.max(1, 1 + Math.floor((aggro - base) / 0.5 + 1e-9));
 }
 
-// Build the full beam params for a node: merge the slotted cards, then overlay the
-// shared terminal/scan constants scaled by aggression + character bonuses.
-function beamParams(machine, secIdx, program, aggro, char, extra) {
-  const merged = mergeBeam(program.filter(Boolean));
+// Build the full beam params for a node from an already-merged beam, overlaying the
+// shared terminal/scan constants scaled by aggression + character bonuses. Every
+// key the sim reads is set here explicitly (no defaultParams fallback in the game).
+function beamParams(machine, secIdx, merged, aggro, char, extra) {
   const sector = machine.sectors[secIdx];
-  const p = { ...defaultParams(), ...merged };
-  p.p = extra && extra.triggerCol != null
-    ? Math.max(sector.x0, Math.min(sector.x1, extra.triggerCol | 0))
-    : (sector.x0 + sector.x1) >> 1;              // default: fire from sector centre
-  p.pool = POOL + (char ? (char.poolBonus || 0) : 0) + (extra ? (extra.poolBonus || 0) : 0);
-  p.reachCap = REACH_CAP + (char ? (char.reachCapBonus || 0) : 0);
-  p.scanSpeed = SCAN_SPEED * aggro;              // aggression = scan speed…
-  p.reclaim = Math.max(1, Math.round(RECLAIM * aggro));   // …and bite
-  p.breachHold = BREACH_HOLD;
-  p.winCoverage = WIN_COVERAGE;
-  return p;
+  return {
+    p: extra.triggerCol != null
+      ? Math.max(sector.x0, Math.min(sector.x1, extra.triggerCol | 0))
+      : (sector.x0 + sector.x1) >> 1,            // default: fire from sector centre
+    shapes: merged.shapes, amp: merged.amp, freq: merged.freq, dirs: merged.dirs,
+    probMode: merged.probMode, prob: merged.prob, maskN: merged.maskN,
+    reproduce: merged.reproduce, spreadReach: merged.spreadReach,
+    pool: POOL + (char?.poolBonus || 0) + (extra.poolBonus || 0),
+    reachCap: REACH_CAP + (char?.reachCapBonus || 0),
+    scanSpeed: SCAN_SPEED * aggro,               // aggression = scan speed…
+    reclaim: Math.max(1, Math.round(RECLAIM * aggro)),   // …and bite
+    breachHold: BREACH_HOLD,
+    winCoverage: WIN_COVERAGE,
+  };
 }
 
 // Create a node: a beam battle over the run's shared machine. Does not fire yet —
 // call fire() (or step it) to begin the watch.
 export function createNode(machine, secIdx, char, aggro = AGGRO_BASE, baseAggro = AGGRO_BASE, program = [], extra = {}) {
   const sector = machine.sectors[secIdx];
-  const params = beamParams(machine, secIdx, program, aggro, char, extra);
+  const merged = mergeBeam(program.filter(Boolean));
+  const params = beamParams(machine, secIdx, merged, aggro, char, extra);
   const rng = mulberry32((machine.seed ^ (secIdx * 0x9e3779b9) ^ 0x85ebca6b) >>> 0);
   const sim = createSimOn(machine, secIdx, params, rng);
   return {
     machine, secIdx, sector, aggro, baseAggro, char,
-    sim, program,
-    fired: false, packets: 1 + (char ? (char.packetBonus || 0) : 0),
+    sim, program, beamLines: beamGutterLines(merged),   // cached 2-line gutter readout
+    fired: false, packets: 1 + (char?.packetBonus || 0),
     outcome: null,
     log: [`> jacked into ${sector.id}. terrain: ${sector.difficulty}. aggression x${aggro.toFixed(2)}.`],
   };
 }
 
-// Coverage %, exposed as `crack` for the UI (kept name from the old model).
-export function crackPct(node) { return coverage(node.sim); }
+// Coverage %, exposed as `crack` for the UI (kept name from the old model). Reads
+// the value the sim cached on its last tick — no per-frame full-grid rescan.
+export function crackPct(node) { return node.sim.cov; }
 
 // The turret is committed — record the trigger column and open the watch.
 export function fire(node) {
@@ -105,31 +110,21 @@ function resolve(node, outcome) {
   }
 }
 
-// Convenience getters for the UI / tests.
-export function scanRow(node) { return node.sim.scanRow; }
-export function breachLeft(node) { return node.sim.breachLeft; }
-
-// Whole battle in one call (headless / tests): fire, then tick to an outcome.
-export function runBattle(node) {
-  fire(node);
-  let guard = 0;
-  while (!node.outcome && guard++ < 2000) stepBattle(node);
-  node.crack = coverage(node.sim);
-  return node;
-}
-
-// Peak coverage over a full battle (headless helper for balance-style checks).
+// Peak coverage over a full battle (headless / tests): fire, then tick to an
+// outcome, tracking the peak coverage along the way.
 export function runBattlePeak(node) {
   fire(node);
   let peak = 0, guard = 0;
   while (!node.outcome && guard++ < 2000) {
-    stepBattle(node);
-    const c = coverage(node.sim);
-    if (c > peak) peak = c;
+    const snap = stepBattle(node);
+    if (snap && snap.coverage > peak) peak = snap.coverage;
   }
-  node.crack = coverage(node.sim);
+  node.crack = node.sim.cov;
   return { node, peak };
 }
+
+// Whole battle in one call (headless / tests) — the outcome-only variant.
+export function runBattle(node) { return runBattlePeak(node).node; }
 
 // Re-expose spineX for the renderer (pending-spine preview).
 export { spineX, coverage };

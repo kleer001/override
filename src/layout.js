@@ -18,10 +18,10 @@ export const FIELD = { x: 0, y: 0, w: 64, h: 30 };
 export const GUTTER = { x: 64, y: 0, w: 16, h: 30 };
 export const TRAY = { x: 0, y: 30, w: 80, h: 10 };
 
-// the memory block draws at a 1-cell inset inside FIELD (border on all sides)
+// the memory block draws at a 1-cell inset inside FIELD (border on all sides).
+// FIELD_OX/FIELD_OY are the single source of truth for the block→screen offset —
+// both the renderer and the juice compositor map through them.
 export const FIELD_OX = 1, FIELD_OY = 1;
-// FIELD_TOP kept for any legacy reference: the block's first screen row
-export const FIELD_TOP = FIELD_OY;
 
 // during AIM the whole block interior is the fire target (tap a column to fire)
 export const FIELD_FIRE = { x: FIELD_OX, y: FIELD_OY, w: 62, h: 28 };

@@ -113,6 +113,7 @@ export function createSimOn(machine, sectorIndex, params, rng) {
     scanRow: 0, scanAcc: 0,                               // trace scan position
     honeyBurned: 0,                                        // honeypots burned so far (trace spike)
     breachLeft: -1,                                        // breach countdown (ticks)
+    cov: 0,                                                 // cached coverage %, refreshed each tick
     outcome: null,                                          // null | 'win' | 'traced'
     tick: 0,
   };
@@ -253,7 +254,7 @@ export function stepSim(sim) {
   if (sim.honeyBurned > honeyBefore) sim.honeySpike = (sim.honeySpike || 0) + (sim.honeyBurned - honeyBefore);
   advanceScan(sim);
 
-  const cov = coverage(sim);
+  const cov = sim.cov = coverage(sim);
   const p = sim.params;
   if (cov >= p.winCoverage) {
     if (sim.breachLeft < 0) sim.breachLeft = p.breachHold;   // start breach timer
@@ -270,7 +271,7 @@ export function stepSim(sim) {
 export function snapshot(sim) {
   return {
     tick: sim.tick,
-    coverage: coverage(sim),
+    coverage: sim.cov,
     embers: sim.embers.length,
     scanRow: sim.scanRow,
     breachLeft: sim.breachLeft,

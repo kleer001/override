@@ -1,11 +1,14 @@
-// Production terrain: one 80x33 memory field split into three sectors by
-// firewalls. Each sector is generated independently:
+// Production terrain: ONE 62×28 memory block per run (a single "sector"). The
+// SECTORS array stays a list-of-one so the sim/renderer that iterate sectors keep
+// a clean seam for a future multi-node tier (GAME-SHEET Tier 2, "THE LAN"). The
+// block is generated as:
 //   - THREE independent noise fields (different seeds & frequencies) place WALL,
 //     HARD and OPEN so the types decorrelate;
-//   - land islands in a sea of firewall, bridged by bus links;
+//   - land islands in a sea of firewall, bridged by bus links (distant ones stay
+//     stranded — some blocks are only partly reachable);
 //   - a strong horizontal shear for the digital, stair-stepped look.
-// Win is COVERAGE-based (burn >= WIN_COVERAGE% of a sector). Runs are NOT
-// guaranteed winnable — some machines are brutal. Fire is heat-gated.
+// Win is COVERAGE-based (burn >= WIN_COVERAGE% of the block). Runs are NOT
+// guaranteed winnable — some blocks are brutal.
 
 import { mulberry32, randInt } from './rng.js';
 

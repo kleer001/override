@@ -15,60 +15,12 @@
 
 import { createSim, stepSim, coverage, SECTORS } from '../src/beam.js';
 import { generateMachine } from '../src/terrain.js';
+import { CARDS, mergeBeam, GROWTH, GROWTH_CAP } from '../src/cards.js';
 
-// --- GROWTH aspect: level → (reproduce chance, child spread-reach) (§3). Cards
-// carry a level; merging ADDS reproduce (cap) and MAXes spread-reach. ---
-const GROWTH = {
-  None: { r: 0.00, s: 0 },
-  Low:  { r: 0.10, s: 4 },
-  Med:  { r: 0.20, s: 6 },
-  High: { r: 0.40, s: 8 },
-};
-const GROWTH_CAP = 0.60;   // merged reproduce cap (§3 / §6)
-
-// --- the §5 card pool (representative slice). Each card is a bundled quad. ---
-// shape is one of beam-sim SHAPES keys; dirs is a list of compass headings.
-const C = {
-  'SCRIPT.COM': { shape: 'linear', dirs: ['←'],        prob: 25,  growth: 'Low'  },
-  'SCRIPT.SYS': { shape: 'linear', dirs: ['→'],        prob: 25,  growth: 'Low'  },
-  'BUFFER.OVR': { shape: 'linear', dirs: ['←', '→'],   prob: 50,  growth: 'Med'  },
-  'WORM':       { shape: 'sine',   dirs: ['←', '→'],   prob: 25,  growth: 'High' },
-  'HARMONIC':   { shape: 'sine2',  dirs: ['←', '→'],   prob: 25,  growth: 'Med'  },
-  'PHREAK':     { shape: 'sine3',  dirs: ['←'],        prob: 25,  growth: 'Low'  },
-  'BLUEBOX':    { shape: 'rect',   dirs: ['↑'],        prob: 50,  growth: 'Low'  },
-  'LOGICBOMB':  { shape: 'saw',    dirs: ['↓'],        prob: 50,  growth: 'Med'  },
-  'ROOTKIT':    { shape: 'linear', dirs: ['←', '→'],   prob: 75,  growth: 'Med'  },
-  'PAYLOAD':    { shape: 'sine',   dirs: ['←', '→'],   prob: 50,  growth: 'High' },
-  'NOP.SLED':   { shape: 'linear', dirs: [],           prob: 50,  growth: 'None' },
-  'TANGENT':    { shape: 'tan',    dirs: ['←', '→'],   prob: 10,  growth: 'None' },
-};
-
-// Amplitude/frequency are shape-family conventions (not a card aspect): curved
-// shapes want a visible swing, linear ignores amp. Kept here so decks stay clean.
-const AMP_FOR = (shapes) => (shapes.has('tan') ? 5 : shapes.size && !shapes.has('linear') || shapes.size > 1 ? 6 : 0);
-const FREQ = 2;
-
-// Merge a list of card names into one beam's aspect block (§3 merge rules).
-function mergeDeck(names) {
-  const shapes = new Set();
-  const dirs = new Set();
-  let prob = 0, repro = 0, spread = 0;
-  for (const n of names) {
-    const card = C[n];
-    shapes.add(card.shape);
-    for (const d of card.dirs) dirs.add(d);
-    prob += card.prob;                                   // ADDS
-    repro += GROWTH[card.growth].r;                      // ADDS
-    spread = Math.max(spread, GROWTH[card.growth].s);    // MAX
-  }
-  return {
-    shapes, dirs,
-    prob: Math.min(100, prob),
-    reproduce: Math.min(GROWTH_CAP, repro),
-    spreadReach: spread,
-    amp: AMP_FOR(shapes),
-  };
-}
+// Merge a deck of card NAMES into one beam through the SHIPPING merge rules — this
+// harness validates the real cards + real merge, not a parallel copy. mergeBeam
+// returns shapes as a {key:bool} object; the sim reads that shape directly.
+const mergeDeck = (names) => mergeBeam(names.map((n) => CARDS[n]));
 
 // The §6 escalation stacks as end-state card lists (+ a deliberately weak starter).
 const DECKS = {
@@ -94,19 +46,15 @@ const TUNE = {
 // GROWTH_SCALE multiplies every deck's merged reproduce (ablation: 0 = no growth).
 const GROWTH_SCALE = envN('GROWTH_SCALE', 1);
 
-const SHAPE_KEYS = ['linear', 'sine', 'sine2', 'sine3', 'rect', 'tan', 'saw'];
-
-// Build a full params block for a merged deck on one sector.
+// Build a full params block for a merged deck on one sector. mergeBeam already
+// supplies shapes/amp/freq/dirs/probMode/prob/maskN/reproduce/spreadReach.
 function paramsFor(merged, sectorIndex) {
   const sec = SECTORS[sectorIndex];
-  const shapes = {};
-  for (const k of SHAPE_KEYS) shapes[k] = merged.shapes.has(k);
   return {
+    ...merged,
     p: (sec.x0 + sec.x1) >> 1,
-    shapes, amp: merged.amp, freq: FREQ,
     dirs: new Set(merged.dirs),
-    probMode: 'prob', prob: merged.prob, maskN: 5,
-    reproduce: Math.min(GROWTH_CAP, merged.reproduce * GROWTH_SCALE), spreadReach: merged.spreadReach,
+    reproduce: Math.min(GROWTH_CAP, merged.reproduce * GROWTH_SCALE),
     ...TUNE,
   };
 }
@@ -159,7 +107,8 @@ for (const [name, cards] of Object.entries(DECKS)) {
   }
   peaks.sort((a, b) => a - b);
   const med = peaks[peaks.length >> 1];
-  const beam = `${[...merged.shapes].join('+')}·${[...merged.dirs].join('') || '—'}·${merged.prob}%·gr${merged.reproduce.toFixed(2)}`;
+  const shapeList = Object.keys(merged.shapes).filter((k) => merged.shapes[k]).join('+');
+  const beam = `${shapeList}·${[...merged.dirs].join('') || '—'}·${merged.prob}%·gr${merged.reproduce.toFixed(2)}`;
   console.log(
     pad(name, 10),
     pad(beam, 30),

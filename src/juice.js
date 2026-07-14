@@ -9,7 +9,7 @@
 // The board is rendered via innerHTML, so every emitted char is HTML-escaped.
 
 import { FIELD_W, FIELD_H, SECTORS, idx } from './terrain.js';
-import { FIELD_TOP, FIELD_OX, COLS } from './layout.js';
+import { FIELD_OY, FIELD_OX, COLS } from './layout.js';
 
 const TWO_PI = Math.PI * 2;
 const PERIOD = 1400;      // active-burn pulse: one dim->bright->dim cycle (ms)
@@ -134,8 +134,8 @@ export function composeBoard(text, game, now) {
   sync(machine);
   markConquered(machine, now);
   for (let i = 0; i < lines.length; i++) {
-    lines[i] = (i >= FIELD_TOP && i < FIELD_TOP + FIELD_H)
-      ? composeRow(lines[i], i - FIELD_TOP, machine, now)
+    lines[i] = (i >= FIELD_OY && i < FIELD_OY + FIELD_H)
+      ? composeRow(lines[i], i - FIELD_OY, machine, now)
       : escLine(lines[i]);
   }
   return lines.join('\n');
