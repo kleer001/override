@@ -23,7 +23,11 @@ import { sfx, resumeAudio } from './audio.js';
 const screen = document.getElementById('screen');
 const crtEl = document.querySelector('.crt');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const TICK_MS = 60;   // watch-phase pace: ms per sim tick (emit → spread → scan)
+// Watch-phase pace: ms per sim tick (emit → spread → scan). A battle resolves in
+// ~45–140 sim ticks, so this maps to a ~6 s blowout … ~18 s nail-biter — the watch
+// length self-scales with the drama. Balance is wall-clock-invariant (win/lose is
+// decided by per-tick RATIOS), so this only sets duration, never the outcome.
+const TICK_MS = 130;
 
 // --- game feel (research/juice-model.md) ---
 const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
