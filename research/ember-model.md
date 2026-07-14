@@ -426,30 +426,53 @@ spray has landed, vs. a growth-less spray that throws once and stalls. This is a
   OVERCLOCK later converts surplus density → REACH pool. (Growth overflow past its
   ~60% cap is wasted the same way.)
 
-**STILL OPEN (need the `preview/beam.html` sandbox or a playtest):**
-- `POOL` base size, the `POOL / emberCount` split curve (linear may over-punish wide
-  decks — try sub-linear), and `REACH_CAP` — pure calibration.
-- **GROWTH calibration:** the `reproduce` cap and the None/Low/Med/High → % mapping,
-  `spreadReach` (child persistence), and how growth trades against REACH so a strong
-  deck wins ~5/6 without reproduction becoming a free win. The sandbox exposes both
-  `reproduce` and `spread reach` sliders for this pass.
+**RESOLVED by the headless balance pass (`preview/beam-balance.js`, 2026-07-14):**
+- **GROWTH mapping** — `None/Low/Med/High reproduce = 0 / 0.10 / 0.20 / 0.40`, merged
+  reproduce **cap 0.60**, child `spreadReach = 0 / 4 / 6 / 8` (merge MAXes it). Ablation
+  (`GROWTH_SCALE=0`) drops the two coverage decks from ~80% wins to 4–8% and caps their
+  *peak* coverage at 56–57% — the exact "single spray dies ~40–57%" ceiling, so growth
+  is confirmed load-bearing, not a free win.
+- **SHARED constants** `{pool 800, reachCap 20, scanSpeed 0.5, reclaim 6, breachHold 18,
+  winCoverage 50}` — hit the §13 target: CURTAIN/HARMONIC ~80% (strong ~5/6), the weak
+  starter 0/48 (peaks ≤19%), terrain gates ~13–17% BRUTAL. The plateau is wide (pool
+  800↔900, reclaim 5↔7 barely move win rates) — robust, not knife-edge.
+- **`POOL / emberCount` split** — validated: `pool` binds wide decks (CURTAIN ember
+  share ≈ 12 < cap), `reachCap` binds narrow decks (LANCE share hits 20) — the
+  depth/width trade emerges for free. Linear split is fine; no sub-linear tweak needed.
+
+**STILL OPEN (need the browser sandbox or a playtest):**
+- **LANCE/FENCE are underserved by a pure-coverage metric** — the harness scores only
+  area %, so a narrow deep lance (whose real payoff is vault/CODE digits, §4/§10) reads
+  0%, and a vertical FENCE (racing to top objectives before the scan) reads mid. Both
+  need the vault/CODE win path in the sim before their balance is real. GLITCH's swing
+  (peak 0→94) already reads correctly as the gambler.
 - Default Tier-1 emission **rate**: start ~60–100 ms/cell, tuned so embers finish
   spreading by ~40% of the scan's descent (i.e. against scan speed, not in isolation).
+  (Headless is rate-agnostic — one tick per step — so this needs the timed sandbox.)
 - Slot curve (start 1, +1 per breach, cap ~3 in Tier 1 → 6+ later) and card-rarity
   weights (common 25% / single-dir / simple-shape / low-growth … legendary `0DAY`
   100% + high growth). An economy playtest, not a lone number.
 
 ## 13. Calibration sandbox (`preview/beam.html`)
 
-Reuses the real `src/terrain.js` generator so tuned numbers port straight in.
-Sliders: trigger column, shape set (with live Fourier sum preview), direction union,
-merged probability, REACH pool + cap, **reproduce + spread reach** (the GROWTH
-levers), emission rate, scan speed, reclaim/row, breach hold, win coverage. A live
-**embers-alive** readout catches reproduction spikes. RESEED cycles sectors. Should
-let us *watch* the six escalation-stack end states move against real terrain and tune
-the caps.
+Two tools, one sim (`beam-sim.js`), both over the real `src/terrain.js` generator so
+tuned numbers port straight in:
+- **`preview/beam.html`** (browser) — sliders for trigger column, shape set (live
+  Fourier sum preview), direction union, merged probability, REACH pool + cap,
+  **reproduce + spread reach** (the GROWTH levers), emission rate, scan speed,
+  reclaim/row, breach hold, win coverage. A live **embers-alive** readout catches
+  reproduction spikes. RESEED cycles sectors. The five escalation-stack **presets**
+  mirror the merged card-decks below. *Watch* the end-states move against real terrain.
+- **`preview/beam-balance.js`** (headless, `node preview/beam-balance.js [seeds]`) —
+  builds the §6 decks from real §5 cards through the actual merge rules and sweeps them
+  across seeds × 3 sectors, printing win-rate + peak-coverage + the terrain gate. Env
+  overrides (`POOL=… RECLAIM=… GROWTH_SCALE=…`) for quick sweeps and ablations.
 
-**Prior validated split** (headless, 6 seeds, KERNEL): `COST = {OPEN 1, HARD 6,
-WALL ∞, BUS −1, VAULT 2, HONEY 1}`; strong deck ~5/6 (peaks 73–91%), weak 6/6 (<19%),
-lone strong loss = intended BRUTAL. Carry as starting numbers; the single-shot
-emit-and-spread loop needs a fresh equilibrium pass.
+**Validated equilibrium** (`beam-balance.js`, 16 seeds × 3 sectors, all sectors):
+`COST = {OPEN 1, HARD 6, WALL ∞, BUS −1, VAULT 2, HONEY 1}`; shared `{pool 800,
+reachCap 20, scanSpeed 0.5, reclaim 6, breachHold 18, winCoverage 50}`; GROWTH
+`None/Low/Med/High = 0/.10/.20/.40` (cap .60). Result: CURTAIN 79% / HARMONIC 81%
+(strong ~5/6, peaks to 92–98%), weak starter 0/48 (peaks ≤19%), BRUTAL ~13–17% of
+sectors = intended terrain gate. Growth-off ablation caps peaks at 56–57% and win
+rate at 4–8% → growth is load-bearing. These are the ported defaults; LANCE/FENCE
+await the vault/CODE win path before their numbers are meaningful.

@@ -60,12 +60,23 @@ grows toward an equilibrium vs. the scan (curtain hi-peak 55% → 83% as reprodu
 - Kept at 50% (Tier-1 *meant* to be barely winnable — "you barely crack your own
   terminal"; GROWTH is what makes 50% reachable). Sandbox/doc defaults unchanged.
 
-### 3. Proper balance pass in the sandbox — ⏭ NEXT (needs the browser sandbox)
-- Tune `{pool, reachCap, spreadReach, reproduce, scanSpeed, reclaim, breachHold}` to the
-  §13 target: a strong deck wins ~5/6, a weak deck 0/6, terrain still gates (~1/8 BRUTAL).
-  Current preset/default numbers are **provisional starting points, not balance.**
-- Still-open dials from `ember-model.md` §12: default **emission rate**, **slot curve**
-  (start 1, +1/breach, cap ~3 T1), **card-rarity** weights.
+### 3. Proper balance pass in the sandbox — ✅ DONE (headless, 2026-07-14)
+- ✅ Built `preview/beam-balance.js`: merges the §6 decks from real §5 cards and sweeps
+  seeds × 3 sectors on the pure sim, printing win-rate + peak coverage + terrain gate.
+  Env overrides (`POOL=… RECLAIM=… GROWTH_SCALE=…`) for sweeps/ablations.
+- ✅ Validated the provisional numbers **as balance** (16 seeds): shared `{pool 800,
+  reachCap 20, scanSpeed 0.5, reclaim 6, breachHold 18, winCov 50}` + GROWTH
+  `None/Low/Med/High = 0/.10/.20/.40` (cap .60, spreadReach 0/4/6/8). CURTAIN/HARMONIC
+  ~80% (strong ~5/6), weak starter 0/48, BRUTAL ~13–17% = terrain gate. `GROWTH_SCALE=0`
+  ablation caps peaks 56–57% / wins 4–8% → growth is load-bearing. Plateau is wide
+  (pool 800↔900, reclaim 5↔7 barely move it) — robust, not knife-edge.
+- ✅ Aligned `beam.html` presets to the shared-pool + card-derived-growth model.
+- ⚠ **LANCE/FENCE read weak in a pure-coverage harness** — their payoff (vault/CODE
+  digits; racing top objectives) isn't scored yet. They need the vault/CODE win path in
+  the sim before their numbers mean anything. Fold this into the step-4 port.
+- Still-open dials (need the *timed browser* sandbox, headless is rate-agnostic):
+  default **emission rate**, **slot curve** (start 1, +1/breach, cap ~3 T1),
+  **card-rarity** weights.
 
 ### 4. Port the sim into the real game (`src/`)
 - `preview/beam-sim.js` is the reference implementation; the live game (`src/battle.js`
@@ -84,5 +95,6 @@ grows toward an equilibrium vs. the scan (curtain hi-peak 55% → 83% as reprodu
 ## Files touched by this overhaul
 - Design: `research/ember-model.md`, `research/weapon-design-references.md`,
   `GAME-SHEET.md`, `SPEC-SHEET.md`
-- Sandbox: `preview/beam.html`, `preview/beam.js`, `preview/beam-sim.js`
+- Sandbox: `preview/beam.html`, `preview/beam.js`, `preview/beam-sim.js`,
+  `preview/beam-balance.js` (headless balance harness)
 - Unchanged/old-model (needs porting): `src/battle.js`, `src/cards.js`, `src/characters.js`

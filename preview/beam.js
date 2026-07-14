@@ -27,15 +27,20 @@ let P = defaultParams();
 let sim, running = false, timer = null;
 
 // --- presets: the five escalation stacks, end-states (ember-model.md §6) ---
-// Each preset now sets a shared REACH pool + a per-ember cap (ember-model §4);
-// the depth/width trade then falls out of each stack's ember count (dirs × prob):
-// CURTAIN spreads the pool thin over many embers, LANCE concentrates it deep.
+// These mirror the merged card-decks validated headless in beam-balance.js: one
+// SHARED REACH pool + per-ember cap (pool is a terminal meta-stat, §4), and each
+// stack's growth (reproduce / spreadReach) comes from its cards' GROWTH aspect
+// (§3). The depth/width trade falls out of ember count (dirs × prob): CURTAIN
+// spreads the shared pool thin over many embers, LANCE concentrates it deep.
+// Calibrated (16 seeds × 3 sectors): CURTAIN/HARMONIC ~80% (strong ~5/6), the
+// weak starter 0%, growth-off ablation caps ~56% — growth is load-bearing.
+const POOL = 800, REACHCAP = 20;   // shared terminal REACH stat for all stacks
 const PRESETS = {
-  CURTAIN: { shapes: ['linear'], amp: 0, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 100, pool: 1100, reachCap: 24, reproduce: 0.15, spreadReach: 6 },
-  LANCE:   { shapes: ['linear'], amp: 0, freq: 2, dirs: ['→'], probMode: 'prob', prob: 25, pool: 700, reachCap: 30, reproduce: 0.05, spreadReach: 4 },
-  HARMONIC:{ shapes: ['sine', 'sine2', 'sine3'], amp: 6, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 100, pool: 1100, reachCap: 20, reproduce: 0.15, spreadReach: 6 },
-  FENCE:   { shapes: ['rect'], amp: 5, freq: 3, dirs: ['↑', '↓'], probMode: 'prob', prob: 100, pool: 800, reachCap: 18, reproduce: 0.12, spreadReach: 5 },
-  GLITCH:  { shapes: ['tan'], amp: 5, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 70, pool: 650, reachCap: 22, reproduce: 0.30, spreadReach: 8 },
+  CURTAIN: { shapes: ['linear'], amp: 0, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 100, pool: POOL, reachCap: REACHCAP, reproduce: 0.60, spreadReach: 6 },
+  LANCE:   { shapes: ['linear'], amp: 0, freq: 2, dirs: ['→'], probMode: 'prob', prob: 50, pool: POOL, reachCap: REACHCAP, reproduce: 0.20, spreadReach: 4 },
+  HARMONIC:{ shapes: ['sine', 'sine2', 'sine3'], amp: 6, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 100, pool: POOL, reachCap: REACHCAP, reproduce: 0.60, spreadReach: 8 },
+  FENCE:   { shapes: ['rect', 'saw'], amp: 5, freq: 3, dirs: ['↑', '↓'], probMode: 'prob', prob: 100, pool: POOL, reachCap: REACHCAP, reproduce: 0.40, spreadReach: 6 },
+  GLITCH:  { shapes: ['tan', 'sine'], amp: 5, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 45, pool: POOL, reachCap: REACHCAP, reproduce: 0.40, spreadReach: 8 },
 };
 
 function applyPreset(name) {
