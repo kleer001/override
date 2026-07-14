@@ -107,22 +107,22 @@ a fresh island → two fronts. (Later-tier ICE can actively sever links.)
  TIER 1: THE MACHINE     NODE 1/3     ROOT:120         TRACE SCAN[####......]
  CODE  7 _ 4 _ _ 1 _ _    ::  vault cells resolve digits    ADDR 0x7F3A -> 0xA10C +
 +------------------------------------------------------------------------------+
-| 0x7F3A ·:·=+*@@%#4  @@·      ══╗          2 #X#:·..  ·:=+*@@@%#  0xA10C  ·:· |
-| :·=+*@@@@@%*=3 @@@·  @@2   ═══╬════       ·:=+*@@@· 5   @@@%#X#:  ==+*@·  ·:  |
-| ·+*@@@@8@%#=· @@@@@·        ║             +*@@@@@%#=· @@·  #X#:·.  @@@@ %*=·  |
-| @@@%#X#:·  @@@@@· 1         ║       ╔═════@@@%9#X#·  ==+  ·:=+*@@@@@%#=  ·:·· |
-| %#X#:·.. @@@ 6 @@·  ══╗     ╚═══════╝  #X#:· @@@@ %*=·   =+*@@@%#X#:· @@@@@·  |
-| ·:· KERNEL          ═╬═  <link cut!>       IO.SYS         ·:=+ SWAP  @@@@%#X# |
-| ·:=+*@@@@@@%#= 2  @@@@@·     ║          ·:=+*@@@@@%#X#· 3  @@@@%#X#:. 7  @@·  |
-| =+*@@@%#X#:· @@@@@   @@·   ══╝          @@@@%#X#:·.. @@@·   #X#:· @@@ 4 @@@%*= |
-| @@%#X#:· 8 @@@@@%*=·       ║            %#X#:· @@@ 2 @@@·  ·:=+*@@@@@%#=· ·:·· |
-| ·:·=+*@@@%#X#:·  @@·    ════╬══         ·:=+*@@@· 9  @@@@· @@%#X#:·. @@@@ %#X# |
-| #X#:·.. @@@@ 5 @@@@%*=     ║            +*@@@@%#X#:  @@·   ·:=+*@@@%#=·  ==+*@ |
-| ·:=+*@@@@@%#=· @@@· 3      ══════╗      @@@%#X#:·.  ·:=+*@@@@%#X#:· @@@@ 6 @@· |
+| 0x7F3A  ·:=+*@@%%@@*=:·  @@·      ══╗        ·:=+*@@@@%*=  0xA10C   ·:·      |
+|   :=+*@@@@%%@@@*=4 @@@·  @@2   ═══╬════     +*@@@@@%=·  @@·   ==+*@·   :·    |
+|   ·+*@@@8@@%*=·  @@@@@·        ║          ╔═══*@@@@%=· @@@·  ·:=+*@@@%=·     |
+|   ·:=+*@@@%*=:·  @@@@· 1       ║     ╔════╝   +*@@@· 9  @@@@· ·:=+*@@@%=·    |
+|   ·:=+X X:·  X @@·  ══╗    ╚════╝    X   ·:X @@@@ X    =+*@X:·  @@@@@·  ·    |
+| ####################       ###############################  ############     |
+| ·:· KERNEL       ═╬═   <link cut!>      IO.SYS        ·:=+ SWAP   @@@%*=·    |
+| ·:=+*@@@@@@%*= 2  @@@@@·   ║          ·:=+*@@@@@%*=· 3  @@@@%*=:. 7  @@·     |
+| =+*@@@@%*=:· @@@@@   @@·   ║          @@@@%@@%*=:.. @@@·   *=:· @@@ 4 @@@%*  |
+| @@@%*=:· 8 @@@@@%*=·       ║          %@%*=:· @@@ 2 @@@·  ·:=+*@@@@@%*=· ·:  |
+| ·:=+*@@@%*=:·  @@·    ════╬══         ·:=+*@@@· 9  @@@@· @@%*=:·  @@@@ %*=·  |
+| ·:=+*@@@@@%*=· @@@· 3      ══════╗    +*@@@@%*=:  @@·   ·:=+*@@@%*=·  ==+*@  |
 +------------------------------------------------------------------------------+
-| SLOTS  [ SCRIPT.COM ][ SCRIPT.SYS ][ WORM ]  MERGED: Lin+Sin · L+R · 75%      |
+| SLOTS  [ SCRIPT.COM ][ SCRIPT.SYS ][ WORM ]  MERGED: Lin+Sin·L+R·75%·gr High |
 | COVERAGE [##################################################............] 71% |
-| > packet fired col 34. beam spine drawn, embers spreading. worm +14 cells.    |
+| > packet fired col 34. beam spine drawn, embers spreading + reproducing (WORM).|
 | > trace scan crossed KERNEL<->IO.SYS link. cells reclaimed. code digit 4 LOCKED.|
 +------------------------------------------------------------------------------+
 ```
@@ -139,16 +139,17 @@ strength · `#` = trace-scan line · `X` = just-reclaimed cell · `█` = firewa
 The ordered accumulator and its pass loop are retired.*
 
 - Slotted cards **merge** into one beam before the battle starts: probability
-  adds (capped at 100%), direction unions, shape sums (Fourier superposition).
-  This merge is a one-time computation, not a per-tick loop — order doesn't
-  matter.
+  adds (capped at 100%), direction unions, shape sums (Fourier superposition),
+  growth adds (capped ~60%). This merge is a one-time computation, not a per-tick
+  loop — order doesn't matter.
 - A **turret** slides along the bottom edge. One tap fires **one packet** at
   column `p`. The packet draws the beam **spine** upward,
   `x(y) = p + Σ shape(y)`; at each spine cell it rolls the merged probability,
   and on a hit emits ember(s) in the merged direction(s).
 - Emitted embers then **spread hands-off**, burning cells and spending
-  **REACH** against the terrain COST table (§ below) each tick — no further
-  input.
+  **REACH** against the terrain COST table (§ below) each tick, and — off the
+  merged **growth** — **reproducing** onto fresh unburned neighbours so the fire
+  sustains instead of dying at pool's end. No further input.
 - **One clock, not two:** a top-down **trace scan** descends the field,
   reclaiming burned cells to neutral as it crosses them. Its single descent
   from top to bottom *is* the run clock (replaces the old `LOCKDOWN = 10
@@ -163,37 +164,39 @@ The ordered accumulator and its pass loop are retired.*
 
 ---
 
-## Cards drive the beam (bundled triples, per `ember-model.md` §3, §5)
+## Cards drive the beam (bundled quads, per `ember-model.md` §3, §5)
 
-Every card is a complete beam — `(shape, direction, probability)` — not a CA
-effect applied in sequence. Slotting several **merges** them into one beam
+Every card is a complete beam — `(shape, direction, probability, growth)` — not a
+CA effect applied in sequence. Slotting several **merges** them into one beam
 before the packet fires.
 
-| Card | Shape | Direction | Probability | Identity / wrinkle |
-|------|-------|-----------|-------------|---------------------|
-| `SCRIPT.COM` | Linear | ← | 25% | the starter forbidden card |
-| `SCRIPT.SYS` | Linear | → | 25% | the mirror — opens a curtain |
-| `BUFFER.OVR` | Linear | ←→ | 50% | overflow; the curtain workhorse |
-| `WORM` | Sine | ←→ | 25% | wide, thin — the Morris spread |
-| `NOP.SLED` | Linear | — (none) | 50% | high prob, no direction — inert alone, bad on purpose |
+| Card | Shape | Direction | Probability | Growth | Identity / wrinkle |
+|------|-------|-----------|-------------|--------|---------------------|
+| `SCRIPT.COM` | Linear | ← | 25% | Low | the starter forbidden card |
+| `SCRIPT.SYS` | Linear | → | 25% | Low | the mirror — opens a curtain |
+| `BUFFER.OVR` | Linear | ←→ | 50% | Med | overflow; the curtain workhorse |
+| `WORM` | Sine | ←→ | 25% | **High** | self-replicates hard — the Morris spread |
+| `NOP.SLED` | Linear | — (none) | 50% | None | high prob, no direction/growth — inert alone, bad on purpose |
 
 Merge rules: probability **adds** (capped at 100%), direction **unions** (each
 unioned direction emits its own ember per firing cell — more directions = more
 surface area), shape **sums** (superposition — two sines reinforce; a line +
-sine wavers; sine + 3rd-harmonic starts squaring). Order does not matter — see
+sine wavers; sine + 3rd-harmonic starts squaring), growth **adds** its reproduce
+rate (capped ~60%; child spread-reach takes the max). Order does not matter — see
 §3 of the ember model for the full merge rules and the discipline behind
-"some cards are bad on purpose." Later tiers add new card *aspects* — rate
-(T2), `FORK()` branching (T3), hold/IQ (T4) — per §8; Tier 1 is shape +
-direction + probability only.
+"some cards are bad on purpose." Growth is core at Tier 1 (a growth-less packet
+can't breach — §4). Later tiers add new card *aspects* — rate (T2), `FORK()`
+directed branching (T3), hold/IQ (T4) — per §8; Tier 1 is shape + direction +
+probability + growth.
 
 ### Tier-1 starting deck (9 cards, indicative)
 
 | Card | Bundle | Type |
 |------|--------|------|
-| `SCRIPT.COM` ×4 | Linear · ← · 25% | curtain starter |
-| `SCRIPT.SYS` ×2 | Linear · → · 25% | curtain mirror |
-| `BUFFER.OVR` ×2 | Linear · ←→ · 50% | curtain workhorse |
-| `NOP.SLED` ×1 | Linear · — · 50% | enabler; bad alone |
+| `SCRIPT.COM` ×4 | Linear · ← · 25% · gr Low | curtain starter |
+| `SCRIPT.SYS` ×2 | Linear · → · 25% · gr Low | curtain mirror |
+| `BUFFER.OVR` ×2 | Linear · ←→ · 50% · gr Med | curtain workhorse |
+| `NOP.SLED` ×1 | Linear · — · 50% · gr None | enabler; bad alone |
 
 Core tension in a handful of scarce slots: stacking probability/direction on
 one bundle for raw coverage vs. spreading across bundles for a wider curtain —
@@ -217,15 +220,15 @@ decision, not the order you'd fire it in.
 
 ## Data model (sketch)
 
-*Reflects the bundled-triple card model and turret/reach/scan battle loop —
+*Reflects the bundled-quad card model and turret/reach/scan battle loop —
 see `ember-model.md` §3–4, §9.*
 
 ```js
 Cell   = { owner: 'none'|'worm', strength: 0 }          // 0–9; scan reclaims to 'none'
-Card   = { id, name, shape, direction, probability }     // the bundled triple
+Card   = { id, name, shape, direction, probability, growth } // the bundled quad
 Board  = { w: 80, h: 33, cells: [...],                  // double-buffered
            islands: [{ id, addr, rect }], links: [{ a, b, owner }] }
-Beam   = { shape, direction, probability }               // the merged result of slotted cards
+Beam   = { shape, direction, probability, growth }       // the merged result of slotted cards
 Battle = { coverage: 0, winCoverage: 50, reach: 0,
            board: Board, code: [7,null,4,null,null,1,null,null],
            slots: [Card, Card, Card], beam: Beam,
@@ -253,9 +256,9 @@ RNG for reproducible draws, boards, and runs.
 ## MVP build order
 
 1. Port grid renderer + CRT filter; render a static 80×40 Tier-1 screen.
-2. Card data + slot arrangement (draw / merge bundled triples into one beam).
+2. Card data + slot arrangement (draw / merge bundled quads into one beam).
 3. Battle tick loop: turret fire → spine + emission → spread against REACH +
-   COVERAGE bar (no CA yet) — tune the number feel.
+   reproduce off GROWTH + COVERAGE bar (no CA yet) — tune the number feel.
 4. Add the CA living board + islands/links (the territory war replaces any lane).
 5. Trace scan + breach timer; result screen + fail skin + node advance.
 6. Draft-between-nodes + ROOT meta.
