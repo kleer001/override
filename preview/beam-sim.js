@@ -74,12 +74,14 @@ export function defaultParams() {
     shapes: { linear: true, sine: false, sine2: false, sine3: false, rect: false, tan: false, saw: false },
     amp: 4,                                     // shape amplitude (cells)
     freq: 2,                                     // shape base frequency
-    dirs: new Set(['←']),                  // emission direction union
+    dirs: new Set(['←', '→']),           // emission direction union (mild curtain by default)
     probMode: 'prob',                            // 'prob' (additive %) | 'mask' (every-Nth)
-    prob: 50,                                     // merged emission probability %
+    prob: 60,                                     // merged emission probability %
     maskN: 5,                                     // every-Nth deterministic mask
-    pool: 180,                                     // REACH pool for the whole packet (§4)
-    reachCap: 24,                                  // max REACH any one ember may hold
+    pool: 800,                                     // REACH pool for the whole packet (§4; calibrated start)
+    reachCap: 20,                                  // max REACH any one ember may hold
+    spreadReach: 6,                                // GROWTH: reach of a child spawned when an ember reproduces
+    reproduce: 0.15,                               // GROWTH: per-step chance a burning ember spawns a spreading child
     scanSpeed: 0.5,                                // scan rows advanced per tick
     reclaim: 6,                                     // reclaimed cells per scanned row
     breachHold: 18,                                 // ticks held ≥win to breach
@@ -160,10 +162,16 @@ function emitSpineRow(sim, y) {
   }
 }
 
+const ORTHO = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const MAX_EMBERS = 3000;   // compute guard against a runaway branching process
+
 // Advance every live ember one cell in its heading, spending REACH against the
 // COST table with ±1 jitter; BUS refunds, WALL / off-board / budget≤0 kills it.
+// GROWTH (the 4th aspect): as it burns, an ember may REPRODUCE — spawn a child
+// that spreads to a random unburned orthogonal neighbour with a fresh spreadReach
+// budget — so the fire keeps burning and filling 2D instead of dying at pool's end.
 function stepEmbers(sim) {
-  const { sector } = sim, alive = [];
+  const p = sim.params, alive = [];
   for (const e of sim.embers) {
     const nx = e.x + e.dx, ny = e.y + e.dy;
     if (nx < 0 || nx >= FIELD_W || ny < 0 || ny >= FIELD_H) continue;   // off-board → spent
@@ -173,6 +181,20 @@ function stepEmbers(sim) {
     e.budget -= cost;                                                     // BUS (-1) refunds
     e.x = nx; e.y = ny;
     burn(sim, nx, ny, Math.max(0, e.budget));
+
+    // reproduce into a fresh unburned neighbour (keeps the fire alive)
+    if (p.reproduce > 0 && sim.embers.length + alive.length < MAX_EMBERS && sim.rng() < p.reproduce) {
+      const o = randInt(sim.rng, 0, 3);
+      for (let k = 0; k < 4; k++) {
+        const [cdx, cdy] = ORTHO[(o + k) & 3];
+        const cx = e.x + cdx, cy = e.y + cdy;
+        if (cx < 0 || cx >= FIELD_W || cy < 0 || cy >= FIELD_H) continue;
+        const c = idx(cx, cy);
+        if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;
+        alive.push({ x: e.x, y: e.y, dx: cdx, dy: cdy, budget: p.spreadReach });
+        break;
+      }
+    }
     if (e.budget > 0) alive.push(e);
   }
   sim.embers = alive;

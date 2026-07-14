@@ -31,11 +31,11 @@ let sim, running = false, timer = null;
 // the depth/width trade then falls out of each stack's ember count (dirs × prob):
 // CURTAIN spreads the pool thin over many embers, LANCE concentrates it deep.
 const PRESETS = {
-  CURTAIN: { shapes: ['linear'], amp: 0, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 100, pool: 220, reachCap: 10 },
-  LANCE:   { shapes: ['linear'], amp: 0, freq: 2, dirs: ['→'], probMode: 'prob', prob: 25, pool: 180, reachCap: 30 },
-  HARMONIC:{ shapes: ['sine', 'sine2', 'sine3'], amp: 6, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 100, pool: 260, reachCap: 14 },
-  FENCE:   { shapes: ['rect'], amp: 5, freq: 3, dirs: ['↑', '↓'], probMode: 'prob', prob: 100, pool: 200, reachCap: 16 },
-  GLITCH:  { shapes: ['tan'], amp: 5, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 70, pool: 160, reachCap: 20 },
+  CURTAIN: { shapes: ['linear'], amp: 0, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 100, pool: 1100, reachCap: 24, reproduce: 0.15, spreadReach: 6 },
+  LANCE:   { shapes: ['linear'], amp: 0, freq: 2, dirs: ['→'], probMode: 'prob', prob: 25, pool: 700, reachCap: 30, reproduce: 0.05, spreadReach: 4 },
+  HARMONIC:{ shapes: ['sine', 'sine2', 'sine3'], amp: 6, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 100, pool: 1100, reachCap: 20, reproduce: 0.15, spreadReach: 6 },
+  FENCE:   { shapes: ['rect'], amp: 5, freq: 3, dirs: ['↑', '↓'], probMode: 'prob', prob: 100, pool: 800, reachCap: 18, reproduce: 0.12, spreadReach: 5 },
+  GLITCH:  { shapes: ['tan'], amp: 5, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 70, pool: 650, reachCap: 22, reproduce: 0.30, spreadReach: 8 },
 };
 
 function applyPreset(name) {
@@ -45,6 +45,7 @@ function applyPreset(name) {
   P.dirs = new Set(pr.dirs);
   P.probMode = pr.probMode; P.prob = pr.prob;
   P.pool = pr.pool; P.reachCap = pr.reachCap;
+  P.reproduce = pr.reproduce; P.spreadReach = pr.spreadReach;
   syncControlsFromP();
   build();
 }
@@ -119,7 +120,7 @@ function renderWave() {
 }
 
 // --- control wiring ---
-const RANGE_KEYS = ['p', 'amp', 'freq', 'prob', 'maskN', 'pool', 'reachCap', 'rate', 'scanSpeed', 'reclaim', 'breachHold', 'winCoverage'];
+const RANGE_KEYS = ['p', 'amp', 'freq', 'prob', 'maskN', 'pool', 'reachCap', 'spreadReach', 'reproduce', 'rate', 'scanSpeed', 'reclaim', 'breachHold', 'winCoverage'];
 
 function readControlsIntoP() {
   P.p = clampCol(+$('p').value);
@@ -129,6 +130,8 @@ function readControlsIntoP() {
   P.maskN = +$('maskN').value;
   P.pool = +$('pool').value;
   P.reachCap = +$('reachCap').value;
+  P.spreadReach = +$('spreadReach').value;
+  P.reproduce = +$('reproduce').value;
   P.scanSpeed = +$('scanSpeed').value;
   P.reclaim = +$('reclaim').value;
   P.breachHold = +$('breachHold').value;
@@ -142,6 +145,7 @@ function syncControlsFromP() {
   $('p').value = P.p; $('amp').value = P.amp; $('freq').value = P.freq;
   $('prob').value = P.prob; $('maskN').value = P.maskN;
   $('pool').value = P.pool; $('reachCap').value = P.reachCap;
+  $('spreadReach').value = P.spreadReach; $('reproduce').value = P.reproduce;
   $('scanSpeed').value = P.scanSpeed; $('reclaim').value = P.reclaim;
   $('breachHold').value = P.breachHold; $('winCoverage').value = P.winCoverage;
   $('probMode').value = P.probMode;
