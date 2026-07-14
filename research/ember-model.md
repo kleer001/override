@@ -78,7 +78,8 @@ purpose — one card barely cracks your own terminal.
 ### Merge rules (how slotted cards combine into one beam)
 
 - **Probability ADDS**, capped at 100%. `25% + 25% = 50%`. Overflow past 100% is
-  wasted (a deliberate "bad stack" lever).
+  wasted in Tier 1 (a deliberate "bad stack" lever); a ROOT-shop OVERCLOCK can later
+  route surplus density into the REACH pool (§4).
 - **Direction UNIONS.** `Left` + `Right` = both (a curtain). Each direction in the
   union emits its own ember per firing cell — so **more directions = more embers =
   more surface area** (this is where coverage multiplies; no separate branch stat
@@ -93,6 +94,19 @@ purpose — one card barely cracks your own terminal.
   Cost-benefit now lives in **slot allocation + additive stacking + bundled
   trade-offs**, not sequencing.
 
+### Probability: random vs. pattern (stacking rule)
+
+Two flavors of the probability aspect, and they compose cleanly:
+- **Random-%** cards (10/25/50%) **sum** their percentages (cap 100) — organic scatter.
+- **Pattern/mask** cards (`every-other` = 50%, `every-fifth` = 20%) name *which* cells
+  fire — a deterministic comb — and **union** their masks.
+- **Mixed:** masks resolve first (their cells always fire); the summed random-% then
+  fills among the cells the masks left open. So `every-other` + `25% random` = every
+  even cell **plus** 25% of the odd cells (~62.5%), never double-counted.
+
+Masks read as *designed* textures (a regular comb — legible, on-theme for `COMB.EXE`,
+`DAEMON`); randoms read as organic spread. Both earn their place.
+
 ### Why bundling is the whole point (the MTG discipline)
 
 You draft the **package, not the aspect.** A gorgeous sine spine arrives welded to
@@ -104,24 +118,31 @@ pair, or pass. **Distinct decks are which compromises you accept.**
 
 ## 4. Emission, reach & terrain (the watch-phase spread)
 
-On a firing spine cell, each unioned direction emits an ember that **travels
-outward over time**, burning cells until its **reach** is spent:
+On a firing spine cell, each unioned direction emits an ember. All embers from the
+packet draw from **one shared REACH pool**, so they **travel outward over time**,
+burning cells until their share of the pool is spent:
 
 ```
-per emitted ember:  budget = REACH
+POOL   = terminal REACH stat (+ any REACH cards)
+share  = min(REACH_CAP, POOL / max(1, emberCount))   // per-ember budget
+per emitted ember:  budget = share
   each spread tick (cadence = default rate, §8):
     step one cell in the emission direction (± terrain-fingered jitter)
-    budget -= COST[cell.terrain]
+    budget -= COST[cell.terrain]      // BUS refunds, HARD is steep
     burn cell
     if budget <= 0 or cell is WALL: ember is spent
 ```
 
-**Reach = where "energy" went.** The retired accumulator's job — how *far/deep* a
-volley burns — is now a **terminal stat** (`REACH`), part of the script-kiddie
-upgrade fiction: a faster CPU / more RAM lets embers travel further. Base REACH is
-small; it grows via ROOT/meta and a few late cards. This keeps the terrain
-interaction (fire rips down BUS lanes, stalls on HARD) without a per-card number
-soup.
+**Reach is a SHARED POOL — this is the depth/width trade.** The retired accumulator's
+job (how far/deep a volley burns) is now a per-packet **REACH pool**: a **terminal
+meta-stat** (script-kiddie fiction — a faster CPU / more RAM = a bigger pool), grown
+via ROOT and a few rare cards, but **split across every ember the packet emits**. The
+trade then falls out for free: a Curtain (high probability × both directions = many
+embers) spreads each ember *shallow* — wide but thin; a Lance (low probability × one
+direction = few embers) concentrates the pool — *deep* but narrow. `REACH_CAP` stops
+a lone ember from tunnelling the whole board. So the three-aspect card stays clean (no
+per-card reach number), width-vs-depth becomes a real build lever, and the terrain
+interaction (rips down BUS, stalls on HARD) is preserved.
 
 **COST table** (unchanged; validated split):
 
@@ -312,18 +333,27 @@ finishing pass.
 
 ---
 
-## 12. Open dials / questions
+## 12. Design dials — resolved & still-open
 
-- **REACH as a pure meta-stat vs. also a rare card aspect** — leaning meta-stat +
-  a few cards; confirm the accumulator stays fully retired.
-- Probability-overflow reward (convert surplus to REACH?) vs. pure waste.
-- Pattern-mask (`every-5th`) vs. random-% stacking rule when both are present:
-  masks union, randoms fill the remainder — confirm on the grid.
-- Default emission **rate** for Tier 1 so the watch is paced (knob deferred to T2 as
-  a card, but needs a good fixed default now).
-- Direction-union ember count vs. reach budget — many directions × deep reach could
-  overshoot; may need a per-packet total-reach pool split across emitted embers.
-- Exact slot curve (how fast slots are earned) and card rarity tiers.
+**RESOLVED (2026-07-14):**
+- **REACH = a shared per-packet pool, split across emitted embers** (§4). Stays a
+  terminal meta-stat, not a card aspect — the three-aspect card is preserved, and
+  width-vs-depth emerges from ember count. Accumulator stays fully retired.
+- **Direction-union vs. reach overshoot** — solved by the shared pool + `REACH_CAP`
+  (§4): more embers just means each is shallower.
+- **Probability random vs. pattern stacking** — randoms sum (cap 100), masks union,
+  masks resolve first and randoms fill the remainder (§3).
+- **Probability overflow** — wasted in Tier 1 (legible "bad stack"); a ROOT-shop
+  OVERCLOCK later converts surplus density → REACH pool.
+
+**STILL OPEN (need the `preview/beam.html` sandbox or a playtest):**
+- `POOL` base size, the `POOL / emberCount` split curve (linear may over-punish wide
+  decks — try sub-linear), and `REACH_CAP` — pure calibration.
+- Default Tier-1 emission **rate**: start ~60–100 ms/cell, tuned so embers finish
+  spreading by ~40% of the scan's descent (i.e. against scan speed, not in isolation).
+- Slot curve (start 1, +1 per breach, cap ~3 in Tier 1 → 6+ later) and card-rarity
+  weights (common 25% / single-dir / simple-shape … legendary `0DAY` 100%). An economy
+  playtest, not a lone number.
 
 ## 13. Calibration sandbox (`preview/beam.html`)
 
