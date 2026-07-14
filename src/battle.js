@@ -1,6 +1,12 @@
 // Battle = conquering one sector (a node). The machine (three sectors) persists
 // across the run, so conquered sectors stay burned and the board fills up.
 //
+// This is the SIMULATION layer (see CLAUDE.md "Simulation vs. presentation"):
+// pure, deterministic from the seeded RNG, no timing/audio/DOM. A battle resolves
+// instantly here — `runVolley` is the whole truth in one call; the EXEC animation
+// in main.js only replays what these functions decide. Keep drama out of this
+// file, and keep any UI-serving helper here outcome-neutral (see `planVolley`).
+//
 // The new model (research/ember-model.md): your program's accumulator sets the
 // ENERGY each ping carries. A volley of finite pings lands at random cells and
 // spends that energy infecting new ground (terrain cost, not a gate). Meanwhile a

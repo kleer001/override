@@ -259,6 +259,12 @@ async function sweepGnomon(tx, ty) {
   await sleep(reduceMotion ? 0 : 60);                          // a beat on the locked crosshair
 }
 
+// The EXEC show. This is the DRAMA layer (see CLAUDE.md "Simulation vs.
+// presentation"): the battle's outcome is already fully decided by the sim
+// (battle.js resolves it instantly via runVolley). Everything below just REVEALS
+// that result over time — sleeps, sfx, the gnomon, cell-by-cell blooms. It reads
+// and paints; it never decides. Helpers it leans on (planVolley) are written to
+// be outcome-neutral so this animated path and the instant path always agree.
 async function startExec() {
   resumeAudio();
   sfx.exec();
