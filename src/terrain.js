@@ -186,7 +186,7 @@ export function generateMachine(seed) {
   const rng = mulberry32(seed >>> 0);
   const t = new Uint8Array(FIELD_W * FIELD_H);
   const sectors = SECTORS.map((s) => genSector(t, s, rng));
-  const machine = { seed: seed >>> 0, t, sectors, burned: new Uint8Array(FIELD_W * FIELD_H), bornAt: new Float64Array(FIELD_W * FIELD_H), rng };
+  const machine = { seed: seed >>> 0, t, sectors, burned: new Uint8Array(FIELD_W * FIELD_H), rng };
   for (const s of machine.sectors) s.difficulty = difficultyOf(machine, s);
   return machine;
 }

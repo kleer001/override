@@ -40,12 +40,15 @@ const round2 = (v) => Math.round(v * 100) / 100;
 const SECTOR_OF = new Int8Array(FIELD_W).fill(-1);
 SECTORS.forEach((s, i) => { for (let x = s.x0; x <= s.x1; x++) SECTOR_OF[x] = i; });
 
-// visual state lives here, keyed to the machine so a new run resets it. Pulse
-// phase reads machine.bornAt (set when a cell burns); this map only tracks each
-// conquered sector's celebration start.
-let state = { machine: null, celeb: new Map(), det: { at: -1e9, strength: 0 } };
+// visual state lives here, keyed to the machine so a new run resets it. `born` is
+// a per-cell birth time stamped the first frame the compositor sees a cell burned
+// (−1 = unborn) — this is presentation-only, so the sim stays pure/deterministic and
+// never needs a wall-clock. `celeb` tracks each conquered sector's celebration start.
+let state = { machine: null, celeb: new Map(), det: { at: -1e9, strength: 0 }, born: null };
 function sync(machine) {
-  if (state.machine !== machine) state = { machine, celeb: new Map(), det: { at: -1e9, strength: 0 } };
+  if (state.machine !== machine) {
+    state = { machine, celeb: new Map(), det: { at: -1e9, strength: 0 }, born: new Float64Array(FIELD_W * FIELD_H).fill(-1) };
+  }
 }
 
 // main.js calls this the frame a mult card detonates (now = performance.now()).
@@ -73,8 +76,13 @@ function markConquered(machine, now) {
 function cellStyle(ch, x, y, machine, now) {
   const si = SECTOR_OF[x];
   if (si < 0) return { cls: '', op: 1, ch };
+  const c = idx(x, y);
   const sec = machine.sectors[si];
-  const burned = machine.burned[idx(x, y)] === 1;
+  const burned = machine.burned[c] === 1;
+  // per-cell birth time: stamp when first seen burned, clear on reclaim, so each
+  // cluster breathes on its own phase instead of all in unison.
+  if (burned) { if (state.born[c] < 0) state.born[c] = now; }
+  else if (state.born[c] >= 0) state.born[c] = -1;
   if (sec.conquered) {
     const el = now - (state.celeb.get(sec.id) ?? now);
     if (burned) {
@@ -89,8 +97,7 @@ function cellStyle(ch, x, y, machine, now) {
     return (!reduced && el < CELEB_END) ? { cls: '', op: 1, ch } : { cls: '', op: DARK, ch }; // ground goes dark
   }
   if (burned) {
-    const born = machine.bornAt[idx(x, y)] || now;
-    const pulse = round2(DIM + (FULL - DIM) * wave(now - born, pulsePeriod()));
+    const pulse = round2(DIM + (FULL - DIM) * wave(now - state.born[c], pulsePeriod()));
     const det = now - state.det.at;
     if (!reduced && det >= 0 && det < DET_TOTAL) {
       // the detonation surge: solid white-hot mass, then ease back to the pulse.

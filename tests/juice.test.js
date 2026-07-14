@@ -8,18 +8,19 @@ import { FIELD_OY, FIELD_OX, COLS, ROWS } from '../src/layout.js';
 const BX = 5, BY = 2;   // a block cell (block coords)
 
 // Build a blank 80x40 screen with one burned frontier cell ('@') and a game
-// object the compositor will style. bornAt=0 pins the breathing phase. The block
-// draws at a FIELD_OX/FIELD_OY inset, so the glyph lands at the offset screen cell.
+// object the compositor will style. The compositor stamps the cell's birth time on
+// the first frame it sees it burned. The block draws at a FIELD_OX/FIELD_OY inset,
+// so the glyph lands at the offset screen cell.
 function scene(seed) {
   const machine = generateMachine(seed);
   machine.burned[idx(BX, BY)] = 1;
-  machine.bornAt[idx(BX, BY)] = 0;
   const grid = Array.from({ length: ROWS }, () => new Array(COLS).fill(' '));
   grid[FIELD_OY + BY][FIELD_OX + BX] = '@';
   const text = grid.map((r) => r.join('')).join('\n');
   return { machine, text, game: { phase: 'exec', node: {}, run: { machine } } };
 }
 const burnedRow = (out) => out.split('\n')[FIELD_OY + BY];
+const opacityOf = (out) => { const m = burnedRow(out).match(/opacity:([\d.]+)/); return m ? +m[1] : null; };
 
 test('a burned cell breathes as brn, with no flash absent a detonation', () => {
   const { text, game } = scene(1);
@@ -27,6 +28,14 @@ test('a burned cell breathes as brn, with no flash absent a detonation', () => {
   assert.match(row, /class="brn"/);
   assert.ok(!row.includes('class="hot"'));
   assert.ok(row.includes('@'));                 // frontier glyph left alone
+});
+
+test('a burned cell breathes: opacity rises from birth (trough) toward the pulse peak', () => {
+  const { text, game } = scene(5);
+  const trough = opacityOf(composeBoard(text, game, 1000));       // birth stamped here → pulse min
+  const peak = opacityOf(composeBoard(text, game, 1000 + 700));   // half a 1400ms pulse later → max
+  assert.ok(trough != null && peak != null, 'burned cell carries an opacity span');
+  assert.ok(peak > trough, `pulse should brighten from ${trough} to ${peak}`);
 });
 
 test('detonation flashes the burned mass white-hot and surges the glyph', () => {
