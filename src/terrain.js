@@ -10,19 +10,19 @@
 import { mulberry32, randInt } from './rng.js';
 
 export const FIELD_W = 80, FIELD_H = 33;
-export const OPEN = 0, HARD = 1, WALL = 2, BUS = 3, VAULT = 4, HONEY = 5;
-// Energy a ping SPENDS to infect each cell (replaces the old heat GATE). WALL is
+export const OPEN = 0, HARD = 1, WALL = 2, BUS = 3, HONEY = 4;
+// REACH a beam ember SPENDS to infect each cell (ember-model.md §4). WALL is
 // unaffordable; BUS refunds (accelerant). OPEN must cost >=1 or the free flood
-// returns. See research/ember-model.md §2.
-export const COST = [1, 6, Infinity, -1, 2, 1];
+// returns.
+export const COST = [1, 6, Infinity, -1, 1];
 export const idx = (x, y) => y * FIELD_W + x;
 export const WIN_COVERAGE = 50; // % of a sector's claimable cells to breach it
 
 export const FIREWALLS = [26, 53];
 export const SECTORS = [
-  { id: 'KERNEL', x0: 0,  x1: 25, digits: [0, 1] },
-  { id: 'IO.SYS', x0: 27, x1: 52, digits: [2, 3, 4] },
-  { id: 'SWAP',   x0: 54, x1: 79, digits: [5, 6, 7] },
+  { id: 'KERNEL', x0: 0,  x1: 25 },
+  { id: 'IO.SYS', x0: 27, x1: 52 },
+  { id: 'SWAP',   x0: 54, x1: 79 },
 ];
 
 const cx = (c) => c % FIELD_W, cy = (c) => (c / FIELD_W) | 0;
@@ -161,27 +161,20 @@ function genSector(t, s, rng) {
   for (let y = 0; y < FIELD_H; y++) for (let x = x0; x <= x1; x++) if (t[idx(x, y)] === BUS) busN++;
   if (busN === 0) { const bx = randInt(rng, x0 + 1, x1 - 1), by = randInt(rng, 2, FIELD_H - 8); for (let y = by; y < by + 6 && y < FIELD_H; y++) t[idx(bx, y)] = BUS; }
 
-  // one bonus vault at the deepest reachable land cell (flavor + ROOT, not a win req)
+  // honeypots (bait) — placed deep in the sector; guarantee at least one so all
+  // five terrain types appear.
   const dist = bfs(t, idx(entry.x, entry.y), x0, x1);
-  let vault = -1, vd = -1;
-  for (let y = 0; y < FIELD_H; y++) for (let x = x0; x <= x1; x++) {
-    const c = idx(x, y);
-    if (dist[c] > vd && (t[c] === OPEN || t[c] === HARD)) { vd = dist[c]; vault = c; }
-  }
-  if (vault >= 0) t[vault] = VAULT;
-
-  // honeypots (bait) — guarantee at least one so all six types appear
   const cand = [];
   for (let y = 0; y < FIELD_H; y++) for (let x = x0; x <= x1; x++) {
     const c = idx(x, y);
-    if (dist[c] >= 6 && t[c] === OPEN && c !== vault) cand.push(c);
+    if (dist[c] >= 6 && t[c] === OPEN) cand.push(c);
   }
   const wantHoney = 1 + Math.floor(rng() * 2);
   let honey = 0;
   for (let k = 0; k < wantHoney && cand.length; k++) { t[cand[randInt(rng, 0, cand.length - 1)]] = HONEY; honey++; }
-  if (honey === 0) { const c = idx(Math.min(x1, entry.x + 3), entry.y); if (t[c] !== VAULT) t[c] = HONEY; }
+  if (honey === 0) { const c = idx(Math.min(x1, entry.x + 3), entry.y); t[c] = HONEY; }
 
-  return { ...s, entry, vaults: vault >= 0 ? [vault] : [], difficulty: null };
+  return { ...s, entry, difficulty: null };
 }
 
 export function generateMachine(seed) {
@@ -229,13 +222,12 @@ export function reclaimRow(machine, s, y, budget, rng) {
 
 export function sectorStats(machine, s) {
   const { t, burned } = machine;
-  let claim = 0, burn = 0, honeyBurned = 0, vaultsBurned = true;
+  let claim = 0, burn = 0, honeyBurned = 0;
   for (let y = 0; y < FIELD_H; y++) for (let x = s.x0; x <= s.x1; x++) {
     const c = idx(x, y);
     if (t[c] === WALL) continue;
     claim++;
     if (burned[c]) { burn++; if (t[c] === HONEY) honeyBurned++; }
   }
-  for (const v of s.vaults) if (!burned[v]) vaultsBurned = false;
-  return { claim, burn, honeyBurned, pct: claim ? (burn / claim) * 100 : 0, vaultsBurned };
+  return { claim, burn, honeyBurned, pct: claim ? (burn / claim) * 100 : 0 };
 }

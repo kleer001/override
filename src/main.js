@@ -6,7 +6,7 @@
 import { mulberry32, shuffle } from './rng.js';
 import { startingDeck, DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
 import { SHOP_ITEMS, CHAR_UNLOCK, CARD_UNLOCK } from './shop.js';
-import { generateMachine, newCode, createNode, fire, stepBattle, coverage, REDRAW_COST, SLOTS,
+import { generateMachine, createNode, fire, stepBattle, coverage, REDRAW_COST, SLOTS,
   rewardMult, draftPicks, AGGRO_BASE, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
 import { buildScreen } from './render.js';
 import { composeBoard, detonate, setReducedMotion } from './juice.js';
@@ -95,8 +95,7 @@ function startRun() {
   if (overclock) { localStorage.removeItem(OC_KEY); baseAggro = Math.min(AGGRO_MAX, +(baseAggro + 0.25).toFixed(2)); }
   game.run = {
     tier: 1, node: 1, root: loadRoot(), points: loadPoints(), deck: loadDeck(),
-    machine, code: newCode(mulberry32((game.seed ^ 12345) >>> 0)),
-    locked: new Array(8).fill(false), conquered: 0, char: null,
+    machine, conquered: 0, char: null,
     aggression: baseAggro, baseAggro, pendingDrafts: 0, plays,
     availChars: availChars(), overclockPool: overclock ? 300 : 0, retry: loadRetry(),
   };
@@ -237,7 +236,6 @@ function showResult() {
   node.crack = coverage(node.sim);
   if (node.outcome === 'win') {
     r.conquered++;
-    for (const d of node.sector.digits) r.locked[d] = true;
     const mult = rewardMult(node.aggro, node.baseAggro);
     const reward = Math.round((40 + r.conquered * 10) * mult);
     r.root += reward; saveRoot(r.root);

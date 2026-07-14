@@ -87,7 +87,7 @@ function cellStyle(row, x, y, machine, now) {
         if (el < CELEB_END) return { cls: 'brn', op: round2(DIM + (FULL - DIM) * wave(el - FLASH_MS, FAST_PERIOD)), ch };
       }
       // settled: locked-in grid — pull board glyphs to '#', never touch labels
-      return { cls: 'brn', op: MED, ch: (ch === '@' || ch === '$') ? '#' : ch };
+      return { cls: 'brn', op: MED, ch: (ch === '@') ? '#' : ch };
     }
     return (!reduced && el < CELEB_END) ? { cls: '', op: 1, ch } : { cls: '', op: DARK, ch }; // ground goes dark
   }

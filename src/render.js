@@ -2,15 +2,15 @@
 //   assemble / draft -> card panels · target -> the machine (aim a turret) ·
 //   exec / result    -> the sector burning under the beam.
 
-import { FIELD_W, FIELD_H, WALL, VAULT, idx, WIN_COVERAGE } from './terrain.js';
-import { CODE_DIGITS, crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, SLOTS, spineX, coverage } from './battle.js';
+import { FIELD_W, FIELD_H, WALL, idx, WIN_COVERAGE } from './terrain.js';
+import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, SLOTS, spineX, coverage } from './battle.js';
 import { mergeBeam, beamLabel, cardLabel } from './cards.js';
 import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN } from './layout.js';
 import { CHARACTERS } from './characters.js';
 
 export { COLS, ROWS };
 
-const TERRAIN_G = [' ', '▒', '▓', '═', '$', '"']; // OPEN HARD WALL BUS VAULT HONEY
+const TERRAIN_G = [' ', '▒', '▓', '═', '"']; // OPEN HARD WALL BUS HONEY
 const RAMP = ['·', ':', '=', '+', '*', '@', '%'];  // cold → hot burn strength
 const rampGlyph = (heat) => (heat <= 0 ? RAMP[0] : RAMP[Math.min(RAMP.length - 1, 1 + Math.floor(heat / 3))]);
 
@@ -111,7 +111,7 @@ function drawBoard(g, machine, sim, sector) {
       let ch;
       if (sim && sector && y === sim.scanRow && sim.scanRow < FIELD_H && x >= sector.x0 && x <= sector.x1) ch = '#';  // scan line
       else if (sim && sim.reclaimed && sim.reclaimed.has(c)) ch = 'X';                // reclaim flash
-      else if (machine.burned[c]) ch = machine.t[c] === VAULT ? '$' : sim ? rampGlyph(sim.heat[c]) : '#';
+      else if (machine.burned[c]) ch = sim ? rampGlyph(sim.heat[c]) : '#';
       else if (x === spineCol) ch = '|';                                              // pending spine
       else ch = TERRAIN_G[machine.t[c]];
       g[FIELD_TOP + y][x] = ch;
@@ -164,12 +164,8 @@ export function buildScreen(game) {
   const { phase, run, node } = game;
 
   const tracePct = node ? (node.sim.scanRow / FIELD_H) * 100 : 0;
-  stamp(g, 0, 0, `TIER ${run.tier}: THE MACHINE   CONQUERED ${run.conquered}/3   ROOT:${run.root}`);
+  stamp(g, 0, 0, `TIER ${run.tier}: THE MACHINE   CONQUERED ${run.conquered}/3   ROOT:${run.root}   PTS:${run.points}`);
   if (node) stamp(g, 54, 0, `TRACE${bar(tracePct, 8)} ${node.sim.scanRow}/${FIELD_H}`);
-
-  let code = 'CODE  ';
-  for (let i = 0; i < CODE_DIGITS; i++) code += (run.locked[i] ? String(run.code[i]) : '_') + ' ';
-  stamp(g, 0, 1, code);
   stamp(g, 0, 2, game.prompt || '');
 
   if (phase === 'charselect') drawCharSelect(g, game);

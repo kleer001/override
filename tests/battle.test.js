@@ -57,11 +57,11 @@ test('COST table: OPEN cheap, HARD dear, WALL unaffordable, BUS refunds', () => 
   assert.ok(COST[3] < 0);                    // BUS refunds
 });
 
-test('all six terrain types appear in every sector (16 seeds)', () => {
+test('all five terrain types appear in every sector (16 seeds)', () => {
   for (let seed = 1; seed <= 16; seed++) {
     const m = generateMachine(seed);
     for (const s of m.sectors) {
-      const cnt = [0, 0, 0, 0, 0, 0];
+      const cnt = [0, 0, 0, 0, 0];   // OPEN HARD WALL BUS HONEY
       for (let y = 0; y < FIELD_H; y++) for (let x = s.x0; x <= s.x1; x++) cnt[m.t[idx(x, y)]]++;
       cnt.forEach((n, i) => assert.ok(n > 0, `seed ${seed} ${s.id} missing terrain type ${i}`));
     }

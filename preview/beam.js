@@ -7,14 +7,14 @@ import {
   createSim, stepSim, coverage, spineX, shapeOffset, defaultParams,
   FIELD_W, FIELD_H, SECTORS, WALL, idx, DIR_KEYS, SHAPE_KEYS,
 } from '../src/beam.js';
-import { OPEN, HARD, BUS, VAULT, HONEY } from '../src/terrain.js';
+import { OPEN, HARD, BUS, HONEY } from '../src/terrain.js';
 
 const q = new URLSearchParams(location.search);
 let seed = (parseInt(q.get('seed'), 10) || 1) >>> 0;
 let sectorIndex = Math.max(0, Math.min(2, parseInt(q.get('sector'), 10) || 0));
 
 // terrain glyphs + burned-strength density ramp (task spec / juice-model)
-const TERR_GLYPH = { [OPEN]: ' ', [HARD]: '▒', [WALL]: '█', [BUS]: '═', [VAULT]: '$', [HONEY]: '!' };
+const TERR_GLYPH = { [OPEN]: ' ', [HARD]: '▒', [WALL]: '█', [BUS]: '═', [HONEY]: '!' };
 const RAMP = ['·', ':', '=', '+', '*', '@', '%'];   // cold → hot burn
 const rampGlyph = (heat) => {
   if (heat <= 0) return RAMP[0];

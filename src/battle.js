@@ -15,7 +15,6 @@ import { createSimOn, stepSim, coverage, spineX, defaultParams } from './beam.js
 import { mergeBeam } from './cards.js';
 
 export { generateMachine };
-export const CODE_DIGITS = 8;
 export const REDRAW_COST = 10;      // points spent to reshuffle the hand in assemble
 export const SLOTS = 3;             // beam slots in assemble (Tier 1)
 
@@ -40,10 +39,6 @@ export const AGGRO_REDUCE_COST = 15;   // PTS to lower aggression one step
 export function rewardMult(aggro, base = AGGRO_BASE) { return aggro / base; }
 export function draftPicks(aggro, base = AGGRO_BASE) {
   return Math.max(1, 1 + Math.floor((aggro - base) / 0.5 + 1e-9));
-}
-
-export function newCode(rng) {
-  return Array.from({ length: CODE_DIGITS }, () => Math.floor(rng() * 10));
 }
 
 // Build the full beam params for a node: merge the slotted cards, then overlay the
