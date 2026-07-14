@@ -1,391 +1,339 @@
-# Turret / Trail / Ember Model — living design doc
+# Beam-Card Model — living design doc
 
-*Evolving spec for OVERRIDE's core mechanic. Supersedes the card-programmed
-point-ignition of the MVP **and** the free omnidirectional flood before it. Status:
-active design, constants un-tuned.*
+*The settled core of OVERRIDE's mechanic. Supersedes, in order: the free
+omnidirectional flood (MVP), the ordered-accumulator point-ignition, and the
+opcode-alphabet sketch. Status: core locked 2026-07-14; constants un-tuned.*
 
-Terminology: **embers → PINGS** (fits the '83 wardialer/phreak theme — you *ping*
-systems). "Ember" still appears in older code and, informally, here.
+Terminology: **embers → PINGS** informally; "ember" still appears in older code.
+The old ordered CPU **accumulator** (BRUTE+3 / XOR×2) is **retired** — its job
+(arithmetic + cost-benefit) is now carried by additive card-stacking and scarce
+slots (§3). See the reach note in §4 for where "energy" went.
 
 ---
 
-## 0. What changed and why (the 2026-07-14 overhaul)
+## 0. Lineage (why this shape)
 
-The card-programs-an-accumulator loop was mechanically fine but **flat**: the deck
-funnels into a single number, one number can only say *more vs. less*, and "more
-vs. less" is not a playstyle. Vampire Survivors feels deep because a melee cone and
-an orbital ring are different **shapes** on screen, not different damage values. We
-had no shapes and no visible feedback from a card choice.
+The card-programs-an-accumulator loop was flat: the deck funneled into one number,
+and one number only says *more vs. less* — never a playstyle. The fix, arrived at
+over the 2026-07-14 design pass:
 
-Three moves fix that without throwing away the arithmetic:
+- Ignition is a **Peggle turret** firing **one packet** that draws a **beam spine**
+  across the field; embers emit off the spine and spread while you watch.
+- The deck is **bundled-triple cards**: every card is a complete beam —
+  `(shape, direction, probability)` — and playing several **merges** them.
+- The fiction is a **script-kiddie arc**: cards are forbidden/pirated programs,
+  slots are terminal memory, and cracking systems earns both (§7).
 
-1. **Ignition becomes a Peggle-style turret + a trail** (was: a point, aimed by the
-   oscillating-gnomon minigame). You slide a turret along an edge, fire **one**
-   packet, and it rakes a *line* of ember seeds across the board. One aim per
-   battle, then hands-off watching.
-2. **The accumulator runs *along the trail*.** The ordered POWER cards apply as the
-   packet flies, so the running accumulator sculpts the **energy/density profile of
-   the trail**. Re-ordering the same three cards visibly moves where the fire is
-   hot. The arithmetic survives — and for the first time it's *legible on the
-   board*.
-3. **The jack-in character is the playstyle axis.** War-dialer / Shotgunner /
-   Catapultist define the *shape of the trail itself* (thin lance / wide spray /
-   deep lob) = sniper / bruiser / artillery, chosen at run start. This is where the
-   Vampire-Survivors divergence lives; the cards are the build texture on top.
-
-Also folded in: **one screen** (ASSEMBLE / EXEC / RESULT collapse into a single
-frame — no cutaways), and the **burn threshold is dead** (terrain is a spend cost,
-not a `heat > resist` gate — already decided, see §4).
-
-Division of labour, so nothing overlaps:
-
-| Layer | Owns | Kind of skill | Visible as |
-|-------|------|---------------|-----------|
-| **Character** (run-start) | shape of the trail | playstyle main | lance vs. spray vs. blob |
-| **POWER deck** (ordered) | energy/density *profile* along the trail | arithmetic + cost-benefit | where the trail runs hot |
-| **Turret aim** (one slide) | *which lane* the trail rakes | spatial read of terrain | trail position |
-| **Spread knobs** (later tiers) | how seeds grow in the watch phase | tempo & routing | fire shape over time |
-
-The scan-as-clock, breach-timer win, aggression dial, and economy (§7–§10) are
-unchanged by the overhaul — the pivot is contained to *how you ignite and how the
-deck reaches the board*.
+One screen (no ASSEMBLE/EXEC/RESULT cutaways). No burn threshold (terrain is a
+spend **cost**, not a gate — §4).
 
 ---
 
 ## 1. The battle, end to end (one screen, one shot)
 
-1. **Assemble** — arrange the 3-slot POWER sequence (draw 5 / slot 3). Order is the
-   game (§3).
-2. **Aim** — a turret slides along the top edge; tap/SPACE **once** to fire a single
-   packet. Its launch column is your only positional choice.
-3. **The shot** — the packet travels down through the field, **skimming cell to
-   cell**, and at each cell it may drop an **ember seed** (probability = §3). The
-   POWER cards resolve *as it flies*, so the seed's energy depends on where along
-   the trail it landed.
-4. **The watch** — hands off. Every ember spreads on its own cadence, spending its
-   energy budget to claim ground (§4–§6). Meanwhile the **trace scan** descends and
-   claws cells back (§7). Coverage is the tug-of-war between the two.
-5. **Result** — reach **WIN_COVERAGE (50%)** and hold through the **breach timer**
-   → sector breached, draft a card, advance. The scan bottoming out first →
-   discovered, run ends, bank meta (§7–§9).
+1. **Assemble** — arrange your cards in your earned slots. They merge into one beam
+   (§3).
+2. **Aim** — a turret slides along the bottom edge; tap once to fire a single packet
+   at column `p`. Your only positional choice: *which column do I trigger from?*
+3. **The beam** — the packet draws the **spine** upward, `x(y) = p + Σ shape(y)`
+   (§2). At each spine cell it rolls the merged **probability**; on a hit it emits
+   ember(s) in the merged **direction(s)**.
+4. **The watch** — hands off. Emitted embers travel outward over time, spending
+   **reach** against the terrain cost table (§4). The **trace scan** descends and
+   claws cells back (§9). Coverage is the tug-of-war.
+5. **Result** — hold **≥50% (WIN_COVERAGE)** through the **breach timer** → sector
+   breached, loot a card, earn a slot, advance. Scan bottoms out first → traced,
+   run ends, bank meta (§9–§10).
 
-All of that happens in **one frame**. Fully idle after the single shot — the only
-input in the whole battle is *arrange, slide, fire*.
-
-### Screen mock (80 wide; top turret, downward trail, ~11 of the 33 field rows)
-
-```
- TIER 1: THE MACHINE   NODE 1/3   ROOT:120   [ WAR-DIALER ]   TRACE v----------
- CODE  7 _ 4 _ _ 1 _ _    :: vault cells resolve digits        ADDR 0x7F3A +
-                     ▽  <- turret slides ◂ ▸ ; SPACE fires one packet
-+------------------------------------------------------------------------------+
-| ·:·=+*@%#  @@·      ║ :          . ·:·  ·:=+*@%#    ═══════  0xA10C   ·:·:·   |
-| :·=+*@@@%*3 @·      ║ trail       ·:=+*@·          @@%#X#:   ==+*@·    ·::·   |
-| ·+*@@@8@%#· @@·     ▓ (packet)   +*@@@@%#·   @@·    #X#:·.   @@@@ %*=· ·:·:   |
-| @@@%#X#:· @@@·      ▓  seeds ->  @@@%9#X·  ==+     ·:=+*@@@@%#=·  ·:·:· @@@·  |
-| %#X#:·.. @@ 6 @·    ▓ o          #X#:· @@ %*=·      =+*@@@%#X#:· @@@@@·  ·::  |
-| ·:· KERNEL          ║        o       IO.SYS         ·:=+ SWAP  @@@@%#X#·  ·:  |
-| ·:=+*@@@@%#= 2 @@·  ▓      o    ·:=+*@@@%#X· 3       @@@@%#X#:. 7  @@·  ==+*@ |
-| =+*@@@%#X#· @@@ @·  ▓    o o    @@@@%#X#:.. @·       #X#:· @@@ 4 @@@%*=· ·:·: |
-| @@%#X#:· 8 @@%*=·   ▽ <landing  %#X#:· @@ 2 @@·     ·:=+*@@@@%#=· ·:·:· @@@%# |
-| ·:·=+*@@%#X#:· @·        o  o   ·:=+*@@· 9  @@@·     @@%#X#:·. @@@@ %#X#:· ·: |
-| #X#:·.. @@ 5 @@%*=          o   +*@@@%#X#:  @·       ·:=+*@@@%#=·  ==+*@@· ·: |
-+------------------------------------------------------------------------------+
-| POWER  [ BRUTE+3 ][ BRUTE+3 ][ XOR x2 ]   profile 3 -> 6 -> 12  (back-loaded) |
-| CRACK [########################......................] 41%   BREACH --:--     |
-| > packet raked lane 22-24. 7 seeds dropped. hot tail near IO.SYS vault.       |
-| > trace scan at row 6/33. reclaimed 4 cells in KERNEL. code digit 4 LOCKED.   |
-+------------------------------------------------------------------------------+
-```
-
-Legend: `▽` turret · `▓` the packet's live trail · `o` ember seeds mid-spread ·
-`· : = + * @ %` your infection rising in strength · `# X █` reclaimed/ICE ·
-`═ ║` links · the `TRACE v----` bar at top = the descending scan clock. Turret
-orientation (top-down here) is cosmetic; perpendicular to the scan reads cleanest.
+The only input in the whole battle is *arrange, slide, fire.*
 
 ---
 
-## 2. The turret & the trail (new)
+## 2. The turret & the beam spine
 
-- The turret **slides** (oscillates) along one edge. A single tap locks the launch
-  position and fires **one** packet per battle. This is the whole positional
-  decision: *which lane of the board do I rake?*
-- The packet **skims cell to cell** along a trajectory. At each cell it rolls
-  against a **seed probability** (§3) — hit → drop an ember seed there; miss → the
-  cell stays clean and the packet flies on.
-- The trajectory's **shape and width come from the character** (§Character below),
-  not from the cards. War-dialer lays a clean 1-wide line; Shotgunner sprays a
-  3-wide band; Catapultist skips the trail entirely and lobs one dense blob deep.
-- The packet is fast and one-shot; all the *duration* of a battle is the ensuing
-  **spread**, not the flight. The flight is the payoff beat that seeds everything.
-
-**FORK / extra packets.** One shot is the base. `FORK()` (and certain upgrades /
-higher tiers) grant an **additional packet** — a second trail, a second front. This
-keeps FORK's identity ("spawn a second front") intact under the new model and is a
-natural surface-area upgrade.
+- The turret **slides** along one edge; one tap fires **one** packet per battle at
+  column `p`.
+- The packet draws a **spine**: the path of contact cells, `x(y) = p + Σ shape(y)`,
+  traced up the field. Pencil beam = `shape ≡ 0` (straight vertical). Waves make the
+  spine snake (§3, shape aspect).
+- The spine is where embers are *seeded*; the emission (direction + probability)
+  decides how they leave it. Extra packets (`FORK`, upgrades, higher tiers) draw
+  extra spines = second fronts.
 
 ---
 
-## 3. The accumulator runs along the trail (keeps ordering; makes it visible)
+## 3. THE CARD MODEL — bundled triples (the core)
 
-The 3-card POWER sequence is **not** collapsed to one number and dumped at a point.
-It resolves **as the packet flies**, segment by segment:
+**Every card is a complete, valid beam.** A card bundles three aspects:
 
-- Split the trail into **3 segments**, one per card slot (segment 1 = first third
-  of the flight, etc.).
-- The accumulator starts at 0 and, entering segment *k*, applies card *k*
-  (`+` adds, `×` multiplies the running value). The accumulator's **current value**
-  is that segment's **local energy** `E_k`.
-- Every ember seed dropped in segment *k* is born with **energy `E_k`** — its budget
-  for the spread phase (§4).
+| Aspect | What it sets | Tier-1 vocabulary | Default (unslotted) |
+|--------|--------------|-------------------|---------------------|
+| **Shape** | the spine curve `shape(y)` | Linear (pencil) · Sine · 3rd-harmonic · Rectified-sin · Tan · Sawtooth | Linear |
+| **Direction** | which way embers emit off the spine | `←` `→` · diagonals `↖↗↘↙` · `↑` `↓` | none (inert until a direction is present) |
+| **Probability** | which spine cells emit | 10% · 25% · 50%, or a deterministic pattern (every-other = 50%, every-fifth = 20%) | 0% (nothing fires) |
 
-So order sculpts a **spatial energy profile**:
+The starter forbidden card is **`SCRIPT.COM = Linear + Left + 25%`**. Weak on
+purpose — one card barely cracks your own terminal.
 
-| Sequence | Profile `E1 → E2 → E3` | Feel |
-|----------|------------------------|------|
-| `BRUTE+3, BRUTE+3, XOR×2` | 3 → 6 → **12** | back-loaded: cold head, devastating tail — aim the tail at a vault |
-| `XOR×2, BRUTE+3, BRUTE+3` | **0** → 3 → 6 | dead head, weak — you *see* the wasted leading third |
-| `BRUTE+3, XOR×2, BRUTE+3` | 3 → 6 → 9 | strong belly |
+### Merge rules (how slotted cards combine into one beam)
 
-Same three cards, three different **shapes of fire on the board**. The
-`[BRUTE+3][BRUTE+3][XOR×2]=12` vs `[XOR×2][BRUTE+3][BRUTE+3]=6` lesson from the
-game sheet is preserved — now you don't just get a smaller number, you *watch* the
-front third of your trail land stone cold. **That is the visible feedback the old
-loop lacked.**
+- **Probability ADDS**, capped at 100%. `25% + 25% = 50%`. Overflow past 100% is
+  wasted (a deliberate "bad stack" lever).
+- **Direction UNIONS.** `Left` + `Right` = both (a curtain). Each direction in the
+  union emits its own ember per firing cell — so **more directions = more embers =
+  more surface area** (this is where coverage multiplies; no separate branch stat
+  needed at Tier 1).
+- **Shape SUMS** (superposition). Two sines reinforce (bigger amplitude); a line + a
+  sine = a wavy line; sine + 3rd-harmonic starts squaring the wave. This is literal
+  **Fourier synthesis** — you *build a waveform out of harmonics*, dead-on theme for
+  an '83 signals/phreak game, and legible because you watch the waves add. Amplitude
+  clips to the board.
+- **Order does not matter.** All three merges are commutative — this is the
+  conscious trade for the bundled model (it retires the old ordered accumulator).
+  Cost-benefit now lives in **slot allocation + additive stacking + bundled
+  trade-offs**, not sequencing.
 
-### Probability (knob **a**) = the accumulator's density, in Tier 1
+### Why bundling is the whole point (the MTG discipline)
 
-The player's request for a "1–100% chance of a seed along the trail" is satisfied
-**through** this profile rather than as a fourth independent slider: seed
-probability in a segment scales with its local energy.
-
-```
-P_seed(segment k) = clamp( BASE_P + k_slope * normalize(E_k), 0.05, 1.0 )
-```
-
-Hot segments approach a **solid wall** of seeds; cold segments drop a **sparse
-scatter**. So ordering the deck programs *both* how hard each stretch burns *and*
-how densely it's seeded — one legible mechanic, one knob to teach in Tier 1.
-
-> **Open dial:** a later deck may expose a *flat* probability card (a global
-> `±density` modifier on top of the profile) for players who want to decouple
-> density from energy. Not in Tier 1 — keep it to the accumulator to start.
+You draft the **package, not the aspect.** A gorgeous sine spine arrives welded to
+*its* direction and *its* probability. "Some cards are bad on purpose" gets its
+teeth here: a great shape stuck on `Left`-only at `10%` is a real cost you pay,
+pair, or pass. **Distinct decks are which compromises you accept.**
 
 ---
 
-## 4. Spread in the watch phase (the §-old spend loop, unrolled over time)
+## 4. Emission, reach & terrain (the watch-phase spread)
 
-Once seeded, each ember grows on its own during the hands-off watch. This is the
-**finite-energy spend loop** from the previous model, only now **animated over
-time** (tick by tick) instead of resolved in a single instant — because the point
-of the overhaul is that you *watch* it creep.
-
-Per ember, each spread tick (cadence = knob **b**, §6):
+On a firing spine cell, each unioned direction emits an ember that **travels
+outward over time**, burning cells until its **reach** is spent:
 
 ```
-if energy <= 0: ember is spent, stop.
-pick an allowed, unburned, affordable neighbor c per the GROWTH rule (§5)
-energy -= COST[c.terrain]
-burn c
-maybe branch (knob d, §6)
+per emitted ember:  budget = REACH
+  each spread tick (cadence = default rate, §8):
+    step one cell in the emission direction (± terrain-fingered jitter)
+    budget -= COST[cell.terrain]
+    burn cell
+    if budget <= 0 or cell is WALL: ember is spent
 ```
 
-Traversing your **own** burned cells is free (the **Conduit** rule — mandatory
-base; otherwise every ember weakens the deeper it reaches inside your own
-territory). Energy is only ever spent on **new** ground, so `total energy ≈ new
-cells claimed`.
+**Reach = where "energy" went.** The retired accumulator's job — how *far/deep* a
+volley burns — is now a **terminal stat** (`REACH`), part of the script-kiddie
+upgrade fiction: a faster CPU / more RAM lets embers travel further. Base REACH is
+small; it grows via ROOT/meta and a few late cards. This keeps the terrain
+interaction (fire rips down BUS lanes, stalls on HARD) without a per-card number
+soup.
 
-**COST table** (unchanged; validated split from the calibration smoke test):
+**COST table** (unchanged; validated split):
 
 | terrain | COST | note |
 |---------|------|------|
 | OPEN | 1 | baseline |
-| HONEY | 1 | cheap; random placement means you *can't* avoid tripping it |
+| HONEY | 1 | random placement → you can't avoid tripping it (spikes the trace) |
 | VAULT | 2 | toll for the prize (resolves a CODE digit) |
-| HARD | 6 | hot segments afford a few; cold ones bounce — a curve, not a wall |
-| BUS | −1 | refund → fire rips down bus lines (accelerant) |
+| HARD | 6 | a curve, not a wall — deep reach affords a few |
+| BUS | −1 | refund → embers rip down bus lines (accelerant) |
 | WALL | ∞ | unaffordable firebreak |
 
-The heat-6 "wall" is a smooth cost curve, not a binary gate. **No burn threshold.**
+No burn threshold — the heat-6 "wall" is a smooth cost curve.
 
 ---
 
-## 5. Ping-IQ ladder — routing intelligence at a conquered cell (BANKED)
+## 5. The card pool (authored, ~25–30; representative slice)
 
-An upgrade axis (options, not raw stats). Base = Tier 1.
+Do **not** expose the raw shape×direction×probability grid — it reads as a
+spreadsheet. Hand-author named cards with identity and a deliberate wrinkle. Names
+are the free "dawn of computing" pipeline.
 
-| Tier | Behavior at a conquered cell | Growth shape |
-|------|------------------------------|--------------|
-| 0 — Blocked | can't enter own territory; stalls when boxed in | *reject — punishes success* |
-| 1 — **Conduit** *(base)* | free traverse, no re-infect; energy flows to the frontier | broad, even, diffuse stain |
-| 2 — Homing *(upgrade)* | prefers unburned neighbors; crosses burned only when forced | directed, concentrated pushes |
-| 3 — Leapfrog *(top)* | hops *over* a burned cell to the unburned cell beyond; can hop an unburned honeypot (buys out the trace penalty) | surgical strikes into pockets |
+| Card | Shape | Dir | Prob | Identity / wrinkle |
+|------|-------|-----|------|--------------------|
+| `SCRIPT.COM` | Linear | ← | 25% | the starter forbidden card |
+| `SCRIPT.SYS` | Linear | → | 25% | the mirror — early draft to open a curtain |
+| `BUFFER.OVR` | Linear | ←→ | 50% | overflow; the curtain workhorse |
+| `WORM` | Sine | ←→ | 25% | wide, thin — the Morris spread |
+| `HARMONIC` | Sine(2×) | ←→ | 25% | octave up; sums with WORM toward a square |
+| `PHREAK` | Sine(3×) | ← | 25% | 3rd harmonic; squares the wave |
+| `BLUEBOX` | Rect-sin | ↑ | 50% | phreak jets straight up toward objectives |
+| `LOGICBOMB` | Step | ↓ | 50% | drives downward, toward the core |
+| `XOR` | Linear | ↗↙ | 25% | crossing diagonals; fills gaps |
+| `DAEMON` | Linear | ← | every-5th (20%) | sparse but cheap; deterministic mask |
+| `NOP.SLED` | Linear | — | 50% | high prob, **no direction** — inert alone (pure enabler; bad on purpose) |
+| `TANGENT` | Tan | ←→ | 10% | asymptote blowout — mostly wasted, sometimes clutch |
+| `ROOTKIT` | Linear | ←→ | 75% | premium; expensive |
+| `PAYLOAD` | Sine | ←→ | 50% | rare workhorse you grind for |
+| `0DAY` | Sine | ←→ | 100% | legendary grail |
 
----
-
-## 6. The four spread knobs → decks, staged one per tier
-
-The player themselves flagged that four probability/timing knobs is a lot to juggle
-— and a watcher can't intervene in chaos. So expose **one register per tier** (the
-spec's "one new subsystem per tier"), and the *character* (not a deck) carries the
-playstyle divergence from Tier 1:
-
-| Knob | What it controls | Deck | Revealed | Shape it makes |
-|------|------------------|------|----------|----------------|
-| **a — probability** | seed density along the trail | (via POWER profile, §3) | **Tier 1** | wall vs. archipelago |
-| **c — direction** | which neighbors a spread may take (`↑ ↕ ↓ ← → ↔` / random) | **GROWTH** | **Tier 2** | directed salient vs. bloom |
-| **b — rate** | ms between an ember's spread ticks (10 ms … 1000 ms) | **TRANSFER** | **Tier 3** | flash-burn vs. slow tide |
-| **d — branch** | chance a burned cell spawns a *new* independent ember | **FORK / BRANCH** | **Tier 4** | fractal tree vs. single blob |
-
-Reveal order rationale: **direction before rate** — direction produces the clearest
-new *shape* (reinforcing distinct playstyles early), while rate is a
-tempo/difficulty knob that mostly interacts with the scan. Order is tunable.
-
-**Branch (d) must be budget-capped, not a free coin-flip.** A spawned ember carries
-a *split* of the parent's **remaining energy** (total energy conserved), so
-branching trades depth for breadth instead of multiplying coverage for free. This is
-the fix for the runaway-or-fizzle problem the player raised: the exponential knob
-can't run away because the energy budget is closed.
+Later-tier cards add new aspects (§8): `FORK()` (spine emits sub-emitters),
+`FIREWALL.C` (hold/harden vs. the scan), homing/pierce IQ.
 
 ---
 
-## Character = the playstyle axis (the Vampire-Survivors divergence)
+## 6. Escalation stacks (build archetypes + power curves)
 
-Chosen at run start. The character defines **the trail itself**, so the *shape* of
-your assault — the thing that makes two runs feel like different games — is a
-decision you main into, then tune with cards.
+Each stack shows the acquisition order, the **merged beam at each milestone**, and
+the intended **weakness** — because "bad on purpose" means no stack is universally
+best. These double as balance targets.
 
-| Character | Trail shape | Slide | Playstyle | Reads like |
-|-----------|-------------|-------|-----------|-----------|
-| **War-dialer** | thin 1-wide clean line | slow, precise (easy placement) | **Sniper / lance** — pick a lane, punch a clean line at a vault strip | melee whip: one deliberate stroke |
-| **Shotgunner** | fat 3-wide spray band | fast (harder to place) | **Bruiser** — overwhelm a wide band, brute coverage | garlic/King-Bible aura: overwhelming footprint |
-| **Catapultist** | no trail; one dense high-energy blob lobbed into the far half | medium, arced | **Artillery** — gamble on depth near deep vaults | a lobbed bomb: boom-and-spread |
+### A — THE CURTAIN *(bruiser / raw coverage)*
+```
+SCRIPT.COM                    Lin · ←        · 25%   one weak edge sheet
++ SCRIPT.COM (copy)           Lin · ←        · 50%   denser
++ SCRIPT.SYS                  Lin · ←→       · 50%   curtain opens both ways
++ BUFFER.OVR                  Lin · ←→       · 100%  solid wall, both sides   (cap hit)
++ ROOTKIT                     Lin · ←→       · 100%  (overflow wasted) → bank REACH instead
+```
+**Feel:** a solid advancing slab; overwhelms a sector. **Weakness:** zero precision,
+wastes reach on held ground, slow to 50% on huge sectors, scan-food if under-reached.
 
-Upgrade trees stay per-character (hotter first segment, +width, tighter grouping,
-aim assist, +packets…). Because the character sets the shape and the POWER deck sets
-the profile, **every character plays differently even in Tier 1 with only the
-probability knob online** — which is exactly the "distinct, visible playstyles"
-target.
+### B — THE LANCE *(sniper / vault-diver)*
+```
+SCRIPT.SYS                    Lin · →        · 25%   thin right jab
++ REACH upgrades (meta)       Lin · →        · 25%   but travels deep
++ PACKET                      Lin · →↑       · 50%   angled deep strike
++ (T4) HOMING IQ              seeks unburned/vault cells
+```
+**Feel:** a thin deep spear onto a vault strip (War-dialer synergy). **Weakness:**
+low total coverage — bad against a wide win condition; whiffs if aimed wrong.
+
+### C — THE HARMONIC *(Fourier / show-off coverage)*
+```
+WORM                          Sin · ←→       · 25%   soft wave
++ HARMONIC                    Sin+Sin2 · ←→  · 50%   wave gains structure
++ PHREAK                      …+Sin3 · ←→    · 75%   waveform squares up → broad even front
++ PAYLOAD                     …           · 100%  dense structured curtain
+```
+**Feel:** intricate wave-fronts that fill wide, evenly. **Weakness:** patterned
+coverage leaves periodic gaps the scan threads; amplitude can clip off-board.
+
+### D — THE FENCE *(vertical rush / beat the scan)*
+```
+BLUEBOX                       Rect-sin · ↑   · 50%   picket of upward jets
++ BLUEBOX (copy)              Rect-sin · ↑   · 100%  dense vertical comb
++ LOGICBOMB                   +Step · ↑↓     · 100%  jets up AND drills down
+```
+**Feel:** races vertically toward top objectives before the top-down scan reaches
+them. **Weakness:** thin horizontally — easy for the scan to reclaim the flanks.
+
+### E — THE GLITCH DECK *(glass-cannon gambler)*
+```
+TANGENT                       Tan · ←→       · 10%   usually fizzles…
++ TANGENT (copy)              Tan · ←→       · 20%   …occasionally an asymptote blowout paints half a sector
++ NOP.SLED                    (adds 50% prob to whatever fires)  · 70%
+```
+**Feel:** high-variance; some runs detonate, some flop. **Weakness:** literally
+unreliable — the deliberate bad-card build for players chasing a high.
+
+**Stacking caps / diminishing returns:** probability caps at 100% (overflow wasted);
+direction caps at the 8 compass headings; shape amplitude clips to the board. Past a
+cap, surplus cards should convert to REACH or ROOT so a slot is never fully dead.
 
 ---
 
-## 7. Enemy clawback = the TRACE SCAN (the clock)
+## 7. The story = the progression (script-kiddie arc)
 
-Because coverage now grows *over time* during the watch, the system claws it back
-over time too — the battle is an equilibrium: embers *add* cells, the scan
-*removes* them.
+A card is a **forbidden program** — pirated warez traded on a BBS, an exploit on a
+cracked floppy. The arc *is* the roguelike climb:
 
-**The mechanic:** a horizontal line descends **top-to-bottom** across the field; as
-it sweeps it **reclaims a budgeted number of burned cells** it crosses. Its single
-descent **is the run clock** — reaching the bottom = traceback complete =
-discovered = battle lost. Scan speed (set by level × aggression, §10) is therefore
-the effective time limit. This generalizes/replaces `LOCKDOWN = 10 passes`.
+- **One forbidden card** on your bedroom terminal → you barely crack your own machine.
+- **Breach a system** → earn a **slot** (terminal memory, expanded by hacking) and
+  **loot a card** (better warez off a better machine).
+- **Own terminal → other terminals → the LAN → the corp → NORAD** = the seven-tier
+  fractal climb (GAME-SHEET), now with a character arc: nobody kid → the hacker the
+  FBI is tracing.
+- **ROOT shop = the black-market BBS** (see `ROOT-shop-design.md`): between runs,
+  spend ROOT on forbidden cards, memory (slots/REACH), and unlocks.
 
-- **Reclaim target = NEUTRAL** — reclaimed cells just go unburned, retakeable at
-  normal cost (ICE-hardened borders are a later-tier escalation).
-- **Honeypots spike the trace** — each burned HONEY nudges the line faster (+trace
-  penalty), and random honey placement means you *can't* fully avoid them.
-- **Difficulty scaling:** low tier grants a grace delay and a slow constant descent;
-  high tier starts the scan **on ignition** and **accelerates**.
+Acquisition (**decided direction, tune later**): draft **one-of-three** off each
+breached system (warez it dropped) **and** a persistent BBS shop for ROOT. Rarity
+gates the grail cards (`PAYLOAD`, `0DAY`).
+
+---
+
+## 8. Later-tier layers (staged, one subsystem per tier)
+
+Tier 1 is shape + direction + probability + a fixed emission rate. Deeper tiers add
+*new card aspects*, not bigger numbers:
+
+- **Tier 2 — rate:** cards that set emission cadence (ms) — flash-burn vs. slow tide.
+- **Tier 3 — branch (`FORK`):** emitted embers spawn sub-emitters, carrying a *split*
+  of remaining reach (total conserved → no runaway). Surface-area escalation.
+- **Tier 4 — hold / IQ:** `FIREWALL.C` hardens cells against the scan; the Ping-IQ
+  ladder (Conduit → Homing → Leapfrog) routes embers around/over terrain.
+
+The retired opcode-alphabet's good ideas survive here: `FORK` = branch, `WALL`/
+`FIREWALL` = hold. They're late-game aspects, not the base.
+
+---
+
+## 9. Enemy clawback = the TRACE SCAN (the clock)
+
+A horizontal line descends **top-to-bottom**, reclaiming a budgeted number of burned
+cells it crosses. Its single descent **is the run clock** — reaching the bottom =
+traced = run ends. Speed is set by level × aggression (§10). Reclaimed cells go
+**neutral** (retakeable). Honeypots spike the trace (nudge the line faster);
+random placement means you can't fully avoid them.
+
+- **Onset/speed scale by tier:** low tier = grace delay + slow constant descent; high
+  tier = starts on ignition + accelerates.
+- **Win = reach, then hold:** hit 50% → **breach timer** starts → hold ≥50% until it
+  expires → breached. Drop under 50% and the timer pauses/resets. Over-cover during
+  the hold to bank bonus PTS. A strong deck must out-add the scan, reach 50% early,
+  and survive the timer.
 - **PTS penalty is emergent** — the scan eating cells lowers peak coverage, which
-  lowers banked bonus PTS. A weak deck gets traced and banks little; a strong deck
-  out-adds the scan and banks surplus.
+  lowers banked PTS. Weak deck traced → banks little; strong deck → banks surplus.
 
-**Symmetry:** your shot = a finite energy packet that *adds* cells; the scan = a
-finite reclaim budget that *removes* them. Same currency, opposing flows.
-
-### Win condition — reach, then hold (DECIDED)
-
-Not instant at 50%. **Reach WIN_COVERAGE (50%) → a BREACH TIMER starts (length set
-by level) → hold ≥50% until it expires → sector breached.** Drop under 50% during
-the hold and the timer pauses/resets. The scan's erosion is what threatens the hold,
-so the finish is a sprint against the descending line; over-coverage during the hold
-banks bonus PTS. Tuning constraint: a strong deck (energy profile × character shape)
-must be able to out-pace the scan, reach 50% early, *and* survive the timer.
+Symmetry: your beam adds cells (finite reach); the scan removes cells (finite
+reclaim budget). Same currency, opposing flows.
 
 ---
 
-## 8. Decks ARE the progression (the 7-tier climb)
+## 10. Difficulty & economy
 
-- **Tier 1 — THE MACHINE:** POWER deck (ordered) + character. Spread = random,
-  steady, no branching (fixed defaults). Distinct playstyles come from the
-  character; build texture from card order.
-- **Tier 2 — THE LAN:** unlock **GROWTH / direction** (c) — program *which way* fire
-  leans.
-- **Tier 3 — THE CORP:** unlock **TRANSFER / rate** (b) — program the tempo; the
-  scan bites hard here = the spec's "you bleed."
-- **Tier 4 — THE GRID:** unlock **BRANCH** (d) + higher Ping-IQ — then rule-editing
-  at deeper tiers.
+**Aggression dial (built):** one scalar scales the whole scan (speed + reclaim). The
+player owns it at aim time — **raise for free** (harder scan, more ROOT/PTS + extra
+draft picks) or **spend PTS to lower it**. One loss ends the run, so cranking is a
+real gamble. Player-chosen escalation (Ascension/Heat), not hidden rubber-banding.
+Onboarding ramp eases baseline aggression over the first ~7 runs (a "TRAINING RUN"
+tag).
 
-A deeper run literally hands you a new programmable register. Progression = more
-decks + more cards per deck + character upgrades, **not** bigger numbers.
-
----
-
-## 9. Economy (unchanged by the overhaul)
-
-- **Breach a node** → draft 1 of 3 cards; +ROOT.
-- **Clear a tier** → zoom out, add a subsystem/deck.
-- **Lose (scan bottoms out)** → fail skin, run ends, keep banked PTS/ROOT (emergent
-  from peak coverage, §7).
-- **ROOT** buys permanent unlocks: extra starting cards, +hand size, new card types,
-  character upgrades, retry-from-a-deeper-tier.
-
----
-
-## 10. Difficulty = the AGGRESSION dial (built)
-
-Difficulty collapses to one scalar, `aggression`, scaling the whole trace scan
-(speed + reclaim) — mirroring how the POWER profile scales your whole volley. The
-player owns it in the aim phase: **raise for free** (harder scan, bigger payout —
-more ROOT/PTS + extra draft picks) or **spend PTS to lower it** (safety valve). One
-loss ends the run, so cranking is a genuine gamble. Live, player-chosen escalation
-(Ascension/Heat style), not hidden rubber-banding.
-
-**Onboarding ramp** (`onboardingBase(plays)`): baseline aggression eases players in
-(runs 1–2 at 0.5, graduating to `AGGRO_BASE = 0.75` by run 7), surfaced as a
-"TRAINING RUN" tag; the player still owns the dial on top. Per-sector terrain
-difficulty stays a second, independent axis.
+**Economy:** breach → loot a card + earn a slot + ROOT · clear a tier → new aspect ·
+lose → fail skin, keep banked PTS/ROOT · ROOT (persistent) buys cards, slots, REACH,
+and unlocks at the BBS shop.
 
 ---
 
 ## 11. Legibility is load-bearing (not polish)
 
-Distinct math that *looks* the same is still lame. Each knob needs a signature the
-eye catches in under a second — a high-density trail visibly **encrusted** with
-seeds, a directional bias where the whole fire visibly **leans**, a hot trail
-segment that flares brighter than a cold one, a branch that visibly **buds** a new
-front. This is a `research/juice-model.md` job as much as a mechanics one; if the
-signatures are mushy, the overhaul fails on its own goal. Treat per-knob visual
-identity as a spec requirement, not a finishing pass.
+Distinct math that *looks* the same is still lame. Every aspect needs a signature the
+eye catches in under a second: a high-probability spine visibly **dense** with
+emission points; a summed harmonic where you can **see the waves add**; a wide-union
+direction that visibly **fans** both ways; a deep-REACH ember that visibly **drives**
+far before guttering. This is a `research/juice-model.md` requirement, not a
+finishing pass.
 
 ---
 
 ## 12. Open dials / questions
 
-- Turret orientation (top-down vs. edge-slide) and trail curvature — cosmetic to
-  start; a curved/angled turret is a later positional upgrade.
-- Is one packet per battle enough agency, or should base kit grant 2 by mid-Tier-1?
-  (FORK already covers the "second front" want.)
-- `k_slope` / `BASE_P` mapping of energy → seed density (§3) needs `preview/`
-  calibration alongside the existing COST split.
-- Segment count = card-slot count (3). If SEQ grows to 4+ at higher tiers, the trail
-  splits into 4+ segments automatically — confirm that reads on an 80-wide board.
-- INTERRUPT's new job: freeze the scan for a beat? Refund energy to live embers?
-- Spread-vs-scan equilibrium under a *single* shot needs a headless smoke test
-  (old test assumed ping-arrival-over-time; new model seeds once then spreads).
+- **REACH as a pure meta-stat vs. also a rare card aspect** — leaning meta-stat +
+  a few cards; confirm the accumulator stays fully retired.
+- Probability-overflow reward (convert surplus to REACH?) vs. pure waste.
+- Pattern-mask (`every-5th`) vs. random-% stacking rule when both are present:
+  masks union, randoms fill the remainder — confirm on the grid.
+- Default emission **rate** for Tier 1 so the watch is paced (knob deferred to T2 as
+  a card, but needs a good fixed default now).
+- Direction-union ember count vs. reach budget — many directions × deep reach could
+  overshoot; may need a per-packet total-reach pool split across emitted embers.
+- Exact slot curve (how fast slots are earned) and card rarity tiers.
 
----
+## 13. Calibration sandbox (`preview/beam.html`)
 
-## 13. Calibration sandbox (`preview/ping.html`)
-
-Standalone tool reusing the **real `src/terrain.js` generator**, so tuned numbers
-port straight to the game. Sliders now cover: character (trail shape/width), POWER
-profile (per-segment energy), seed-density mapping, spread rate, branch chance, scan
-speed, reclaim/row, breach hold, win coverage. RESEED cycles sectors.
+Reuses the real `src/terrain.js` generator so tuned numbers port straight in.
+Sliders: trigger column, shape set (with live Fourier sum preview), direction union,
+merged probability, REACH, emission rate, scan speed, reclaim/row, breach hold, win
+coverage. RESEED cycles sectors. Should let us *watch* the six escalation-stack end
+states move against real terrain and tune the caps.
 
 **Prior validated split** (headless, 6 seeds, KERNEL): `COST = {OPEN 1, HARD 6,
-WALL ∞, BUS −1, VAULT 2, HONEY 1}`; a strong deck won ~5/6 (peaks 73–91%), a weak
-deck lost 6/6 (peaks <19%); the lone strong loss was an intended BRUTAL layout.
-These carry over as starting numbers; the single-shot spread-over-time loop needs a
-fresh pass to reconfirm the equilibrium.
+WALL ∞, BUS −1, VAULT 2, HONEY 1}`; strong deck ~5/6 (peaks 73–91%), weak 6/6 (<19%),
+lone strong loss = intended BRUTAL. Carry as starting numbers; the single-shot
+emit-and-spread loop needs a fresh equilibrium pass.
