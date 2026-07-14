@@ -92,9 +92,24 @@ grows toward an equilibrium vs. the scan (curtain hi-peak 55% → 83% as reprodu
 - ✅ Tests rewritten for the beam model (30/30). Verified end-to-end in a real browser:
   win + loss paths, no console errors; one packet → embers 7→593 → coverage 1%→56% →
   breach.
-- ⏭ **Still open:** the ~25–30 card pool is a 15-card slice so far (enough for the
-  slice); the vault/CODE win path (LANCE/FENCE payoff) is not yet wired — sectors still
-  win purely on coverage, and CODE digits lock on breach rather than per vault cell.
+- ⏭ **Still open:** the ~25–30 card pool is a 15-card slice so far (enough for the slice).
+
+### 6. Post-port design changes (2026-07-14)
+- ✅ **CODE + VAULT cut entirely** — a precision reward the coverage field couldn't
+  support. Removed the CODE digit objective, `run.code`/`locked`, and the VAULT terrain
+  type (6 → 5 types). Win is pure coverage.
+- ✅ **One memory block per run** — the 3-sector KERNEL/IO.SYS/SWAP climb is retired.
+  Terrain is a single 62×28 block; a run is one battle → win banks a draft into the
+  persistent deck → shop → jack in again. Deck grows *between* runs.
+- ✅ **Three static panels** — the play screen is one window: FIELD (the block) · GUTTER
+  (run state + controls) · TRAY (cards, 25% height). Panels persist; contents swap by
+  phase. `src/layout.js` is the geometry source of truth.
+- ✅ **Rebalanced for the single block** — POOL 1000, SCAN_SPEED 0.40, BREACH_HOLD 15
+  (block is ~2× the old sector). HARMONIC ~90% / CURTAIN ~60% strong, weak 0%, terrain
+  gates. Wide block rewards wide shapes. Docs (ember-model §4/§6/§13, SPEC-SHEET,
+  GAME-SHEET) swept to match. 30/30 tests; browser-verified.
+- ⏭ **Still open:** a Tier-2 objective that rewards depth/verticality (to re-float LANCE
+  & FENCE, which are coverage-weak by design); watch-phase pacing polish; the full pool.
 
 ### 5. Cosmetic / cleanup — ✅ DONE
 - ✅ SPEC-SHEET board mock redrawn to the neutral/scan aesthetic: `#` is now a single

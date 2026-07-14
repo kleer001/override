@@ -190,10 +190,12 @@ high-GROWTH (a spark that catches and spreads) — genuinely different fires.
 |---------|------|------|
 | OPEN | 1 | baseline |
 | HONEY | 1 | random placement → you can't avoid tripping it (spikes the trace) |
-| VAULT | 2 | toll for the prize (resolves a CODE digit) |
 | HARD | 6 | a curve, not a wall — deep reach affords a few |
 | BUS | −1 | refund → embers rip down bus lines (accelerant) |
 | WALL | ∞ | unaffordable firebreak |
+
+*(VAULT/CODE cut 2026-07-14 — a precision reward the area-coverage field can't
+support; the win is pure coverage now. Five terrain types.)*
 
 No burn threshold — the heat-6 "wall" is a smooth cost curve.
 
@@ -257,16 +259,17 @@ SCRIPT.COM                    Lin · ←        · 25%  · gr Low    one weak ed
 a sector. **Weakness:** zero precision, wastes reach on held ground, slow to 50% on
 huge sectors, scan-food if under-reached and under-grown.
 
-### B — THE LANCE *(sniper / vault-diver)*
+### B — THE LANCE *(sniper / deep striker)*
 ```
 SCRIPT.SYS                    Lin · →        · 25%  · gr Low    thin right jab
 + REACH upgrades (meta)       Lin · →        · 25%  · gr Low    but travels deep
 + PACKET                      Lin · →↑       · 50%  · gr Low    angled deep strike
-+ (T4) HOMING IQ              seeks unburned/vault cells
++ (T4) HOMING IQ              seeks unburned cells
 ```
-**Feel:** a thin deep spear onto a vault strip (War-dialer synergy) — deliberately
-**low growth**, so all the pool concentrates into depth, not spread. **Weakness:**
-low total coverage — bad against a wide win condition; whiffs if aimed wrong.
+**Feel:** a thin deep spear — deliberately **low growth**, so all the pool
+concentrates into depth, not spread. **Weakness:** low total coverage — on a
+pure-coverage win it's the weakest archetype (its old vault/CODE payoff was cut);
+a niche pick until a Tier-2 objective rewards precise depth again.
 
 ### C — THE HARMONIC *(Fourier / show-off coverage)*
 ```
@@ -441,11 +444,12 @@ spray has landed, vs. a growth-less spray that throws once and stalls. This is a
   depth/width trade emerges for free. Linear split is fine; no sub-linear tweak needed.
 
 **STILL OPEN (need the browser sandbox or a playtest):**
-- **LANCE/FENCE are underserved by a pure-coverage metric** — the harness scores only
-  area %, so a narrow deep lance (whose real payoff is vault/CODE digits, §4/§10) reads
-  0%, and a vertical FENCE (racing to top objectives before the scan) reads mid. Both
-  need the vault/CODE win path in the sim before their balance is real. GLITCH's swing
-  (peak 0→94) already reads correctly as the gambler.
+- **LANCE/FENCE are weak on a pure-coverage win** — the field is one wide block and the
+  win is area %, so a narrow deep lance and a vertical fence both under-cover. Their old
+  precision payoff (vault/CODE) was cut; a Tier-2 objective that rewards depth/verticality
+  is what re-floats them. GLITCH's swing already reads correctly as the gambler. The wide
+  single block also means **shape width matters** — HARMONIC (sine snakes across columns)
+  out-covers CURTAIN (one linear column), a fair emergent differentiation.
 - Default Tier-1 emission **rate**: start ~60–100 ms/cell, tuned so embers finish
   spreading by ~40% of the scan's descent (i.e. against scan speed, not in isolation).
   (Headless is rate-agnostic — one tick per step — so this needs the timed sandbox.)
@@ -455,24 +459,27 @@ spray has landed, vs. a growth-less spray that throws once and stalls. This is a
 
 ## 13. Calibration sandbox (`preview/beam.html`)
 
-Two tools, one sim (`beam-sim.js`), both over the real `src/terrain.js` generator so
+The play field is now ONE 62×28 **memory block** per run (SECTORS is a single entry),
+rendered in the three-panel play screen (FIELD · GUTTER · TRAY, see `src/layout.js`).
+Two tools, one sim (`src/beam.js`), both over the real `src/terrain.js` generator so
 tuned numbers port straight in:
 - **`preview/beam.html`** (browser) — sliders for trigger column, shape set (live
   Fourier sum preview), direction union, merged probability, REACH pool + cap,
   **reproduce + spread reach** (the GROWTH levers), emission rate, scan speed,
   reclaim/row, breach hold, win coverage. A live **embers-alive** readout catches
-  reproduction spikes. RESEED cycles sectors. The five escalation-stack **presets**
+  reproduction spikes. RESEED cycles blocks. The five escalation-stack **presets**
   mirror the merged card-decks below. *Watch* the end-states move against real terrain.
 - **`preview/beam-balance.js`** (headless, `node preview/beam-balance.js [seeds]`) —
   builds the §6 decks from real §5 cards through the actual merge rules and sweeps them
-  across seeds × 3 sectors, printing win-rate + peak-coverage + the terrain gate. Env
-  overrides (`POOL=… RECLAIM=… GROWTH_SCALE=…`) for quick sweeps and ablations.
+  across seeds (one block each), printing win-rate + peak-coverage + the terrain gate.
+  Env overrides (`POOL=… RECLAIM=… SCANSPEED=… GROWTH_SCALE=…`) for sweeps and ablations.
 
-**Validated equilibrium** (`beam-balance.js`, 16 seeds × 3 sectors, all sectors):
-`COST = {OPEN 1, HARD 6, WALL ∞, BUS −1, VAULT 2, HONEY 1}`; shared `{pool 800,
-reachCap 20, scanSpeed 0.5, reclaim 6, breachHold 18, winCoverage 50}`; GROWTH
-`None/Low/Med/High = 0/.10/.20/.40` (cap .60). Result: CURTAIN 79% / HARMONIC 81%
-(strong ~5/6, peaks to 92–98%), weak starter 0/48 (peaks ≤19%), BRUTAL ~13–17% of
-sectors = intended terrain gate. Growth-off ablation caps peaks at 56–57% and win
-rate at 4–8% → growth is load-bearing. These are the ported defaults; LANCE/FENCE
-await the vault/CODE win path before their numbers are meaningful.
+**Validated equilibrium** (`beam-balance.js`, 30 seeds, single 62×28 block):
+`COST = {OPEN 1, HARD 6, WALL ∞, BUS −1, HONEY 1}`; shared `{pool 1000, reachCap 20,
+scanSpeed 0.40, reclaim 6, breachHold 15, winCoverage 50}`; GROWTH
+`None/Low/Med/High = 0/.10/.20/.40` (cap .60). Result: HARMONIC ~90% / CURTAIN ~60%
+(strong; the wide block rewards wide shapes), GLITCH ~50% (gambler), FENCE/LANCE weak
+by design, weak starter 0/30, BRUTAL ~13% = intended terrain gate. Growth-off ablation
+collapses coverage → growth is load-bearing. These are the ported game defaults
+(`src/battle.js`). The block is ~2× the old sector, so pool/scan were retuned up/down
+to keep the hold-through-breach window fair.

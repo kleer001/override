@@ -123,7 +123,7 @@ fires:
   scattershot (may hit hard terrain or a honeypot). Upgrades: +embers, wider
   spread, tighter grouping.
 - **Catapultist** — a deep lob that plants the spine far from the turret;
-  gamble for depth (lands near a vault, or in a dead-end). Upgrades: aim
+  gamble for depth (lands on rich open ground, or in a dead-end). Upgrades: aim
   assist, deeper throw.
 
 Beam/trail shapes are prototyped in `preview/` — see the terrain screenshots.
