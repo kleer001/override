@@ -65,24 +65,31 @@ before you get there (traced).
 
 ### Cell model & CA rules (per tick)
 
-Each cell = `{ owner: none | worm | ice, strength: 0–9 }`. Double-buffered grid,
-deterministic under seeded RNG.
+Each cell = `{ owner: none | worm, strength: 0–9 }`. Double-buffered grid,
+deterministic under seeded RNG. **Settled: Tier 1 has one active faction — your
+intrusion (`worm`) against neutral memory — and the antagonist is the descending
+trace scan, not a second spreading CA player. A rival spreading faction
+(hardened ICE that infects your cells back) is a later-tier escalation (§ later
+tiers of `ember-model.md`), not the base board. "ICE" at Tier 1 is the trace /
+countermeasures, i.e. the scan itself.**
 
-- **Infect:** a cell spreads to an orthogonal neighbor when
-  `myStrength > neighborStrength`. Both worm and ICE do this, so borders churn.
-- **Grow:** an interior cell (all neighbors same owner) slowly gains strength →
-  held territory hardens.
-- **Decay/die:** an isolated cell (surrounded by enemy) loses strength each tick
-  and flips → no static blobs.
-- **Border war:** contested cells flicker between owners tick to tick — this is
-  most of the on-screen motion.
+- **Spread:** a burned cell's embers advance into open neighbours, spending REACH
+  against the terrain cost — the moving frontier is where most motion lives.
+- **Grow:** an interior burned cell (all neighbours held) slowly gains strength →
+  held territory hardens (the render ramp climbs).
+- **Reclaim/die:** a cell the trace scan crosses is set back to neutral and its
+  strength resets → no static blobs; the scan band is a travelling wipe.
+- **Churn:** the advancing frontier, the scan's moving reclaim line, drifting
+  addresses and ticking strength digits keep the board alive without a second
+  faction. (Later tiers reintroduce a true border war once ICE spreads.)
 
 ### Islands & links
 
 The grid splits into 2–4 **sectors** ("islands": `KERNEL`, `IO.SYS`, `SWAP`…)
 joined by **link lines**. Your infection can only cross to a new island through a
-link you control; **ICE cutting a link** isolates (and starves) your cells on the
-far side. `FORK()` seeds a beachhead on a fresh island → two fronts.
+link you control; a link goes dead when the **trace scan reclaims its cells**,
+isolating (and starving) your cells on the far side. `FORK()` seeds a beachhead on
+a fresh island → two fronts. (Later-tier ICE can actively sever links.)
 
 ### Overlays that never stop moving
 
@@ -121,7 +128,8 @@ far side. `FORK()` seeds a beachhead on a fresh island → two fronts.
 ```
 
 Legend (monochrome density ramp): `· : = + * @ %` = your infection rising in
-strength · `# X █` = ICE · `═ ║ ╬ ╗ ╝` = links · digits = per-cell strength / CODE.
+strength · `#` = trace-scan line · `X` = just-reclaimed cell · `█` = firewall (WALL)
+· `═ ║ ╬ ╗ ╝` = links / bus · digits = per-cell strength / CODE.
 
 ---
 
