@@ -26,18 +26,20 @@ export const FIELD_OX = 1, FIELD_OY = 1;
 // during AIM the whole block interior is the fire target (tap a column to fire)
 export const FIELD_FIRE = { x: FIELD_OX, y: FIELD_OY, w: 62, h: 28 };
 
-// tray: five hand cards, 15 wide x 8 tall, inset one row into the tray
-export const HAND_CARDS = Array.from({ length: 5 }, (_, i) => ({ x: 2 + i * 15, y: 31, w: 15, h: 8 }));
+// tray: five hand cards (14 wide x 8 tall) with a big START button to their right
+export const HAND_CARDS = Array.from({ length: 5 }, (_, i) => ({ x: 2 + i * 14, y: 31, w: 14, h: 8 }));
+// the primary "go" control — a tall, thumb-sized button right beside the cards.
+// Tapping it enters AIM (then you tap a column on the block to fire).
+export const BTN_START = { x: 72, y: 31, w: 7, h: 8, label: 'START' };
 
 // draft / char-select: three cards centered in the tray (pitch 17)
 const DRAFT_X0 = Math.floor((COLS - (3 * 15 + 2 * 2)) / 2);
 export const DRAFT_CARDS = Array.from({ length: 3 }, (_, i) => ({ x: DRAFT_X0 + i * 17, y: 31, w: 15, h: 8 }));
 
-// gutter control stack — assemble and aim reuse the same three slots
+// gutter control stack — REDRAW/UNDO in assemble, aggression in aim
 const GBTN = (row) => ({ x: 65, y: row, w: 14, h: 3 });
 export const BTN_REDRAW = { ...GBTN(20), label: `REDRAW -${REDRAW_COST}` };
 export const BTN_UNDO = { ...GBTN(23), label: 'UNDO' };
-export const BTN_AIM = { ...GBTN(26), label: 'AIM ▶' };
 export const BTN_AGGRO_DOWN = { ...GBTN(20), label: '◀ SAFER' };
 export const BTN_AGGRO_UP = { ...GBTN(23), label: 'HARDER ▶' };
 

@@ -14,7 +14,7 @@ import { buildScreen } from './render.js';
 import { composeBoard, detonate, setReducedMotion } from './juice.js';
 import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
-import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_AIM, BTN_CONTINUE, FIELD_FIRE, FIELD_OX,
+import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_CONTINUE, FIELD_FIRE, FIELD_OX,
   BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
 import { CHARACTERS } from './characters.js';
 import { FIELD_W, WIN_COVERAGE } from './terrain.js';
@@ -319,7 +319,7 @@ function onTapCell(col, row) {
     for (let i = 0; i < HAND_CARDS.length; i++) if (inRect(col, row, HAND_CARDS[i])) return loadSlot(i);
     if (inRect(col, row, BTN_REDRAW)) return redraw();
     if (inRect(col, row, BTN_UNDO)) return undoSlot();
-    if (inRect(col, row, BTN_AIM)) return gotoTarget();
+    if (inRect(col, row, BTN_START)) return gotoTarget();
   } else if (game.phase === 'target') {
     if (inRect(col, row, BTN_AGGRO_DOWN)) return lowerAggro();
     if (inRect(col, row, BTN_AGGRO_UP)) return raiseAggro();

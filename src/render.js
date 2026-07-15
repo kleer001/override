@@ -7,7 +7,7 @@ import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO
 import { mergeBeam, beamGutterLines, cardLabel } from './cards.js';
 import {
   COLS, ROWS, FIELD, GUTTER, TRAY, FIELD_OX, FIELD_OY,
-  HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_AIM, BTN_CONTINUE,
+  HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_CONTINUE,
   BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN,
 } from './layout.js';
 import { CHARACTERS } from './characters.js';
@@ -48,14 +48,14 @@ function panelBox(g, p, title) {
 }
 
 function drawButton(g, r, dim) {
-  frame(g, r.x, r.y, r.w, 3);
+  const h = r.h || 3;
+  frame(g, r.x, r.y, r.w, h);
   const t = (dim ? r.label.replace('▶', '·') : r.label).slice(0, r.w - 2);
-  stamp(g, r.x + Math.max(1, Math.floor((r.w - t.length) / 2)), r.y + 1, t);
+  stamp(g, r.x + Math.max(1, Math.floor((r.w - t.length) / 2)), r.y + Math.floor(h / 2), t);   // vertically centred
 }
 
-// a 15x8 card panel: name, compact aspect line, wrapped identity
-function drawCard(g, x, y, key, card, spent) {
-  const w = 15;
+// a card panel (default 15 wide): name, compact aspect line, wrapped identity
+function drawCard(g, x, y, key, card, spent, w = 15) {
   frame(g, x, y, w, 8);
   stamp(g, x, y, '┌' + `[${key}]` + '─'.repeat(w - 2 - (key.length + 2)) + '┐');   // key in the top edge
   if (spent) { stamp(g, x + 2, y + 3, 'SLOTTED'); return; }
@@ -139,7 +139,7 @@ function drawGutter(g, game) {
     gap(); L(`SLOTS ${game.program.filter(Boolean).length}/${SLOTS}`);
     drawButton(g, BTN_REDRAW, run.points < REDRAW_COST);
     drawButton(g, BTN_UNDO, !game.selection.length);
-    drawButton(g, BTN_AIM, !game.program.some(Boolean));
+    // START lives in the tray next to the cards (drawn by drawTray)
   } else if (phase === 'target') {
     const a = run.aggression, base = run.baseAggro;
     const [l1, l2] = beamGutterLines(mergeBeam(game.program.filter(Boolean)));
@@ -165,12 +165,13 @@ function drawTray(g, game) {
   } else if (phase === 'assemble') {
     game.hand.forEach((h, i) => {
       const n = game.run.deck.filter((c) => c.id === h.card.id).length;
-      drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, `x${n}`, h.card, h.used);
+      drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, `x${n}`, h.card, h.used, HAND_CARDS[i].w);
     });
+    drawButton(g, BTN_START, !game.program.some(Boolean));   // the primary go control, beside the cards
   } else {
     // target / exec / result: show the slotted loadout so you see what fired
     const slotted = game.program.filter(Boolean);
-    if (slotted.length) slotted.forEach((c, i) => drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, `S${i + 1}`, c, false));
+    if (slotted.length) slotted.forEach((c, i) => drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, `S${i + 1}`, c, false, HAND_CARDS[i].w));
   }
 }
 
@@ -178,7 +179,7 @@ function drawTray(g, game) {
 function titles(phase) {
   const tray = phase === 'charselect' ? 'SELECT YOUR JACK-IN'
     : phase === 'draft' ? 'DRAFT — bank a card into your deck'
-      : phase === 'assemble' ? 'LOADOUT — tap a card to slot the beam'
+      : phase === 'assemble' ? 'LOADOUT — slot cards, then ▶ START'
         : 'LOADOUT — the beam you fired';
   const field = phase === 'shop' ? 'ROOT SHOP' : 'THE MACHINE — one memory block';
   return { field, tray };
