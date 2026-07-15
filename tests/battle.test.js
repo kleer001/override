@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { CARDS, mergeBeam, GROWTH_CAP } from '../src/cards.js';
 import { generateMachine, createNode, runBattle, runBattlePeak, rewardMult, draftPicks } from '../src/battle.js';
-import { WIN_COVERAGE, idx, FIELD_H, energyTo, COST, OPEN } from '../src/terrain.js';
+import { WIN_COVERAGE, idx, FIELD_H, energyTo, COST, OPEN, generateMachineUpTo, tierRank } from '../src/terrain.js';
 
 // A strong coverage deck (curtain-ish: dense, both directions, high growth) and a
 // deliberately weak starter (one thin card). These are the balance anchors.
@@ -125,6 +125,19 @@ test('difficulty varies and is derived from energy-to-cover', () => {
   assert.ok((tally.MED || 0) + (tally.HARD || 0) + (tally.BRUTAL || 0) > 0, 'some harder sectors');
   const m = generateMachine(7);
   assert.ok(energyTo(m, m.sectors[0], 80).energy >= energyTo(m, m.sectors[0], 40).energy);
+});
+
+test('difficulty ceiling: forced-EASY opener never hands out a harder block', () => {
+  // The onboarding forces the first blocks to EASY (RNG must not gate a new player).
+  // Sweep many wall-clock-ish seeds; every forced block must land at or below the cap.
+  for (let seed = 1; seed <= 60; seed++) {
+    const easy = generateMachineUpTo(seed, 'EASY');
+    assert.equal(easy.sectors[0].difficulty, 'EASY', `seed ${seed} failed to force EASY`);
+    const med = generateMachineUpTo(seed, 'MED');
+    assert.ok(tierRank(med.sectors[0].difficulty) <= tierRank('MED'), `seed ${seed} exceeded MED cap`);
+  }
+  // A wide-open ceiling still returns a real block (fallback path never nulls).
+  assert.ok(generateMachineUpTo(12345, 'BRUTAL').sectors[0].difficulty);
 });
 
 test('deterministic: same seed => identical terrain and battle outcome', () => {

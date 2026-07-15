@@ -8,7 +8,7 @@
 import { mulberry32, shuffle } from './rng.js';
 import { startingDeck, DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
 import { SHOP_ITEMS, DECK_CARD, CARD_UNLOCK } from './shop.js';
-import { generateMachine, createNode, fire, stepBattle, coverage, aimColAt, REDRAW_COST, SLOTS,
+import { createNode, fire, stepBattle, coverage, aimColAt, REDRAW_COST, SLOTS,
   rewardMult, draftPicks, AGGRO_BASE, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
 import { buildScreen } from './render.js';
 import { composeBoard, detonate, setReducedMotion } from './juice.js';
@@ -16,7 +16,7 @@ import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
 import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE, BTN_CONTINUE,
   BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
-import { FIELD_W, WIN_COVERAGE } from './terrain.js';
+import { generateMachineUpTo, FIELD_W, WIN_COVERAGE } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
 const screen = document.getElementById('screen');
@@ -80,10 +80,21 @@ function onboardingBase(plays) {
   return +(EASY + (REAL - EASY) * ((plays - 1) / 5)).toFixed(2);
 }
 
+// Terrain difficulty CEILING keyed to runs started — the block generator rerolls
+// until it's at most this tier. The opening levels are forced gentle (RNG can't
+// hand a new player an unwinnable BRUTAL wall), lifting to fully-random by run 7.
+// Same tutorial window as onboardingBase — after that the procedural spread opens up.
+function difficultyCeil(plays) {
+  if (plays <= 1) return 'EASY';    // first two runs: guaranteed a soft block
+  if (plays <= 3) return 'MED';     // then let it climb
+  if (plays <= 5) return 'HARD';
+  return 'BRUTAL';                  // run 7+: any block the generator rolls
+}
+
 function startRun() {
-  game.seed = (Date.now() ^ 0x9e3779b9) >>> 0;
-  const machine = generateMachine(game.seed);
   const plays = loadPlays();
+  const machine = generateMachineUpTo((Date.now() ^ 0x9e3779b9) >>> 0, difficultyCeil(plays));
+  game.seed = machine.seed;                          // adopt the chosen block's seed for hand/draft RNG
   let baseAggro = onboardingBase(plays);
   const overclock = localStorage.getItem(OC_KEY) === '1';
   if (overclock) { localStorage.removeItem(OC_KEY); baseAggro = Math.min(AGGRO_MAX, +(baseAggro + 0.25).toFixed(2)); }

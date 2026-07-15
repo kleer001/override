@@ -211,6 +211,28 @@ function difficultyOf(machine, s) {
   return perCell < 1.4 ? 'EASY' : perCell < 2.2 ? 'MED' : perCell < 3.5 ? 'HARD' : 'BRUTAL';
 }
 
+// Difficulty tiers, easiest first. tierRank turns a label into a comparable rank.
+export const TIER_ORDER = ['EASY', 'MED', 'HARD', 'BRUTAL'];
+export const tierRank = (d) => TIER_ORDER.indexOf(d);
+
+// Generate a block whose difficulty is AT MOST `maxTier`, by rerolling the seed a
+// bounded number of times. Procedural blocks vary wildly (a random seed can be a
+// BRUTAL wall), so the opening runs force a gentle one — RNG shouldn't decide
+// whether a new player's first level is winnable. Falls back to the easiest block
+// seen if none qualifies within `tries` (EASY is ~58% of seeds, so it rarely does).
+export function generateMachineUpTo(seed, maxTier = 'BRUTAL', tries = 40) {
+  const cap = tierRank(maxTier);
+  let s = seed >>> 0, best = null, bestRank = Infinity;
+  for (let i = 0; i < tries; i++) {
+    const m = generateMachine(s);
+    const rank = tierRank(m.sectors[0].difficulty);
+    if (rank <= cap) return m;
+    if (rank < bestRank) { bestRank = rank; best = m; }
+    s = (s * 1664525 + 1013904223) >>> 0;   // LCG step to a fresh, deterministic seed
+  }
+  return best;
+}
+
 // The trace scan crossing one row: reclaim up to `budget` burned cells back to
 // neutral (ember-model.md §5). Returns how many were reclaimed.
 export function reclaimRow(machine, s, y, budget, rng) {
