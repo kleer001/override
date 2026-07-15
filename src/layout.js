@@ -45,8 +45,10 @@ export const BTN_UNDO = { ...GBTN(23), label: 'UNDO' };
 export const BTN_AGGRO_DOWN = { ...GBTN(20), label: '◀ SAFER' };
 export const BTN_AGGRO_UP = { ...GBTN(23), label: 'HARDER ▶' };
 
-// result / shop overlays (centered banners on the field)
-export const BTN_CONTINUE = { x: 23, y: 21, w: 18, h: 3, label: 'CONTINUE ▶' };
+// result / shop overlays (centered banners on the field). CONTINUE is drawn extra
+// large (2 cells past a snug box on every edge) so it reads unmistakably — though on
+// the result screen a tap ANYWHERE advances, since there's nothing else to do.
+export const BTN_CONTINUE = { x: 21, y: 19, w: 22, h: 7, label: 'CONTINUE ▶' };
 export const BTN_JACKIN = { x: 23, y: 26, w: 18, h: 3, label: 'JACK IN ▶' };
 
 // title / boot screen (a full-screen takeover): CONTINUE resumes saved progress,

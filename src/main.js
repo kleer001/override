@@ -14,7 +14,7 @@ import { buildScreen } from './render.js';
 import { composeBoard, detonate, setReducedMotion } from './juice.js';
 import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
-import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE, BTN_CONTINUE,
+import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE,
   BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, BTN_TITLE_CONTINUE, BTN_TITLE_NEW, inRect } from './layout.js';
 import { generateMachineUpTo, FIELD_W, WIN_COVERAGE } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
@@ -366,7 +366,7 @@ function onTapCell(col, row) {
     for (let i = 0; i < SHOP_ITEMS.length; i++) if (inRect(col, row, shopRow(i))) return buyShop(SHOP_ITEMS[i].id);
     if (inRect(col, row, BTN_JACKIN)) return startRun();
   } else if (game.phase === 'result') {
-    if (inRect(col, row, BTN_CONTINUE)) return advance();
+    return advance();   // whole screen is the button — there's nothing else to do here
   }
 }
 installPointer(screen, onTapCell);
