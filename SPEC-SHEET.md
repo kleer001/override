@@ -28,16 +28,19 @@ beats. The grid is what elements are *positioned on*, not the limit of how they'
 
 ### Row budget (40 rows)
 
+> **Superseded by the three-panel play screen** (see §"The play screen" below and
+> `src/layout.js`): the field is now the 62×28 FIELD panel (cols 0–63), run state +
+> controls live in the GUTTER (cols 64–79), and cards in the TRAY (rows 30–39). The
+> proportion below still holds — the living block is ~80% of the window.
+
 | Rows | Region | Cells |
 |------|--------|-------|
-| 1–3 | HUD: status · trace-scan + CODE bar · drifting address ticker | 240 |
-| **4–36** | **the CA field (living board)** | **33 × 80 = 2,640** |
-| 37 | slot track (merged beam readout) + turret | 80 |
-| 38 | CRACK / TERRITORY bar | 80 |
-| 39–40 | scrolling log | 160 |
+| 0–29 | FIELD panel — the living memory block (62×28 inset) | ~1,736 |
+| 0–29 | GUTTER panel — status + phase controls | 16 × 30 |
+| 30–39 | TRAY panel — hand / draft / jack-ins | 80 × 10 |
 
-**Living field = 2,640 / 3,200 = 82.5% of the screen**, most of it churning every
-tick — the "everything moves" target, before counting the drifting HUD overlays.
+**Living block ≈ 80% of the screen**, most of it churning every tick — the
+"everything moves" target.
 
 Render each CA cell as one glyph on the 80×40 grid; pick a near-square CRT
 font/scale to taste (cosmetic, not a code change). Field origin is rows 4–36; the
@@ -51,8 +54,7 @@ HUD and controls are fixed furniture the CA never touches.
 [`research/ember-model.md`](research/ember-model.md) §1, §4, §9 — one packet
 fires a beam that emits and spreads embers over time, and a top-down **trace
 scan** (not a passes-based lockdown) is the run clock. The CA field mechanics
-below (infect/grow/decay, islands, links, CODE bar) still describe the living
-board itself.*
+below (infect/grow/decay, islands, links) still describe the living board itself.*
 
 **Core idea:** crack % *is* territory on a living CA field, so the number going up
 is literally a stain spreading across the screen.
@@ -60,8 +62,8 @@ is literally a stain spreading across the screen.
 Your **intrusion** (spreading embers) claims cells from **neutral memory**; the
 **trace scan** reclaims burned cells back to neutral as it descends. **Crack %
 = fraction of the grid you hold.** Win by holding **≥50% coverage** through the
-breach timer / resolving the CODE; lose if the trace scan reaches the bottom
-before you get there (traced).
+breach timer; lose if the trace scan reaches the bottom before you get there
+(traced). (Pure coverage — the CODE/vault objective was cut.)
 
 ### Cell model & CA rules (per tick)
 
@@ -83,53 +85,42 @@ countermeasures, i.e. the scan itself.**
   addresses and ticking strength digits keep the board alive without a second
   faction. (Later tiers reintroduce a true border war once ICE spreads.)
 
-### Islands & links
+### One memory block, islands within it
 
-The grid splits into 2–4 **sectors** ("islands": `KERNEL`, `IO.SYS`, `SWAP`…)
-joined by **link lines**. Your infection can only cross to a new island through a
-link you control; a link goes dead when the **trace scan reclaims its cells**,
-isolating (and starving) your cells on the far side. `FORK()` seeds a beachhead on
-a fresh island → two fronts. (Later-tier ICE can actively sever links.)
+A run is ONE **memory block** (`THE MACHINE`, a single 62×28 sector — the 3-sector
+`KERNEL`/`IO.SYS`/`SWAP` split is retired). The noise still carves **islands** in a
+sea of firewall, bridged by **bus links**; distant islands can stay stranded, so a
+block can be only partly reachable (or unwinnable). A link dies when the trace scan
+reclaims its cells. `FORK()` (Tier 3) seeds a beachhead on a fresh island → two fronts.
 
-### Overlays that never stop moving
+### Overlays
 
-- **Addresses** — each island tagged with a hex address that drifts/increments
-  every tick (`0x7F3A → 0x7F3B…`): ambient flicker.
-- **Strength digits** — border cells show a 0–9 that ticks as the war rages.
-- **CODE bar** — the launch code, e.g. `7 _ 4 _ _ 1 _ _`, with digits **locking
-  in** as you capture key "vault" cells. Direct callback to `finding_numbers` —
-  you *find the numbers* by taking ground. This is the real win meter; territory %
-  is the pressure behind it.
+- **Addresses** — a drifting hex address ticker: ambient flicker.
+- **Strength digits** — border cells show a 0–9 that ticks as the burn rages.
+- *(CODE bar cut — see §"Battle model". The win is pure coverage; no digit objective.)*
 
-### Board mock (80 wide; ~14 of the 33 field rows)
+### The play screen — three static panels
+
+One window, three panels that persist across every phase (contents swap as play
+modulates — see `src/layout.js`); the 80×40 grid divides 80% / 20%:
 
 ```
- TIER 1: THE MACHINE     NODE 1/3     ROOT:120         TRACE SCAN[####......]
- CODE  7 _ 4 _ _ 1 _ _    ::  vault cells resolve digits    ADDR 0x7F3A -> 0xA10C +
-+------------------------------------------------------------------------------+
-| 0x7F3A ·:·=+*@@%#4  @@·      ══╗          2 #X#:·..  ·:=+*@@@%#  0xA10C  ·:· |
-| :·=+*@@@@@%*=3 @@@·  @@2   ═══╬════       ·:=+*@@@· 5   @@@%#X#:  ==+*@·  ·:  |
-| ·+*@@@@8@%#=· @@@@@·        ║             +*@@@@@%#=· @@·  #X#:·.  @@@@ %*=·  |
-| @@@%#X#:·  @@@@@· 1         ║       ╔═════@@@%9#X#·  ==+  ·:=+*@@@@@%#=  ·:·· |
-| %#X#:·.. @@@ 6 @@·  ══╗     ╚═══════╝  #X#:· @@@@ %*=·   =+*@@@%#X#:· @@@@@·  |
-| ·:· KERNEL          ═╬═  <link cut!>       IO.SYS         ·:=+ SWAP  @@@@%#X# |
-| ·:=+*@@@@@@%#= 2  @@@@@·     ║          ·:=+*@@@@@%#X#· 3  @@@@%#X#:. 7  @@·  |
-| =+*@@@%#X#:· @@@@@   @@·   ══╝          @@@@%#X#:·.. @@@·   #X#:· @@@ 4 @@@%*= |
-| @@%#X#:· 8 @@@@@%*=·       ║            %#X#:· @@@ 2 @@@·  ·:=+*@@@@@%#=· ·:·· |
-| ·:·=+*@@@%#X#:·  @@·    ════╬══         ·:=+*@@@· 9  @@@@· @@%#X#:·. @@@@ %#X# |
-| #X#:·.. @@@@ 5 @@@@%*=     ║            +*@@@@%#X#:  @@·   ·:=+*@@@%#=·  ==+*@ |
-| ·:=+*@@@@@%#=· @@@· 3      ══════╗      @@@%#X#:·.  ·:=+*@@@@%#X#:· @@@@ 6 @@· |
-+------------------------------------------------------------------------------+
-| SLOTS  [ SCRIPT.COM ][ SCRIPT.SYS ][ WORM ]  MERGED: Lin+Sin · L+R · 75%      |
-| COVERAGE [##################################################............] 71% |
-| > packet fired col 34. beam spine drawn, embers spreading. worm +14 cells.    |
-| > trace scan crossed KERNEL<->IO.SYS link. cells reclaimed. code digit 4 LOCKED.|
-+------------------------------------------------------------------------------+
+┌── THE MACHINE — one memory block ─────────┐┌─ STATUS ──┐
+│  terrain · beam spine · embers spreading  ││ ROOT 1240 │   FIELD  cols 0–63
+│  · reproduction · the descending #scan#   ││ PTS   80  │   (block drawn at a
+│  · ▲ turret at the base                   ││ DECK 11   │    1-cell inset)
+│                                           ││ TRACE …   │
+│                                           ││ COVERAGE… ││   GUTTER cols 64–79
+│                                           ││ BEAM …    ││   (run state + the
+│                                           ││ AGGRO …   ││    phase's controls)
+└───────────────────────────────────────────┘└───────────┘
+┌── LOADOUT — tap a card to slot the beam ──────────────┐   TRAY  rows 30–39
+│ [SCRIPT][SCRIPT][BUFFER][WORM  ][NOP   ]              │   (hand / draft /
+└───────────────────────────────────────────────────────┘    jack-ins, 25% tall)
 ```
 
-Legend (monochrome density ramp): `· : = + * @ %` = your infection rising in
-strength · `#` = trace-scan line · `X` = just-reclaimed cell · `█` = firewall (WALL)
-· `═ ║ ╬ ╗ ╝` = links / bus · digits = per-cell strength / CODE.
+Legend (density ramp): `· : = + * @ %` = burn strength rising · `#` = trace-scan
+line · `X` = just-reclaimed cell · `▓` = firewall (WALL) · `═` = bus · `▲` = turret.
 
 ---
 
@@ -139,16 +130,17 @@ strength · `#` = trace-scan line · `X` = just-reclaimed cell · `█` = firewa
 The ordered accumulator and its pass loop are retired.*
 
 - Slotted cards **merge** into one beam before the battle starts: probability
-  adds (capped at 100%), direction unions, shape sums (Fourier superposition).
-  This merge is a one-time computation, not a per-tick loop — order doesn't
-  matter.
+  adds (capped at 100%), direction unions, shape sums (Fourier superposition),
+  growth adds (capped ~60%). This merge is a one-time computation, not a per-tick
+  loop — order doesn't matter.
 - A **turret** slides along the bottom edge. One tap fires **one packet** at
   column `p`. The packet draws the beam **spine** upward,
   `x(y) = p + Σ shape(y)`; at each spine cell it rolls the merged probability,
   and on a hit emits ember(s) in the merged direction(s).
 - Emitted embers then **spread hands-off**, burning cells and spending
-  **REACH** against the terrain COST table (§ below) each tick — no further
-  input.
+  **REACH** against the terrain COST table (§ below) each tick, and — off the
+  merged **growth** — **reproducing** onto fresh unburned neighbours so the fire
+  sustains instead of dying at pool's end. No further input.
 - **One clock, not two:** a top-down **trace scan** descends the field,
   reclaiming burned cells to neutral as it crosses them. Its single descent
   from top to bottom *is* the run clock (replaces the old `LOCKDOWN = 10
@@ -163,37 +155,39 @@ The ordered accumulator and its pass loop are retired.*
 
 ---
 
-## Cards drive the beam (bundled triples, per `ember-model.md` §3, §5)
+## Cards drive the beam (bundled quads, per `ember-model.md` §3, §5)
 
-Every card is a complete beam — `(shape, direction, probability)` — not a CA
-effect applied in sequence. Slotting several **merges** them into one beam
+Every card is a complete beam — `(shape, direction, probability, growth)` — not a
+CA effect applied in sequence. Slotting several **merges** them into one beam
 before the packet fires.
 
-| Card | Shape | Direction | Probability | Identity / wrinkle |
-|------|-------|-----------|-------------|---------------------|
-| `SCRIPT.COM` | Linear | ← | 25% | the starter forbidden card |
-| `SCRIPT.SYS` | Linear | → | 25% | the mirror — opens a curtain |
-| `BUFFER.OVR` | Linear | ←→ | 50% | overflow; the curtain workhorse |
-| `WORM` | Sine | ←→ | 25% | wide, thin — the Morris spread |
-| `NOP.SLED` | Linear | — (none) | 50% | high prob, no direction — inert alone, bad on purpose |
+| Card | Shape | Direction | Probability | Growth | Identity / wrinkle |
+|------|-------|-----------|-------------|--------|---------------------|
+| `SCRIPT.COM` | Linear | ← | 25% | Low | the starter forbidden card |
+| `SCRIPT.SYS` | Linear | → | 25% | Low | the mirror — opens a curtain |
+| `BUFFER.OVR` | Linear | ←→ | 50% | Med | overflow; the curtain workhorse |
+| `WORM` | Sine | ←→ | 25% | **High** | self-replicates hard — the Morris spread |
+| `NOP.SLED` | Linear | — (none) | 50% | None | high prob, no direction/growth — inert alone, bad on purpose |
 
 Merge rules: probability **adds** (capped at 100%), direction **unions** (each
 unioned direction emits its own ember per firing cell — more directions = more
 surface area), shape **sums** (superposition — two sines reinforce; a line +
-sine wavers; sine + 3rd-harmonic starts squaring). Order does not matter — see
+sine wavers; sine + 3rd-harmonic starts squaring), growth **adds** its reproduce
+rate (capped ~60%; child spread-reach takes the max). Order does not matter — see
 §3 of the ember model for the full merge rules and the discipline behind
-"some cards are bad on purpose." Later tiers add new card *aspects* — rate
-(T2), `FORK()` branching (T3), hold/IQ (T4) — per §8; Tier 1 is shape +
-direction + probability only.
+"some cards are bad on purpose." Growth is core at Tier 1 (a growth-less packet
+can't breach — §4). Later tiers add new card *aspects* — rate (T2), `FORK()`
+directed branching (T3), hold/IQ (T4) — per §8; Tier 1 is shape + direction +
+probability + growth.
 
 ### Tier-1 starting deck (9 cards, indicative)
 
 | Card | Bundle | Type |
 |------|--------|------|
-| `SCRIPT.COM` ×4 | Linear · ← · 25% | curtain starter |
-| `SCRIPT.SYS` ×2 | Linear · → · 25% | curtain mirror |
-| `BUFFER.OVR` ×2 | Linear · ←→ · 50% | curtain workhorse |
-| `NOP.SLED` ×1 | Linear · — · 50% | enabler; bad alone |
+| `SCRIPT.COM` ×4 | Linear · ← · 25% · gr Low | curtain starter |
+| `SCRIPT.SYS` ×2 | Linear · → · 25% · gr Low | curtain mirror |
+| `BUFFER.OVR` ×2 | Linear · ←→ · 50% · gr Med | curtain workhorse |
+| `NOP.SLED` ×1 | Linear · — · 50% · gr None | enabler; bad alone |
 
 Core tension in a handful of scarce slots: stacking probability/direction on
 one bundle for raw coverage vs. spreading across bundles for a wider curtain —
@@ -217,20 +211,19 @@ decision, not the order you'd fire it in.
 
 ## Data model (sketch)
 
-*Reflects the bundled-triple card model and turret/reach/scan battle loop —
+*Reflects the bundled-quad card model and turret/reach/scan battle loop —
 see `ember-model.md` §3–4, §9.*
 
 ```js
-Cell   = { owner: 'none'|'worm', strength: 0 }          // 0–9; scan reclaims to 'none'
-Card   = { id, name, shape, direction, probability }     // the bundled triple
-Board  = { w: 80, h: 33, cells: [...],                  // double-buffered
-           islands: [{ id, addr, rect }], links: [{ a, b, owner }] }
-Beam   = { shape, direction, probability }               // the merged result of slotted cards
-Battle = { coverage: 0, winCoverage: 50, reach: 0,
-           board: Board, code: [7,null,4,null,null,1,null,null],
-           slots: [Card, Card, Card], beam: Beam,
-           turretCol: null, scanRow: 0, breachTimer: null }
-Run    = { tier: 1, node: 1, deck: [...], slots: 3, root: 120 }
+Cell   = { terrain, burned: 0 }                         // one 62×28 block
+Card   = { id, name, shape, dirs, prob, growth }         // the bundled quad
+Block  = { w: 62, h: 28, t: [...], burned: [...],       // the one memory block
+           islands, links }                              // islands within it, bus-linked
+Beam   = { shapes, dirs, prob, reproduce, spreadReach }  // the merged result of slotted cards
+Battle = { coverage: 0, winCoverage: 50, pool, reachCap,
+           block: Block, slots: [Card, Card, Card], beam: Beam,
+           triggerCol, scanRow: 0, breachLeft: -1 }
+Run    = { tier: 1, deck: [...], slots: 3, root: 120 }   // one block per run
 ```
 
 Resolution is a deterministic tick loop: merge slotted cards into `beam` once
@@ -253,9 +246,9 @@ RNG for reproducible draws, boards, and runs.
 ## MVP build order
 
 1. Port grid renderer + CRT filter; render a static 80×40 Tier-1 screen.
-2. Card data + slot arrangement (draw / merge bundled triples into one beam).
+2. Card data + slot arrangement (draw / merge bundled quads into one beam).
 3. Battle tick loop: turret fire → spine + emission → spread against REACH +
-   COVERAGE bar (no CA yet) — tune the number feel.
+   reproduce off GROWTH + COVERAGE bar (no CA yet) — tune the number feel.
 4. Add the CA living board + islands/links (the territory war replaces any lane).
 5. Trace scan + breach timer; result screen + fail skin + node advance.
 6. Draft-between-nodes + ROOT meta.
@@ -282,15 +275,15 @@ beam must burn *through*. Prototype: `preview/terrain.js`, `ignite.js`, `burn.js
    fast spots, ragged fronts);
 2. structure = partition walls (with gap chokepoints) + straight **bus corridors**
    (fast lanes);
-3. objectives = vaults placed at BFS-deepest reachable cells (routing matters);
-4. fairness = flood-fill guard so a vault is never fully walled off.
+3. islands = big unreachable islands bus-linked to the entry; distant ones stay
+   stranded (some blocks are only partly reachable);
+4. honeypots = HONEY placed deep in open reachable ground (trips the trace).
 
 **Terrain cost** (`COST` by type, per `ember-model.md` §4 — a spend curve, not a
-gate): OPEN 1 (baseline) · HONEY 1 (random placement, spikes the trace) · VAULT 2
-(toll for the prize — resolves a CODE digit) · HARD 6 (a curve, not a wall; deep
-reach affords a few) · BUS −1 (refund — accelerant) · WALL ∞ (unaffordable
-firebreak). A per-burn ±1 jitter keeps fronts fingered, not round. Supersedes the
-earlier `RESIST` table and its heat-gate framing.
+gate): OPEN 1 (baseline) · HONEY 1 (random placement, spikes the trace) · HARD 6
+(a curve, not a wall; deep reach affords a few) · BUS −1 (refund — accelerant) ·
+WALL ∞ (unaffordable firebreak). A per-burn ±1 jitter keeps fronts fingered, not
+round. (Five types — VAULT was cut with the CODE objective.)
 
 **Reach = the terminal stat.** Each emitted ember spends a **REACH** budget as it
 travels, `budget -= COST[cell.terrain]` per step, until it hits 0 or a WALL (see
@@ -307,7 +300,7 @@ directions = more emitted embers = more fronts), later `FORK()` (T3, an extra
 spine = a whole new front), and the jack-in characters (War-dialer / Shotgunner /
 Catapultist beam shapes) are surface-area tools, not just flat bonuses.
 
-**Live generation (src/terrain.js).** Each sector generates independently:
+**Live generation (src/terrain.js).** The one block generates as:
 - **Three independent noise fields** (different seeds & frequencies) place WALL
   (big low-freq seas), HARD (finer veins) and OPEN, so the types decorrelate.
 - **Land islands in a sea of firewall, bridged by bus links** — but only a couple
@@ -316,19 +309,17 @@ Catapultist beam shapes) are surface-area tools, not just flat bonuses.
   for an aggressive, torn, digital look.
 - **Honeypots bite:** burning a HONEY cell trips the trace scan — each
   newly-burned honeypot speeds the scan's descent (surfaced in the trace-scan
-  meter). Honey sits in open reachable ground, so honey-dense sectors cost you
-  time.
-- **All six terrain types in every sector** (OPEN, HARD, WALL, BUS, VAULT, HONEY),
-  guaranteed — verified 120/120 sectors.
+  meter). Honey sits in open reachable ground, so honey-dense blocks cost you time.
+- **All five terrain types on every block** (OPEN, HARD, WALL, BUS, HONEY),
+  guaranteed.
 
-**Win = coverage, held.** Breach a sector by holding **≥ WIN_COVERAGE% (50%)** of
+**Win = coverage, held.** Breach the block by holding **≥ WIN_COVERAGE% (50%)** of
 its claimable cells through the breach timer before the trace scan reaches the
 bottom (`ember-model.md` §9) — not by reaching a point. Difficulty is emergent
 from the terrain cost curve (HARD's cost of 6 needs real REACH to afford) and
-**connectivity** (how much is linked to your entry). Labels: EASY · HARD ·
+**connectivity** (how much is linked to your entry). Labels: EASY · MED · HARD ·
 **BRUTAL** (can't reach 50% at any REACH). **Runs are not guaranteed winnable** —
-~1 in 8 machines has a BRUTAL sector, making that run impossible to fully clear
-(Candy-Crush rules). Difficulty is randomized per sector, not positional.
+~1 in 8 blocks is BRUTAL, making that run a loss (Candy-Crush rules).
 
 **Jack-in (settled: Peggle turret, replaces the oscillating-gnomon minigame).**
 You pick a **character** at run start, then aim with a turret that **slides**

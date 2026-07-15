@@ -1,28 +1,33 @@
-// Production terrain: one 80x33 memory field split into three sectors by
-// firewalls. Each sector is generated independently:
+// Production terrain: ONE 62×28 memory block per run (a single "sector"). The
+// SECTORS array stays a list-of-one so the sim/renderer that iterate sectors keep
+// a clean seam for a future multi-node tier (GAME-SHEET Tier 2, "THE LAN"). The
+// block is generated as:
 //   - THREE independent noise fields (different seeds & frequencies) place WALL,
 //     HARD and OPEN so the types decorrelate;
-//   - land islands in a sea of firewall, bridged by bus links;
+//   - land islands in a sea of firewall, bridged by bus links (distant ones stay
+//     stranded — some blocks are only partly reachable);
 //   - a strong horizontal shear for the digital, stair-stepped look.
-// Win is COVERAGE-based (burn >= WIN_COVERAGE% of a sector). Runs are NOT
-// guaranteed winnable — some machines are brutal. Fire is heat-gated.
+// Win is COVERAGE-based (burn >= WIN_COVERAGE% of the block). Runs are NOT
+// guaranteed winnable — some blocks are brutal.
 
 import { mulberry32, randInt } from './rng.js';
 
-export const FIELD_W = 80, FIELD_H = 33;
-export const OPEN = 0, HARD = 1, WALL = 2, BUS = 3, VAULT = 4, HONEY = 5;
-// Energy a ping SPENDS to infect each cell (replaces the old heat GATE). WALL is
+// The play field is ONE memory block (a run = one block). Its dimensions fit the
+// 64-wide field panel beside the status gutter (see src/layout.js): 62×28 interior.
+export const FIELD_W = 62, FIELD_H = 28;
+export const OPEN = 0, HARD = 1, WALL = 2, BUS = 3, HONEY = 4;
+// REACH a beam ember SPENDS to infect each cell (ember-model.md §4). WALL is
 // unaffordable; BUS refunds (accelerant). OPEN must cost >=1 or the free flood
-// returns. See research/ember-model.md §2.
-export const COST = [1, 6, Infinity, -1, 2, 1];
+// returns.
+export const COST = [1, 6, Infinity, -1, 1];
 export const idx = (x, y) => y * FIELD_W + x;
 export const WIN_COVERAGE = 50; // % of a sector's claimable cells to breach it
 
-export const FIREWALLS = [26, 53];
+// One block spanning the whole field — no inter-sector firewalls (WALL still
+// arises from the noise). SECTORS stays an array of one so the sim/renderer that
+// iterate sectors keep working unchanged.
 export const SECTORS = [
-  { id: 'KERNEL', x0: 0,  x1: 25, digits: [0, 1] },
-  { id: 'IO.SYS', x0: 27, x1: 52, digits: [2, 3, 4] },
-  { id: 'SWAP',   x0: 54, x1: 79, digits: [5, 6, 7] },
+  { id: 'THE MACHINE', x0: 0, x1: FIELD_W - 1 },
 ];
 
 const cx = (c) => c % FIELD_W, cy = (c) => (c / FIELD_W) | 0;
@@ -161,40 +166,30 @@ function genSector(t, s, rng) {
   for (let y = 0; y < FIELD_H; y++) for (let x = x0; x <= x1; x++) if (t[idx(x, y)] === BUS) busN++;
   if (busN === 0) { const bx = randInt(rng, x0 + 1, x1 - 1), by = randInt(rng, 2, FIELD_H - 8); for (let y = by; y < by + 6 && y < FIELD_H; y++) t[idx(bx, y)] = BUS; }
 
-  // one bonus vault at the deepest reachable land cell (flavor + ROOT, not a win req)
+  // honeypots (bait) — placed deep in the sector; guarantee at least one so all
+  // five terrain types appear.
   const dist = bfs(t, idx(entry.x, entry.y), x0, x1);
-  let vault = -1, vd = -1;
-  for (let y = 0; y < FIELD_H; y++) for (let x = x0; x <= x1; x++) {
-    const c = idx(x, y);
-    if (dist[c] > vd && (t[c] === OPEN || t[c] === HARD)) { vd = dist[c]; vault = c; }
-  }
-  if (vault >= 0) t[vault] = VAULT;
-
-  // honeypots (bait) — guarantee at least one so all six types appear
   const cand = [];
   for (let y = 0; y < FIELD_H; y++) for (let x = x0; x <= x1; x++) {
     const c = idx(x, y);
-    if (dist[c] >= 6 && t[c] === OPEN && c !== vault) cand.push(c);
+    if (dist[c] >= 6 && t[c] === OPEN) cand.push(c);
   }
   const wantHoney = 1 + Math.floor(rng() * 2);
   let honey = 0;
   for (let k = 0; k < wantHoney && cand.length; k++) { t[cand[randInt(rng, 0, cand.length - 1)]] = HONEY; honey++; }
-  if (honey === 0) { const c = idx(Math.min(x1, entry.x + 3), entry.y); if (t[c] !== VAULT) t[c] = HONEY; }
+  if (honey === 0) { const c = idx(Math.min(x1, entry.x + 3), entry.y); t[c] = HONEY; }
 
-  return { ...s, entry, vaults: vault >= 0 ? [vault] : [], difficulty: null };
+  return { ...s, entry, difficulty: null };
 }
 
 export function generateMachine(seed) {
   const rng = mulberry32(seed >>> 0);
   const t = new Uint8Array(FIELD_W * FIELD_H);
-  for (const wx of FIREWALLS) for (let y = 0; y < FIELD_H; y++) t[idx(wx, y)] = WALL;
   const sectors = SECTORS.map((s) => genSector(t, s, rng));
-  const machine = { t, sectors, burned: new Uint8Array(FIELD_W * FIELD_H), bornAt: new Float64Array(FIELD_W * FIELD_H), rng };
+  const machine = { seed: seed >>> 0, t, sectors, burned: new Uint8Array(FIELD_W * FIELD_H), rng };
   for (const s of machine.sectors) s.difficulty = difficultyOf(machine, s);
   return machine;
 }
-
-const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
 // Energy to claim the cheapest `pct`% of a sector's claimable cells. Random ping
 // placement means connectivity no longer gates (a ping can land on any island),
@@ -216,58 +211,26 @@ function difficultyOf(machine, s) {
   return perCell < 1.4 ? 'EASY' : perCell < 2.2 ? 'MED' : perCell < 3.5 ? 'HARD' : 'BRUTAL';
 }
 
-// --- burn: finite energy-metered pings ---
-// One ping: land at a random non-WALL cell in the sector, then spend `energy`
-// infecting new ground. Conduit rule (ember-model.md §3 tier 1): already-burned
-// cells are free conduits — no cost, no re-infection — so energy only ever buys
-// NEW ground.
-//
-// planPing computes the ordered list of NEW cells this ping will burn WITHOUT
-// mutating the field, so the caller can reveal them one at a time (organic
-// growth). spreadPing applies the whole plan at once (headless / tests).
-export function planPing(machine, s, energy, rng) {
-  const { t, burned } = machine;
-  let sx, sy, tries = 0;
-  do { sx = randInt(rng, s.x0, s.x1); sy = randInt(rng, 0, FIELD_H - 1); tries++; }
-  while (t[idx(sx, sy)] === WALL && tries < 40);
-  if (t[idx(sx, sy)] === WALL) return [];
+// Difficulty tiers, easiest first. tierRank turns a label into a comparable rank.
+export const TIER_ORDER = ['EASY', 'MED', 'HARD', 'BRUTAL'];
+export const tierRank = (d) => TIER_ORDER.indexOf(d);
 
-  const order = [], newly = new Set();
-  const isBurned = (c) => burned[c] === 1 || newly.has(c);
-  let spend = energy;
-  const start = idx(sx, sy);
-  if (!burned[start]) {
-    const c = COST[t[start]];
-    if (c > spend) return [];
-    spend -= c; newly.add(start); order.push(start);
+// Generate a block whose difficulty is AT MOST `maxTier`, by rerolling the seed a
+// bounded number of times. Procedural blocks vary wildly (a random seed can be a
+// BRUTAL wall), so the opening runs force a gentle one — RNG shouldn't decide
+// whether a new player's first level is winnable. Falls back to the easiest block
+// seen if none qualifies within `tries` (EASY is ~58% of seeds, so it rarely does).
+export function generateMachineUpTo(seed, maxTier = 'BRUTAL', tries = 40) {
+  const cap = tierRank(maxTier);
+  let s = seed >>> 0, best = null, bestRank = Infinity;
+  for (let i = 0; i < tries; i++) {
+    const m = generateMachine(s);
+    const rank = tierRank(m.sectors[0].difficulty);
+    if (rank <= cap) return m;
+    if (rank < bestRank) { bestRank = rank; best = m; }
+    s = (s * 1664525 + 1013904223) >>> 0;   // LCG step to a fresh, deterministic seed
   }
-  const frontier = [start];
-  const seen = new Set([start]);
-  while (spend > 0 && frontier.length) {
-    const fi = randInt(rng, 0, frontier.length - 1);
-    const c = frontier[fi], fx = cx(c), fy = cy(c);
-    const opts = [];
-    for (const [dx, dy] of DIRS) {
-      const nx = fx + dx, ny = fy + dy;
-      if (nx < s.x0 || nx > s.x1 || ny < 0 || ny >= FIELD_H) continue;
-      const nc = idx(nx, ny);
-      if (seen.has(nc) || t[nc] === WALL) continue;
-      opts.push(nc);
-    }
-    if (!opts.length) { frontier.splice(fi, 1); continue; }
-    const nc = opts[randInt(rng, 0, opts.length - 1)];
-    seen.add(nc);
-    if (isBurned(nc)) { frontier.push(nc); continue; }   // free conduit hop
-    const cost = COST[t[nc]];
-    if (cost > spend) continue;                           // can't afford this cell
-    spend -= cost; newly.add(nc); order.push(nc); frontier.push(nc);
-  }
-  return order;
-}
-export function spreadPing(machine, s, energy, rng) {
-  const order = planPing(machine, s, energy, rng);
-  for (const c of order) machine.burned[c] = 1;
-  return order.length;
+  return best;
 }
 
 // The trace scan crossing one row: reclaim up to `budget` burned cells back to
@@ -285,13 +248,12 @@ export function reclaimRow(machine, s, y, budget, rng) {
 
 export function sectorStats(machine, s) {
   const { t, burned } = machine;
-  let claim = 0, burn = 0, honeyBurned = 0, vaultsBurned = true;
+  let claim = 0, burn = 0, honeyBurned = 0;
   for (let y = 0; y < FIELD_H; y++) for (let x = s.x0; x <= s.x1; x++) {
     const c = idx(x, y);
     if (t[c] === WALL) continue;
     claim++;
     if (burned[c]) { burn++; if (t[c] === HONEY) honeyBurned++; }
   }
-  for (const v of s.vaults) if (!burned[v]) vaultsBurned = false;
-  return { claim, burn, honeyBurned, pct: claim ? (burn / claim) * 100 : 0, vaultsBurned };
+  return { claim, burn, honeyBurned, pct: claim ? (burn / claim) * 100 : 0 };
 }

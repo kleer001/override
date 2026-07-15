@@ -1,131 +1,154 @@
-// OVERRIDE — Tier-1 vertical slice.
-// A run = conquering the three sectors of THE MACHINE, one at a time. You draw a
-// blind loadout, see all three terrains, and choose which to assault.
+// OVERRIDE — Tier-1 vertical slice (Beam-Card model, research/ember-model.md).
+// A run = ONE intrusion on ONE memory block. You pick a jack-in, draw a blind
+// loadout, slot cards into a merged beam, aim the turret at a column, fire a single
+// packet, and WATCH it spread + reproduce against the descending trace. Win or get
+// traced; either way you bank meta, draft/shop, and jack in again. The deck grows
+// between runs.
 
 import { mulberry32, shuffle } from './rng.js';
-import { startingDeck, BASE_DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
-import { SHOP_ITEMS, CHAR_UNLOCK, CARD_UNLOCK } from './shop.js';
-import { generateMachine, newCode, createNode, beginVolley, planLob, advanceScan, resolveVolley, REDRAW_COST,
-  rewardMult, draftPicks, AGGRO_BASE, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
+import { startingDeck, DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
+import { SHOP_ITEMS, DECK_CARD, CARD_UNLOCK } from './shop.js';
+import { createNode, fire, stepBattle, coverage, aimColAt, REDRAW_COST, SLOTS,
+  rewardMult, draftPicks, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
 import { buildScreen } from './render.js';
 import { composeBoard, detonate, setReducedMotion } from './juice.js';
 import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
-import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, SECTOR_RECTS, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
-import { CHARACTERS } from './characters.js';
-import { WIN_COVERAGE, sectorStats, FIELD_W } from './terrain.js';
+import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE,
+  BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, BTN_TITLE_CONTINUE, BTN_TITLE_NEW, inRect } from './layout.js';
+import { generateMachineUpTo, FIELD_W, WIN_COVERAGE } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
 const screen = document.getElementById('screen');
 const crtEl = document.querySelector('.crt');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const GROW_MS = 14; // per-cell reveal — an ember lands then grows one cell at a time
-const DET_HOLD = 90; // pass-hold: extra ms the frame freezes when a mult detonates
+// Watch-phase pace: ms per sim tick (emit → spread → scan). A battle resolves in
+// ~45–140 sim ticks, so this maps to a ~6 s blowout … ~18 s nail-biter — the watch
+// length self-scales with the drama. Balance is wall-clock-invariant (win/lose is
+// decided by per-tick RATIOS), so this only sets duration, never the outcome.
+const TICK_MS = 130;
 
 // --- game feel (research/juice-model.md) ---
-// One trauma scalar drives the CRT-container shake; reduced-motion drops the shake
-// and rapid flashes but keeps the brightness states (accessibility, §6).
 const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 setReducedMotion(reduceMotion);
 const trauma = createTrauma();
 const kick = (amount) => { if (!reduceMotion) trauma.add(amount); };
 const ROOT_KEY = 'override.root';
-const DECK_KEY = 'override.deck';     // persistent deck: card ids, survives runs
-const POINTS_KEY = 'override.points'; // persistent points bank
-const PLAYS_KEY = 'override.plays';   // runs started — drives the onboarding ramp
+const DECK_KEY = 'override.deck';
+const PLAYS_KEY = 'override.plays';
+const WINS_KEY = 'override.wins';
+// Bump when the STARTER deck definition changes so a stale saved deck (e.g. an old
+// XOR-laden starter) is wiped and the new starter takes effect on next load.
+const DECK_VERSION_KEY = 'override.deckver';
+const DECK_VERSION = '2';
+if (localStorage.getItem(DECK_VERSION_KEY) !== DECK_VERSION) {
+  localStorage.removeItem(DECK_KEY);
+  localStorage.setItem(DECK_VERSION_KEY, DECK_VERSION);
+}
 
 const game = {
   phase: 'assemble', run: null, node: null,
-  program: [null, null, null], selection: [], hand: [], draft: [],
-  playhead: -1, prompt: '', message: '', seed: 0, redrawCount: 0,
-  // scanning gnomon: an automated targeting crosshair that sweeps the arena to
-  // place each trace-ember (the player watches it aim, they don't drive it).
-  // active = the reticle is on the board; beams = the long crosshair lines show
-  // (only while travelling/locking, so they don't cover a blooming ember).
-  gnomon: { x: null, y: null, active: false, beams: false },
+  program: new Array(SLOTS).fill(null), selection: [], hand: [], draft: [],
+  message: '', bannerLines: [], seed: 0, redrawCount: 0,
 };
 
 const loadRoot = () => parseInt(localStorage.getItem(ROOT_KEY) || '120', 10) || 120;
 const saveRoot = (v) => localStorage.setItem(ROOT_KEY, String(v));
 const loadDeck = () => {
   const raw = localStorage.getItem(DECK_KEY);
-  return raw ? JSON.parse(raw).map((id) => ({ ...CARDS[id] })) : startingDeck();
+  return raw ? JSON.parse(raw).map((id) => ({ ...CARDS[id] })).filter((c) => c.id) : startingDeck();
 };
 const saveDeck = (deck) => localStorage.setItem(DECK_KEY, JSON.stringify(deck.map((c) => c.id)));
-const loadPoints = () => parseInt(localStorage.getItem(POINTS_KEY) || '0', 10) || 0;
-const savePoints = (v) => localStorage.setItem(POINTS_KEY, String(v));
 const loadPlays = () => parseInt(localStorage.getItem(PLAYS_KEY) || '0', 10) || 0;
 const savePlays = (v) => localStorage.setItem(PLAYS_KEY, String(v));
+const loadWins = () => parseInt(localStorage.getItem(WINS_KEY) || '0', 10) || 0;
+const saveWins = (v) => localStorage.setItem(WINS_KEY, String(v));
 const clock = () => performance.now();
-const paint = (now) => { screen.innerHTML = composeBoard(buildScreen(game), game, now); };
+const paint = (now) => { screen.innerHTML = composeBoard(buildScreen(game, now), game, now); };
 const draw = () => paint(clock());
 
-// --- ROOT shop persistence (permanent unlocks + held consumables) ---
-const CHARS_KEY = 'override.chars';   // unlocked jack-in ids
-const CARDS_KEY = 'override.cards';   // unlocked draft-card ids
-const RETRY_KEY = 'override.retry';   // held retry tokens
-const OC_KEY = 'override.overclock';  // overclock armed for next run
+// --- ROOT shop persistence ---
+const CARDS_KEY = 'override.cards';
+const RETRY_KEY = 'override.retry';
+const OC_KEY = 'override.overclock';
 const loadJSON = (k, d) => { const r = localStorage.getItem(k); return r ? JSON.parse(r) : d; };
-const unlockedChars = () => loadJSON(CHARS_KEY, ['wardial']);      // War-dialer free
 const unlockedCards = () => loadJSON(CARDS_KEY, []);
 const loadRetry = () => parseInt(localStorage.getItem(RETRY_KEY) || '0', 10) || 0;
 const saveRetry = (v) => localStorage.setItem(RETRY_KEY, String(v));
 
-const availChars = () => CHARACTERS.filter((c) => unlockedChars().includes(c.id));
-const draftPool = () => BASE_DRAFT_POOL.concat(unlockedCards().map((id) => SHOP_CARDS[id]).filter(Boolean));
+const draftPool = () => DRAFT_POOL.concat(unlockedCards().map((id) => SHOP_CARDS[id]).filter(Boolean));
 
 function shopOwned(item) {
-  if (item.kind === 'char') return unlockedChars().includes(CHAR_UNLOCK[item.id]);
   if (item.kind === 'card') return unlockedCards().includes(CARD_UNLOCK[item.id]);
-  return false; // consumables are repeatable
+  return false;   // deck-adds / consumables are repeatable
 }
 
-// Onboarding ramp: the first couple of runs are gentle, then ease up to the real
-// baseline over a few more. NOT performance-based rubber-banding — a fixed
-// tutorial curve keyed to how many runs you've started. The player still owns the
-// aggression dial on top of whatever base this returns.
-function onboardingBase(plays) {
-  const EASY = 0.5, REAL = AGGRO_BASE;
-  if (plays <= 1) return EASY;
-  if (plays >= 6) return REAL;
-  return +(EASY + (REAL - EASY) * ((plays - 1) / 5)).toFixed(2);
+// --- Dynamic difficulty (DDA): the trace-scan baseline adapts to the player. ---
+// We don't trust a fixed win% guess — the baseline aggression nudges UP a little on
+// a breach and DOWN a little on a loss, converging on the win rate implied by the
+// step ratio: p·UP = (1−p)·DOWN → p = DOWN/(UP+DOWN). With 0.04/0.03 that's ~43%
+// ("about half, not more"). Kept as the BASELINE the player still dials from, and
+// clamped to a band so it can't run away. Persisted across runs.
+const AGGRO_KEY = 'override.aggro';
+const DDA_START = 0.30, DDA_UP = 0.04, DDA_DOWN = 0.03, DDA_MIN = 0.30, DDA_MAX = 1.50;
+const clampDDA = (v) => Math.max(DDA_MIN, Math.min(DDA_MAX, v));
+const loadAggro = () => clampDDA(parseFloat(localStorage.getItem(AGGRO_KEY)) || DDA_START);
+const saveAggro = (v) => localStorage.setItem(AGGRO_KEY, clampDDA(v).toFixed(2));
+// nudge the persisted baseline after an outcome (applies to the NEXT run).
+const adaptAggro = (won) => saveAggro(loadAggro() + (won ? DDA_UP : -DDA_DOWN));
+
+// Terrain difficulty CEILING keyed to WINS — the block generator rerolls until it's
+// at most this tier, so RNG can't hand you an unwinnable wall before you're ready.
+// (The aggression DDA above tunes the trace SPEED; this gates the map's terrain.)
+// Clear a tier (a win) to unlock the next; fully-random blocks arrive at 3 wins.
+function difficultyCeil(wins) {
+  if (wins <= 0) return 'EASY';    // no wins yet: a soft block to learn on
+  if (wins === 1) return 'MED';    // cleared one → step up
+  if (wins === 2) return 'HARD';
+  return 'BRUTAL';                 // 3+ wins: any block the generator rolls
 }
 
 function startRun() {
-  game.seed = (Date.now() ^ 0x9e3779b9) >>> 0;
-  const machine = generateMachine(game.seed);
-  const plays = loadPlays();
-  let baseAggro = onboardingBase(plays);
-  const overclock = localStorage.getItem(OC_KEY) === '1';        // armed in the shop
+  const plays = loadPlays(), wins = loadWins();
+  const machine = generateMachineUpTo((Date.now() ^ 0x9e3779b9) >>> 0, difficultyCeil(wins));
+  game.seed = machine.seed;                          // adopt the chosen block's seed for hand/draft RNG
+  let baseAggro = loadAggro();                        // adaptive baseline (DDA), tuned by past outcomes
+  const overclock = localStorage.getItem(OC_KEY) === '1';
   if (overclock) { localStorage.removeItem(OC_KEY); baseAggro = Math.min(AGGRO_MAX, +(baseAggro + 0.25).toFixed(2)); }
   game.run = {
-    tier: 1, node: 1, root: loadRoot(), points: loadPoints(), deck: loadDeck(),
-    machine, code: newCode(mulberry32((game.seed ^ 12345) >>> 0)),
-    locked: new Array(8).fill(false), conquered: 0, char: null,
-    aggression: baseAggro, baseAggro, pendingDrafts: 0, plays,
-    availChars: availChars(), overclockEnergy: overclock ? 2 : 0, retry: loadRetry(),
+    tier: 1, root: loadRoot(), deck: loadDeck(),
+    machine,
+    aggression: baseAggro, baseAggro, pendingDrafts: 0, plays, wins,
+    overclockPool: overclock ? 300 : 0, retry: loadRetry(),
   };
   savePlays(plays + 1);
-  trauma.reset();                     // never carry shake across runs
+  trauma.reset();
   game.node = null;
-  game.phase = 'charselect';
-  game.prompt = overclock ? 'OVERCLOCK ARMED — hotter pings, faster trace this run.' : '';
+  game.bannerLines = [];
+  newAssemble();                                   // straight into the loadout — no character picker
+  if (overclock) { game.message = 'OVERCLOCK: bigger REACH, faster trace.'; draw(); }
+}
+
+// The boot / title screen. CONTINUE resumes saved progress; NEW wipes it.
+function showTitle() {
+  game.phase = 'title';
+  game.titleWins = loadWins();
+  game.run = null; game.node = null; game.bannerLines = []; game.message = '';
   draw();
 }
-
-function pickChar(i) {
-  if (game.phase !== 'charselect' || !game.run.availChars[i]) return;
-  game.run.char = game.run.availChars[i];
-  sfx.lock();
-  newAssemble();
+// Wipe every persisted key so NEW truly starts from zero (deck reverts to the
+// starter, ROOT to 120, wins/plays to 0). Keep the deck-version stamp current so
+// the fresh starter isn't re-wiped by the migration guard on the next load.
+function resetSave() {
+  for (const k of [ROOT_KEY, DECK_KEY, PLAYS_KEY, WINS_KEY, AGGRO_KEY, CARDS_KEY, RETRY_KEY, OC_KEY]) localStorage.removeItem(k);
+  localStorage.setItem(DECK_VERSION_KEY, DECK_VERSION);
 }
 
-// draw five cards off the deck; redrawCount varies the shuffle per redraw
 function dealHand() {
   const r = game.run;
-  const rng = mulberry32((game.seed ^ (r.node * 40503) ^ (r.conquered * 2654435761) ^ (game.redrawCount * 2246822519)) >>> 0);
+  const rng = mulberry32((game.seed ^ (r.plays * 40503) ^ (game.redrawCount * 2246822519)) >>> 0);
   game.hand = shuffle(r.deck, rng).slice(0, 5).map((c) => ({ name: c.name, card: c, used: false }));
-  game.program = [null, null, null];
+  game.program = new Array(SLOTS).fill(null);
   game.selection = [];
 }
 
@@ -133,9 +156,8 @@ function newAssemble() {
   game.node = null;
   game.redrawCount = 0;
   dealHand();
-  game.playhead = -1;
   game.message = '';
-  game.prompt = '';
+  game.bannerLines = [];
   game.phase = 'assemble';
   draw();
 }
@@ -143,8 +165,8 @@ function newAssemble() {
 function redraw() {
   if (game.phase !== 'assemble') return;
   const r = game.run;
-  if (r.points < REDRAW_COST) { game.message = `need ${REDRAW_COST} PTS to redraw (have ${r.points}).`; draw(); return; }
-  r.points -= REDRAW_COST; savePoints(r.points);
+  if (r.root < REDRAW_COST) { game.message = `need ${REDRAW_COST} ROOT to redraw.`; draw(); return; }
+  r.root -= REDRAW_COST; saveRoot(r.root);
   game.redrawCount++;
   dealHand();
   game.message = '';
@@ -155,7 +177,7 @@ function redraw() {
 function loadSlot(i) {
   if (game.phase !== 'assemble') return;
   const h = game.hand[i];
-  if (!h || h.used || game.selection.length >= 3) return;
+  if (!h || h.used || game.selection.length >= SLOTS) return;
   h.used = true;
   game.program[game.selection.length] = h.card;
   game.selection.push(i);
@@ -172,15 +194,20 @@ function undoSlot() {
 }
 
 function gotoTarget() {
-  if (game.selection.length < 3) return;
+  if (!game.program.some(Boolean)) return;
   game.phase = 'target';
-  game.prompt = 'CHOOSE TARGET — match your energy to the terrain';
+  game.message = 'the turret sweeps — time your LAUNCH.';
   sfx.ui();
   draw();
 }
 
-// aggression = the difficulty dial (target phase). Raise is free (harder scan,
-// bigger reward); lower spends PTS (buy safety).
+// LAUNCH: fire at the turret's column at THIS instant (same clock the render uses,
+// so the packet leaves from exactly where the turret is drawn).
+function launch() {
+  if (game.phase !== 'target') return;
+  fireAt(aimColAt(clock()));
+}
+
 function raiseAggro() {
   if (game.phase !== 'target' || game.run.aggression >= AGGRO_MAX) return;
   game.run.aggression = +(game.run.aggression + AGGRO_STEP).toFixed(2);
@@ -188,150 +215,88 @@ function raiseAggro() {
 }
 function lowerAggro() {
   if (game.phase !== 'target' || game.run.aggression <= AGGRO_MIN) return;
-  if (game.run.points < AGGRO_REDUCE_COST) { game.message = `need ${AGGRO_REDUCE_COST} PTS to de-risk.`; draw(); return; }
-  game.run.points -= AGGRO_REDUCE_COST; savePoints(game.run.points);
+  if (game.run.root < AGGRO_REDUCE_COST) { game.message = `need ${AGGRO_REDUCE_COST} ROOT to de-risk.`; draw(); return; }
+  game.run.root -= AGGRO_REDUCE_COST; saveRoot(game.run.root);
   game.run.aggression = +(game.run.aggression - AGGRO_STEP).toFixed(2);
   sfx.ui(); draw();
 }
 
-function chooseSector(si) {
-  const s = game.run.machine.sectors[si];
-  if (!s || s.conquered) return;
-  game.node = createNode(game.run.machine, si, game.run.char, game.run.aggression, game.run.baseAggro, game.run.overclockEnergy);
+// Fire the turret at a block column (0..FIELD_W-1). This commits the run's single packet.
+function fireAt(blockCol) {
+  const r = game.run;
+  const triggerCol = Math.max(0, Math.min(FIELD_W - 1, blockCol | 0));
+  game.node = createNode(r.machine, 0, r.aggression, r.baseAggro, game.program.slice(),
+    { triggerCol, poolBonus: r.overclockPool });
   game.phase = 'exec';
   startExec();
-}
-
-const GNOMON_MS = 22;   // per-step of the scanning-gnomon sweep
-
-// The automated targeting crosshair travels from its last lock to (tx,ty) with a
-// smoothstep ease, then locks on — this is the "aim" the player watches instead
-// of driving. Cells still come from planLob (random placement); the gnomon just
-// makes the placement legible and deliberate. Snaps instantly under reduced motion.
-async function sweepGnomon(tx, ty) {
-  const gn = game.gnomon;
-  gn.active = true; gn.beams = true;                          // beams on while it travels + locks
-  if (gn.x == null) { gn.x = tx; gn.y = ty; }                 // first lob: crosshair snaps in
-  const sx = gn.x, sy = gn.y;
-  const dist = Math.abs(tx - sx) + Math.abs(ty - sy);
-  const steps = reduceMotion ? 1 : Math.min(9, Math.max(2, Math.round(dist / 5)));
-  for (let s = 1; s <= steps; s++) {
-    const e = s / steps, k = e * e * (3 - 2 * e);             // smoothstep
-    gn.x = Math.round(sx + (tx - sx) * k);
-    gn.y = Math.round(sy + (ty - sy) * k);
-    draw();
-    await sleep(GNOMON_MS);
-  }
-  gn.x = tx; gn.y = ty;
-  sfx.ping();                                                  // radar lock on the target
-  draw();
-  await sleep(reduceMotion ? 0 : 60);                          // a beat on the locked crosshair
 }
 
 async function startExec() {
   resumeAudio();
   sfx.exec();
-  game.gnomon = { x: null, y: null, active: false };           // fresh scan per node
-  await sleep(220);
   const node = game.node;
+  game.message = 'WATCH — the beam spreads; hold coverage through the breach.';
+  await sleep(200);
+  fire(node);
+  kick(0.35);
+  draw();
+  await sleep(200);
+
+  let lastHoney = 0, wasBreaching = false, breached = false;
   while (!node.outcome) {
-    const ev = beginVolley(node, game.program.slice());
-    for (let i = 0; i < 3; i++) {
-      game.playhead = i;
-      const card = game.program[i];
-      const k = card.kind;
-      if (k === 'mult') {
-        // DETONATION (§3 ▅): sound + flash + shake + pass-hold, all on one frame.
-        sfx.mult(card.value);
-        const power = Math.min(1, node.energy / 120) * (card.value / 2); // ∝ result & multiplier
-        kick(0.35 + 0.45 * power);
-        if (!reduceMotion) detonate(clock(), 0.6 + power);
-        draw();
-        await sleep(190 + (reduceMotion ? 0 : DET_HOLD));               // freeze so the hit lands
-      } else {
-        if (k === 'fork') sfx.fork();
-        else if (k === 'interrupt') sfx.ice();
-        else sfx.add(i);
-        draw();
-        await sleep(190);
-      }
-    }
-    game.playhead = -1;
-    const before = node.crack;
-    const honeyBefore = node.honeyHit;
-    game.gnomon.active = true;
-    while (node.pingsLeft > 0) { // gnomon scans to each landing site, then the ember blooms
-      const cells = planLob(node);
-      if (!cells.length) { await sleep(GROW_MS * 3); continue; }
-      const anchor = cells[0]; // planPing's first cell is where the ping lands
-      await sweepGnomon(anchor % FIELD_W, (anchor / FIELD_W) | 0);
-      game.gnomon.beams = false; // drop the long beams; the reticle rides the target through the bloom
-      const hit = clock(); // cluster anchor — the whole ember shares this pulse phase
-      for (const c of cells) {
-        node.machine.burned[c] = 1;
-        node.machine.bornAt[c] = hit;
-        node.crack = sectorStats(node.machine, node.sector).pct;
-        draw();
-        await sleep(GROW_MS);
-      }
-    }
-    game.gnomon.active = false; // scan phase — the gnomon steps off the board
-    advanceScan(node); // the trace scan descends + reclaims
+    const snap = stepBattle(node);
+    if (node.sim.honeyBurned > lastHoney) { lastHoney = node.sim.honeyBurned; sfx.honeypot(); kick(0.4); }
+    if (snap.breachLeft >= 0 && !wasBreaching) {
+      wasBreaching = true;
+      if (!breached) { breached = true; sfx.crack(); if (!reduceMotion) detonate(clock(), 0.7); kick(0.5); }
+    } else if (snap.breachLeft < 0) wasBreaching = false;
     draw();
-    await sleep(140);
-    resolveVolley(node, ev);
-    if (node.crack > before) sfx.crack();
-    if (node.honeyHit > honeyBefore) { sfx.honeypot(); kick(0.5); } // ▄ warning jolt — a bad surprise
-    draw();
-    await sleep(260);
+    await sleep(TICK_MS);   // pacing is NOT a motion effect — reduced-motion only drops shake/flash (via kick/detonate guards), not the watch itself
   }
-  if (node.outcome === 'lose') { sfx.flatline(); kick(0.9); }        // █ trace doom — caught
+  if (node.outcome === 'lose') { sfx.flatline(); kick(0.9); }
   showResult();
 }
 
 function showResult() {
   const node = game.node, r = game.run;
   game.phase = 'result';
+  node.crack = coverage(node.sim);
+  adaptAggro(node.outcome === 'win');   // DDA: nudge the baseline for the NEXT run (win up, loss down)
   if (node.outcome === 'win') {
-    r.conquered++;
-    for (const d of node.sector.digits) r.locked[d] = true;
     const mult = rewardMult(node.aggro, node.baseAggro);
-    const reward = Math.round((40 + r.conquered * 10) * mult);
+    const overkill = Math.round(Math.max(0, node.crack - WIN_COVERAGE) * mult);   // coverage past 50% pays extra
+    const reward = Math.round(50 * mult) + overkill;
     r.root += reward; saveRoot(r.root);
-    const bonus = Math.round(Math.max(0, node.crack - WIN_COVERAGE) * mult);
-    r.points += bonus; savePoints(r.points);
+    r.wins += 1; saveWins(r.wins);                    // a clear lifts the difficulty ceiling next run
     r.pendingDrafts = draftPicks(node.aggro, node.baseAggro);
-    kick(0.7);                        // ▆ breach — the sector falls, celebrate it
+    kick(0.7);
     sfx.lock(); sfx.win();
-    game.message = `>> ${node.sector.id} BREACHED (aggro x${node.aggro.toFixed(2)}). +${reward} ROOT, +${bonus} PTS, ${r.pendingDrafts} draft. [ENTER].`;
-    game.prompt = `${node.sector.id} cracked — its codes fall.`;
+    game.bannerLines = ['>> THE MACHINE BREACHED <<', `+${reward} ROOT · ${r.pendingDrafts} card draft`];
+    game.message = `breached at ${node.crack.toFixed(0)}% (aggro x${node.aggro.toFixed(2)}).`;
   } else if (r.retry > 0) {
     r.retry -= 1; saveRetry(r.retry);
     game.retried = true;
     sfx.ui();
-    game.message = `>> TRACED in ${node.sector.id} — RETRY TOKEN spent, you slip away. [ENTER] to reassemble.`;
-    game.prompt = `close call. retry tokens left: ${r.retry}.`;
+    game.bannerLines = ['>> TRACED — RETRY TOKEN spent <<', `you slip away · ${r.retry} tokens left`];
+    game.message = 'close call.';
   } else {
     sfx.lose();
     const kept = Math.floor(r.root * 0.5); saveRoot(kept);
-    game.message = `>> TRACED: they found you in ${node.sector.id}. banked ${kept} ROOT. [ENTER] for the shop.`;
-    game.prompt = 'TRACE COMPLETE.';
+    game.bannerLines = ['>> TRACED — they found you <<', `banked ${kept} ROOT`];
+    game.message = 'run over.';
   }
   draw();
 }
 
 function advance() {
-  if (game.node.outcome === 'win') {
-    if (game.run.conquered >= 3) return tierClear();
-    startDraft();
-  } else if (game.retried) {
-    game.retried = false; newAssemble();     // retry token spent — same run continues
-  } else openShop();                          // run ended by the trace — shop before next run
+  if (game.node.outcome === 'win') startDraft();      // bank a card, then the shop
+  else if (game.retried) { game.retried = false; newAssemble(); }   // retry: re-run the same block
+  else openShop();
 }
 
 // --- ROOT shop ---
 function refreshShop() {
-  if (game.run) game.run.root = loadRoot();   // keep the header in sync with purchases
+  if (game.run) game.run.root = loadRoot();
   game.shopData = {
     root: loadRoot(), retry: loadRetry(), overclock: localStorage.getItem(OC_KEY) === '1',
     items: SHOP_ITEMS.map((it) => ({ id: it.id, name: it.name, desc: it.desc, cost: it.cost, kind: it.kind, owned: shopOwned(it) })),
@@ -339,7 +304,7 @@ function refreshShop() {
 }
 function openShop() {
   game.phase = 'shop';
-  game.prompt = 'ROOT SHOP — permanent unlocks stick forever; consumables are single-use.';
+  game.bannerLines = [];
   game.message = '';
   refreshShop();
   draw();
@@ -350,23 +315,24 @@ function buyShop(id) {
   if (!item) return;
   if (shopOwned(item)) { game.message = 'already unlocked.'; draw(); return; }
   const root = loadRoot();
-  if (root < item.cost) { game.message = `need ${item.cost} ROOT (have ${root}).`; sfx.undo(); draw(); return; }
+  if (root < item.cost) { game.message = `need ${item.cost} ROOT.`; sfx.undo(); draw(); return; }
   saveRoot(root - item.cost);
-  if (item.kind === 'char') { const u = unlockedChars(); u.push(CHAR_UNLOCK[item.id]); localStorage.setItem(CHARS_KEY, JSON.stringify(u)); }
+  if (item.kind === 'deckcard') { game.run.deck.push({ ...CARDS[DECK_CARD[item.id]] }); saveDeck(game.run.deck); }
   else if (item.kind === 'card') { const u = unlockedCards(); u.push(CARD_UNLOCK[item.id]); localStorage.setItem(CARDS_KEY, JSON.stringify(u)); }
   else if (item.kind === 'retry') { saveRetry(loadRetry() + 1); }
   else if (item.kind === 'curse') { localStorage.setItem(OC_KEY, '1'); }
   sfx.lock();
-  game.message = `bought ${item.name}.  ROOT left: ${loadRoot()}.`;
+  game.message = `bought ${item.name}.`;
   refreshShop();
   draw();
 }
 
 function startDraft() {
-  const rng = mulberry32((game.seed ^ (game.run.node * 777) ^ (game.run.conquered * 99991) ^ (game.run.pendingDrafts * 131071)) >>> 0);
+  const rng = mulberry32((game.seed ^ (game.run.plays * 777) ^ (game.run.pendingDrafts * 131071)) >>> 0);
   game.draft = shuffle(draftPool(), rng).slice(0, 3);
   game.phase = 'draft';
-  game.prompt = game.run.pendingDrafts > 1 ? `DRAFT — ${game.run.pendingDrafts} picks left (aggression bonus)` : '';
+  game.bannerLines = [];
+  game.message = game.run.pendingDrafts > 1 ? `${game.run.pendingDrafts} picks left (aggression bonus)` : '';
   draw();
 }
 function pickDraft(i) {
@@ -375,43 +341,32 @@ function pickDraft(i) {
   saveDeck(game.run.deck);
   sfx.lock();
   game.run.pendingDrafts -= 1;
-  if (game.run.pendingDrafts > 0) { startDraft(); return; } // extra picks from cranked aggression
-  game.run.node += 1;
-  newAssemble();
-}
-
-function tierClear() {
-  game.phase = 'tierclear';
-  game.run.root += 100; saveRoot(game.run.root);
-  sfx.win();
-  game.message = '>> THE MACHINE IS YOURS. +100 ROOT. [ENTER] for the shop.';
-  game.prompt = 'the codes were a front. something deeper is listening…';
-  draw();
+  if (game.run.pendingDrafts > 0) { startDraft(); return; }
+  openShop();                                          // draft done → the shop → jack in again
 }
 
 // --- pointer input (mouse + touch) ---
 function onTapCell(col, row) {
   resumeAudio();
-  if (game.phase === 'charselect') {
-    for (let i = 0; i < CHARACTERS.length; i++) if (inRect(col, row, DRAFT_CARDS[i])) return pickChar(i);
+  if (game.phase === 'title') {
+    if (inRect(col, row, BTN_TITLE_CONTINUE)) return startRun();
+    if (inRect(col, row, BTN_TITLE_NEW)) { resetSave(); return startRun(); }
   } else if (game.phase === 'assemble') {
     for (let i = 0; i < HAND_CARDS.length; i++) if (inRect(col, row, HAND_CARDS[i])) return loadSlot(i);
     if (inRect(col, row, BTN_REDRAW)) return redraw();
     if (inRect(col, row, BTN_UNDO)) return undoSlot();
-    if (inRect(col, row, BTN_EXEC)) return gotoTarget();
+    if (inRect(col, row, BTN_START)) return gotoTarget();
   } else if (game.phase === 'target') {
     if (inRect(col, row, BTN_AGGRO_DOWN)) return lowerAggro();
     if (inRect(col, row, BTN_AGGRO_UP)) return raiseAggro();
-    for (let i = 0; i < SECTOR_RECTS.length; i++) if (inRect(col, row, SECTOR_RECTS[i])) return chooseSector(i);
+    if (inRect(col, row, BTN_FIRE)) return launch();   // LAUNCH at the swinging turret
   } else if (game.phase === 'draft') {
     for (let i = 0; i < DRAFT_CARDS.length; i++) if (inRect(col, row, DRAFT_CARDS[i])) return pickDraft(i);
   } else if (game.phase === 'shop') {
     for (let i = 0; i < SHOP_ITEMS.length; i++) if (inRect(col, row, shopRow(i))) return buyShop(SHOP_ITEMS[i].id);
     if (inRect(col, row, BTN_JACKIN)) return startRun();
   } else if (game.phase === 'result') {
-    if (inRect(col, row, BTN_CONTINUE)) return advance();
-  } else if (game.phase === 'tierclear' || game.phase === 'gameover') {
-    if (inRect(col, row, BTN_CONTINUE)) return openShop();
+    return advance();   // whole screen is the button — there's nothing else to do here
   }
 }
 installPointer(screen, onTapCell);
@@ -420,15 +375,16 @@ installPointer(screen, onTapCell);
 window.addEventListener('keydown', (e) => {
   resumeAudio();
   const k = e.key;
-  if (game.phase === 'charselect') {
-    if (k >= '1' && k <= '3') pickChar(+k - 1);
+  if (game.phase === 'title') {
+    if (k === 'Enter') startRun();
+    else if (k === 'n' || k === 'N') { resetSave(); startRun(); }
   } else if (game.phase === 'assemble') {
     if (k >= '1' && k <= '5') loadSlot(+k - 1);
     else if (k === 'r' || k === 'R') redraw();
     else if (k === 'Backspace') { e.preventDefault(); undoSlot(); }
     else if (k === 'Enter') gotoTarget();
   } else if (game.phase === 'target') {
-    if (k >= '1' && k <= '3') chooseSector(+k - 1);
+    if (k === 'Enter' || k === ' ') launch();          // LAUNCH at the swinging turret
     else if (k === '+' || k === '=') raiseAggro();
     else if (k === '-' || k === '_') lowerAggro();
   } else if (game.phase === 'draft') {
@@ -438,16 +394,12 @@ window.addEventListener('keydown', (e) => {
     else if (k === 'Enter') startRun();
   } else if (game.phase === 'result') {
     if (k === 'Enter') advance();
-  } else if (game.phase === 'tierclear' || game.phase === 'gameover') {
-    if (k === 'Enter') openShop();
   }
 });
 
-// pulse loop: repaint (~30fps) while the field is live so captures breathe and
-// the conquer celebration plays. Other screens repaint on demand via draw().
-// The shake runs every frame (60fps) so a jolt settles smoothly even between
-// paints and even on static screens (breach/doom fire outside the exec loop).
-const needsAnim = () => game.node && (game.phase === 'exec' || game.phase === 'result');
+// pulse loop: repaint while the field is live so captures breathe; shake every frame.
+// repaint continuously during AIM (the turret pulses) and the live watch
+const needsAnim = () => game.phase === 'target' || (game.node && (game.phase === 'exec' || game.phase === 'result'));
 let lastPaint = 0, lastFrame = 0, shaking = false;
 function applyShake(dt) {
   trauma.decay(dt);
@@ -466,5 +418,4 @@ function animLoop(t) {
 }
 requestAnimationFrame(animLoop);
 
-startRun();
-draw();
+showTitle();   // boot into the title screen — CONTINUE / NEW gate the first run

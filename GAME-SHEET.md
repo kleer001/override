@@ -18,13 +18,14 @@ world, blah blah.
 Model." No ASSEMBLE / EXEC / RESULT cutaways; it's one screen, one shot.*
 
 1. **Arrange** — slot your cards into your earned slots. They **merge** into one
-   beam: probability adds, direction unions, shape sums. Order doesn't matter —
-   which cards you have slots for does.
+   beam: probability adds, direction unions, shape sums, growth adds. Order doesn't
+   matter — which cards you have slots for does.
 2. **Aim & fire** — a turret slides along the bottom edge; tap once to fire a
    single packet at the column of your choice. That's the only positional call
    in the whole battle.
-3. **Watch** — the packet draws a beam spine up the field; embers emit off it
-   and spread outward, burning terrain and racking up coverage while a top-down
+3. **Watch** — the packet draws a beam spine up the field; embers emit off it,
+   spread outward, and **reproduce** (the beam's growth) so the fire keeps filling —
+   burning terrain and racking up coverage while a top-down
    **trace scan** bears down. Hold **≥50% coverage** through the breach timer →
    **breach**, loot a card, earn a slot, advance. Scan reaches the bottom first
    → traced, **fail skin**, the run ends, bank meta, go again.
@@ -39,18 +40,19 @@ packet is away.
 Every card is a real machine instruction or hacking-history artifact — pirated,
 forbidden warez traded on a BBS. Unlike an accumulator, each card is a
 **complete, self-contained beam**: it bundles a shape (the spine's curve), a
-direction (which way embers emit off the spine), and a probability (which
-spine cells fire). Playing several cards **merges** them into one beam —
-probability adds (capped at 100%), direction unions, shape sums like harmonics
-building a waveform. **Order doesn't matter; which cards you have slots for
-does.**
+direction (which way embers emit off the spine), a probability (which spine
+cells fire), and a growth (how hard its embers **reproduce** as they burn).
+Playing several cards **merges** them into one beam — probability adds (capped
+at 100%), direction unions, shape sums like harmonics building a waveform, growth
+adds. **Order doesn't matter; which cards you have slots for does.**
 
-Examples: `SCRIPT.COM` (the starter forbidden program — Linear, Left, 25%),
-`WORM` (a wide, thin sine spread — the Morris Worm), `HARMONIC`/`PHREAK`
-(stacking sine harmonics into a literal Fourier synthesis), `NOP.SLED` (all
-probability, no direction — inert alone, a deliberately bad card), `FORK()`
-(spawn a second beam spine), `0DAY` (the legendary grail: Sine, both
-directions, 100%). The lore is an endless, free card-name pipeline: LISP
+Examples: `SCRIPT.COM` (the starter forbidden program — Linear, Left, 25%, low
+growth), `WORM` (a wide sine spread with vicious self-replication — the Morris
+Worm; drafted *for* its growth), `HARMONIC`/`PHREAK` (stacking sine harmonics
+into a literal Fourier synthesis), `NOP.SLED` (all probability, no direction, no
+growth — inert alone, a deliberately bad card), `FORK()` (spawn a second beam
+spine — directed growth), `0DAY` (the legendary grail: Sine, both directions,
+100%, high growth). The lore is an endless, free card-name pipeline: LISP
 recursion, the Morris Worm, Turing's Bombe, Ken Thompson's compiler backdoor,
 blue boxes, buffer overflows.
 
@@ -60,7 +62,8 @@ blue boxes, buffer overflows.
 **50%** — same shape and direction, but probability stacks. Two cards, one
 beam, twice the hit rate. There's no order to choose — the trade-off is
 entirely which cards you have slots for: a gorgeous shape can arrive welded to
-a bad direction or a starved probability. Some cards are bad on purpose.
+a bad direction, a starved probability, or dead growth. Some cards are bad on
+purpose.
 
 ---
 
@@ -120,7 +123,7 @@ fires:
   scattershot (may hit hard terrain or a honeypot). Upgrades: +embers, wider
   spread, tighter grouping.
 - **Catapultist** — a deep lob that plants the spine far from the turret;
-  gamble for depth (lands near a vault, or in a dead-end). Upgrades: aim
+  gamble for depth (lands on rich open ground, or in a dead-end). Upgrades: aim
   assist, deeper throw.
 
 Beam/trail shapes are prototyped in `preview/` — see the terrain screenshots.
@@ -142,11 +145,11 @@ Beam/trail shapes are prototyped in `preview/` — see the terrain screenshots.
 ## Design pillars (do not lose these)
 
 1. **You write it, then watch it.** The joy is spectacle, not clicking.
-2. **The deck is bundled triples.** Every card is a complete beam — shape,
-   direction, and probability welded together. Merging cards adds probability,
-   unions direction, and sums shape like Fourier harmonics; order is
-   commutative. The skill is scarce-slot allocation and accepting bundled
-   trade-offs — some cards are bad on purpose.
+2. **The deck is bundled quads.** Every card is a complete beam — shape,
+   direction, probability, and growth welded together. Merging cards adds
+   probability, unions direction, sums shape like Fourier harmonics, and adds
+   growth; order is commutative. The skill is scarce-slot allocation and accepting
+   bundled trade-offs — some cards are bad on purpose.
 3. **The number is visible.** Crack % is territory on a living field, never a
    bare bar.
 4. **Fractal reuse.** One battle engine, seven reskins + one new rule each —

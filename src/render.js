@@ -1,21 +1,24 @@
-// Compose the whole 80x40 screen. Central region is contextual:
-//   assemble / draft -> card panels · target -> the machine (pick a sector) ·
-//   exec / result    -> the sector burning.
+// Compose the whole 80x40 screen as three STATIC panels (they persist across every
+// phase; only their contents swap): FIELD (the memory block), GUTTER (run state +
+// controls), TRAY (cards). See src/layout.js for the geometry.
 
-import { FIELD_W, FIELD_H, WALL, VAULT, idx, SECTORS, WIN_COVERAGE } from './terrain.js';
-import { CODE_DIGITS, crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE } from './battle.js';
-import { evalProgram } from './cards.js';
-import { COLS, ROWS, FIELD_TOP, HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_EXEC, BTN_CONTINUE, BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN } from './layout.js';
-import { CHARACTERS } from './characters.js';
-
+import { FIELD_W, FIELD_H, WALL, idx, WIN_COVERAGE } from './terrain.js';
+import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, SLOTS, spineX, aimColAt } from './battle.js';
+import { mergeBeam, beamGutterLines, cardLabel } from './cards.js';
+import {
+  COLS, ROWS, FIELD, GUTTER, TRAY, FIELD_OX, FIELD_OY,
+  HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE, BTN_CONTINUE,
+  BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, BTN_TITLE_CONTINUE, BTN_TITLE_NEW,
+} from './layout.js';
 export { COLS, ROWS };
 
-const TERRAIN_G = [' ', '▒', '▓', '═', '$', '"']; // OPEN HARD WALL BUS VAULT HONEY
+const TERRAIN_G = [' ', '▒', '▓', '═', '"'];       // OPEN HARD WALL BUS HONEY
+const RAMP = ['·', ':', '=', '+', '*', '@', '%'];  // cold → hot burn strength
+const rampGlyph = (heat) => (heat <= 0 ? RAMP[0] : RAMP[Math.min(RAMP.length - 1, 1 + Math.floor(heat / 3))]);
 
 function blank() { return Array.from({ length: ROWS }, () => new Array(COLS).fill(' ')); }
 function stamp(g, x, y, s) { if (y < 0 || y >= ROWS) return; for (let i = 0; i < s.length; i++) if (x + i >= 0 && x + i < COLS) g[y][x + i] = s[i]; }
-function center(g, y, s) { stamp(g, Math.max(0, Math.floor((COLS - s.length) / 2)), y, s); }
-function bar(pct, w) { const f = Math.round((pct / 100) * w); return '[' + '#'.repeat(f) + '.'.repeat(w - f) + ']'; }
+function bar(pct, w) { const f = Math.max(0, Math.min(w, Math.round((pct / 100) * w))); return '[' + '#'.repeat(f) + '.'.repeat(w - f) + ']'; }
 
 function wrap(text, w) {
   const out = []; let cur = '';
@@ -27,185 +30,220 @@ function wrap(text, w) {
   return out;
 }
 
-function drawCard(g, x, y, key, card, spent) {
-  const w = 15, h = 8;
-  stamp(g, x, y, '┌' + `[${key}]` + '─'.repeat(w - 2 - (key.length + 2)) + '┐');
-  for (let r = 1; r < h - 1; r++) stamp(g, x, y + r, '│' + ' '.repeat(w - 2) + '│');
-  stamp(g, x, y + h - 1, '└' + '─'.repeat(w - 2) + '┘');
-  if (spent) { stamp(g, x + 2, y + 3, 'SPENT'); return; }
-  stamp(g, x + 2, y + 1, card.name.slice(0, w - 3));
-  wrap(card.desc, w - 4).slice(0, 3).forEach((ln, i) => stamp(g, x + 2, y + 3 + i, ln));
-  stamp(g, x + 2, y + h - 2, card.kind.toUpperCase());
+// the shared box frame: top/side/bottom borders with a blank interior. All three
+// framed things (panels, buttons, cards) draw through this, then overlay content.
+function frame(g, x, y, w, h) {
+  const y1 = y + h - 1;
+  stamp(g, x, y, '┌' + '─'.repeat(w - 2) + '┐');
+  for (let r = y + 1; r < y1; r++) stamp(g, x, r, '│' + ' '.repeat(w - 2) + '│');
+  stamp(g, x, y1, '└' + '─'.repeat(w - 2) + '┘');
+}
+
+// a panel box with an optional inset title in the top edge
+function panelBox(g, p, title) {
+  frame(g, p.x, p.y, p.w, p.h);
+  if (title) stamp(g, p.x + 2, p.y, '┤ ' + title.slice(0, p.w - 6) + ' ├');
 }
 
 function drawButton(g, r, dim) {
-  stamp(g, r.x, r.y, '┌' + '─'.repeat(r.w - 2) + '┐');
-  stamp(g, r.x, r.y + 1, '│' + ' '.repeat(r.w - 2) + '│');
-  stamp(g, r.x, r.y + 2, '└' + '─'.repeat(r.w - 2) + '┘');
-  const t = dim ? r.label.replace('▶', '·') : r.label;
-  stamp(g, r.x + Math.max(1, Math.floor((r.w - t.length) / 2)), r.y + 1, t);
+  const h = r.h || 3;
+  frame(g, r.x, r.y, r.w, h);
+  const t = (dim ? r.label.replace('▶', '·') : r.label).slice(0, r.w - 2);
+  stamp(g, r.x + Math.max(1, Math.floor((r.w - t.length) / 2)), r.y + Math.floor(h / 2), t);   // vertically centred
 }
 
-function accPreview(program) {
-  const loaded = program.filter(Boolean);
-  if (!loaded.length) return { expr: '(load cards to preview)', value: 0 };
-  const tok = loaded.map((c) => c.kind === 'add' ? `+${c.value}` : c.kind === 'mult' ? `x${c.value}`
-    : c.kind === 'nop' ? '(nop)' : c.kind === 'goto' ? '(goto)' : c.kind === 'fork' ? '(fork)' : '(int)');
-  return { expr: '0 ' + tok.join(' '), value: evalProgram(loaded).value };
+// a card panel (default 15 wide): name, compact aspect line, wrapped identity
+function drawCard(g, x, y, key, card, spent, w = 15) {
+  frame(g, x, y, w, 8);
+  stamp(g, x, y, '┌' + `[${key}]` + '─'.repeat(w - 2 - (key.length + 2)) + '┐');   // key in the top edge
+  if (spent) { stamp(g, x + 2, y + 3, 'SLOTTED'); return; }
+  stamp(g, x + 2, y + 1, card.name.slice(0, w - 3));
+  if (card.dirs) stamp(g, x + 2, y + 2, cardLabel(card).slice(0, w - 3));
+  wrap(card.desc, w - 4).slice(0, 3).forEach((ln, i) => stamp(g, x + 2, y + 4 + i, ln));
 }
 
-function drawAssemble(g, game) {
-  center(g, 3, 'ASSEMBLE INTRUSION');
-  center(g, 4, 'instructions run left→right on a CPU accumulator — adds early, x late');
-  stamp(g, 2, 5, `DECK: ${game.run.deck.length} cards    PTS: ${game.run.points}`);
-  // badge shows how many copies of this card the deck holds
-  game.hand.forEach((h, i) => {
-    const n = game.run.deck.filter((c) => c.id === h.card.id).length;
-    drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, `x${n}`, h.card, h.used);
-  });
-  stamp(g, 6, 17, 'PROGRAM');
-  stamp(g, 16, 17, [0, 1, 2].map((i) => `[ ${(game.program[i] ? game.program[i].name : '......').padEnd(9).slice(0, 9)} ]`).join(' → '));
-  const p = accPreview(game.program);
-  stamp(g, 6, 19, 'ACCUMULATOR');
-  stamp(g, 18, 19, `${p.expr}   =  ${p.value}   (energy / ping)`);
-  center(g, 22, 'tap a card to load · then choose which sector to hit');
-  drawButton(g, BTN_REDRAW, game.run.points < REDRAW_COST);
-  drawButton(g, BTN_UNDO, false);
-  drawButton(g, BTN_EXEC, game.selection.length < 3);
-}
-
-function drawDraft(g, game) {
-  center(g, 3, 'DRAFT — bank an instruction into your deck');
-  game.draft.forEach((c, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1), c, false));
-  center(g, 19, 'tap a card to keep it');
-}
-
-function drawCharSelect(g, game) {
-  center(g, 3, 'SELECT YOUR JACK-IN');
-  center(g, 4, 'how you break in — your ignition style for this whole run');
-  const chars = (game.run && game.run.availChars) || CHARACTERS;
-  chars.slice(0, 3).forEach((ch, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1),
-    { name: ch.name, desc: ch.desc, kind: 'jack-in' }, false));
-  center(g, 19, chars.length < CHARACTERS.length ? 'tap a jack-in · unlock more in the ROOT shop' : 'tap a jack-in to begin');
+// --- FIELD: the memory block (idle terrain, or live burn), or the shop list ---
+function drawBlockCells(g, machine, sim) {
+  const params = sim ? sim.params : null;
+  for (let y = 0; y < FIELD_H; y++) {
+    const sx = (sim && y <= sim.spineRow) ? spineX(params, y) : -1;   // pending-spine col (per row, not per cell)
+    for (let x = 0; x < FIELD_W; x++) {
+      const c = idx(x, y);
+      let ch;
+      if (sim && y === sim.scanRow && sim.scanRow < FIELD_H) ch = '#';                 // scan line
+      else if (sim && sim.reclaimed && sim.reclaimed.has(c)) ch = 'X';                 // reclaim flash
+      else if (machine.burned[c]) ch = sim ? rampGlyph(sim.heat[c]) : '#';
+      else if (x === sx) ch = '|';                                                     // pending spine
+      else ch = TERRAIN_G[machine.t[c]];
+      g[FIELD_OY + y][FIELD_OX + x] = ch;
+    }
+  }
+  if (sim) g[FIELD_OY + FIELD_H - 1][FIELD_OX + params.p] = '▲';                        // turret
 }
 
 function drawShop(g, game) {
   const d = game.shopData || { root: 0, retry: 0, overclock: false, items: [] };
-  center(g, 3, 'ROOT SHOP');
-  stamp(g, 4, 5, `ROOT: ${d.root}    retry tokens held: ${d.retry}${d.overclock ? '    OVERCLOCK ARMED' : ''}`);
+  stamp(g, 2, 2, 'ROOT SHOP — spend ROOT, then JACK IN');
+  stamp(g, 2, 4, `ROOT: ${d.root}   retry: ${d.retry}${d.overclock ? '   OVERCLOCK ARMED' : ''}`);
   d.items.forEach((it, i) => {
     const r = shopRow(i);
-    const tag = it.owned ? 'OWNED' : `${it.cost} ROOT`;
-    const line = `[${i + 1}] ${it.name.padEnd(23)}${tag.padStart(9)}  ${it.desc}`;
-    stamp(g, r.x, r.y, line.slice(0, r.w));
+    const tag = it.owned ? 'OWNED' : `${it.cost}R`;
+    stamp(g, r.x, r.y, `[${i + 1}] ${it.name.padEnd(22)}${tag.padStart(7)} ${it.desc}`.slice(0, r.w));
   });
   drawButton(g, BTN_JACKIN, false);
-  stamp(g, 4, 32, (game.message || '').slice(0, COLS - 4));
-  center(g, 38, 'tap an item to buy · number keys buy · [ENTER] / JACK IN starts the next run');
 }
 
-function frontier(machine, x, y) {
-  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-    const nx = x + dx, ny = y + dy;
-    if (nx < 0 || nx >= FIELD_W || ny < 0 || ny >= FIELD_H) continue;
-    const n = idx(nx, ny);
-    if (!machine.burned[n] && machine.t[n] !== WALL) return true;
+// AIM overlay: the turret oscillates across the base of the block (aimColAt drives
+// its column from wall-clock `now`) and a dotted preview spine sweeps with it,
+// showing where the packet will draw. The player times LAUNCH to this sweep.
+function drawAim(g, game, now) {
+  const merged = mergeBeam(game.program.filter(Boolean));
+  const col = aimColAt(now);
+  const preview = { p: col, shapes: merged.shapes, amp: merged.amp, freq: merged.freq };
+  for (let y = 0; y < FIELD_H; y++) {
+    const sx = spineX(preview, y);
+    if (y % 2 === 0) g[FIELD_OY + y][FIELD_OX + sx] = '¦';        // dotted preview spine
   }
-  return false;
+  g[FIELD_OY + FIELD_H - 1][FIELD_OX + col] = '▲';               // the sweeping turret
 }
 
-function drawMachineBoard(g, machine) {
-  for (let y = 0; y < FIELD_H; y++) for (let x = 0; x < FIELD_W; x++) {
-    const c = idx(x, y);
-    let ch;
-    if (machine.burned[c]) ch = machine.t[c] === VAULT ? '$' : frontier(machine, x, y) ? '@' : '#';
-    else ch = TERRAIN_G[machine.t[c]];
-    g[FIELD_TOP + y][x] = ch;
-  }
-}
-
-function drawTarget(g, game) {
-  const { machine } = game.run;
-  drawMachineBoard(g, machine);
-  const energy = evalProgram(game.program).value;
-  machine.sectors.forEach((s) => {
-    const label = s.conquered ? `${s.id} ·OWNED·` : `${s.id} ${s.difficulty}`;
-    stamp(g, s.x0 + 1, FIELD_TOP, label.slice(0, s.x1 - s.x0));
-  });
-  const a = game.run.aggression, base = game.run.baseAggro;
-  drawButton(g, BTN_AGGRO_DOWN, game.run.points < AGGRO_REDUCE_COST);
-  drawButton(g, BTN_AGGRO_UP, false);
-  stamp(g, 26, 36, `E/PING ${energy}  ·  AGGRO x${a.toFixed(2)}`);
-  stamp(g, 26, 37, `reward x${rewardMult(a, base).toFixed(2)}  ·  ${draftPicks(a, base)} draft`);
-  if (base < AGGRO_BASE) stamp(g, 26, 38, 'TRAINING RUN — trace runs slow');
-  center(g, 39, `tap a sector to commit · HARDER free (pays more) · SAFER -${AGGRO_REDUCE_COST} PTS`);
-}
-
-// the scanning gnomon: a crosshair converging on the cell it's about to ignite.
-// With beams on (travelling/locking) it draws a vertical beam down the target
-// column and a horizontal beam across the sector; with beams off (during a
-// bloom) only the '╬' reticle remains, so the crosshair is continuously on
-// screen without covering the burn. Drawn before the sector labels so it never
-// clobbers them. main.js owns the position + on/off timing.
-function drawGnomon(g, node, gn) {
-  if (!gn || !gn.active || gn.x == null) return;
-  const s = node.sector, gx = gn.x, gy = gn.y;
-  if (gx < s.x0 || gx > s.x1 || gy < 0 || gy >= FIELD_H) return;
-  if (gn.beams) {
-    for (let y = 0; y < FIELD_H; y++) g[FIELD_TOP + y][gx] = '║';   // vertical scan beam
-    for (let x = s.x0; x <= s.x1; x++) g[FIELD_TOP + gy][x] = '═';  // horizontal scan beam
-  }
-  g[FIELD_TOP + gy][gx] = '╬';                                      // the lock reticle
-}
-
-function drawBurning(g, game) {
-  const node = game.node;
-  drawMachineBoard(g, game.run.machine);
-  // the descending TRACE SCAN, overlaid across the target sector
-  if (node.scanRow < FIELD_H) {
-    for (let x = node.sector.x0; x <= node.sector.x1; x++) g[FIELD_TOP + node.scanRow][x] = '─';
-  }
-  drawGnomon(g, node, game.gnomon);
-  game.run.machine.sectors.forEach((s) => {
-    const tag = s.conquered ? `${s.id} ·OWNED·` : s === node.sector ? `${s.id} «BURNING»` : s.id;
-    stamp(g, s.x0 + 1, FIELD_TOP, tag.slice(0, s.x1 - s.x0));
-  });
-  stamp(g, 0, 36, 'PROGRAM  ');
-  stamp(g, 9, 36, [0, 1, 2].map((i) => {
-    const name = (game.program[i] ? game.program[i].name : '......').padEnd(9).slice(0, 9);
-    return game.phase === 'exec' && game.playhead === i ? `[>${name}<]` : `[ ${name} ]`;
-  }).join(''));
-  const cp = crackPct(node);
-  const breach = node.breachLeft > 0 ? ` HOLD ${node.breachLeft}` : node.breachLeft === 0 ? ' BREACH!' : '';
-  stamp(g, 0, 37, `CRACK ${bar(cp, 30)} ${cp.toFixed(0)}%/${WIN_COVERAGE}%  E${node.energy}${breach}`);
-  const log = node.log.slice(-2);
-  stamp(g, 0, 38, (log[0] || '').slice(0, COLS));
-  stamp(g, 0, 39, (log[1] || game.message || '').slice(0, COLS));
-}
-
-export function buildScreen(game) {
-  const g = blank();
+function drawField(g, game, now) {
   const { phase, run, node } = game;
-
-  const tracePct = node ? (node.scanRow / FIELD_H) * 100 : 0;
-  stamp(g, 0, 0, `TIER ${run.tier}: THE MACHINE   CONQUERED ${run.conquered}/3   ROOT:${run.root}`);
-  if (node) stamp(g, 54, 0, `TRACE${bar(tracePct, 8)} ${node.scanRow}/${FIELD_H}`);
-
-  let code = 'CODE  ';
-  for (let i = 0; i < CODE_DIGITS; i++) code += (run.locked[i] ? String(run.code[i]) : '_') + ' ';
-  stamp(g, 0, 1, code);
-  stamp(g, 0, 2, game.prompt || '');
-
-  if (phase === 'charselect') drawCharSelect(g, game);
-  else if (phase === 'assemble') drawAssemble(g, game);
-  else if (phase === 'draft') drawDraft(g, game);
-  else if (phase === 'target') drawTarget(g, game);
-  else if (phase === 'shop') drawShop(g, game);
-  else if (node) drawBurning(g, game);
-
-  if (phase === 'result' || phase === 'tierclear' || phase === 'gameover') {
+  if (phase === 'shop') { drawShop(g, game); return; }
+  const sim = node && node.sim;
+  drawBlockCells(g, run.machine, sim);
+  if (phase === 'target') drawAim(g, game, now);
+  // result banner over the block
+  if (phase === 'result') {
+    const msg = (game.bannerLines || []);
+    const bx = FIELD.x + 3, bw = FIELD.w - 6;
+    for (let i = 0; i < msg.length; i++) {
+      const t = msg[i].slice(0, bw);
+      stamp(g, bx + Math.max(0, Math.floor((bw - t.length) / 2)), 17 + i, t);
+    }
     drawButton(g, BTN_CONTINUE, false);
-    stamp(g, 0, 39, (game.message || '').slice(0, COLS));
   }
+}
+
+// --- GUTTER: run state + phase controls. Lines FLOW from a cursor rather than
+// hand-picked row numbers, so adding a readout can't collide with the ones below.
+// The gutter buttons sit at fixed layout rows (20+); stats always end above them.
+function drawGutter(g, game) {
+  const { phase, run, node } = game;
+  let r = 0;
+  const L = (s = '') => stamp(g, GUTTER.x + 2, 1 + r++, String(s).slice(0, GUTTER.w - 3));
+  const gap = () => { r++; };
+
+  L(`ROOT ${run.root}`); L(`DECK ${run.deck.length}`); gap();
+
+  if (node && (phase === 'exec' || phase === 'result')) {
+    const sim = node.sim, cp = crackPct(node);
+    L('TRACE'); L(bar((sim.scanRow / FIELD_H) * 100, 10)); L(`${sim.scanRow}/${FIELD_H}`); gap();
+    L('COVERAGE'); L(bar(cp, 10)); L(`${cp.toFixed(0)}% /${WIN_COVERAGE}%`);
+    L(sim.breachLeft > 0 ? `HOLD ${sim.breachLeft}` : sim.breachLeft === 0 ? 'BREACH!' : ''); gap();
+    L(`EMBERS ${sim.embers.length}`); gap();
+    const [bl1, bl2] = node.beamLines;                          // cached at fire — no per-frame merge
+    L('BEAM'); L(bl1); L(bl2); gap();
+    L(`AGGRO x${node.aggro.toFixed(2)}`);
+  } else if (phase === 'assemble') {
+    L('BEAM');
+    if (game.program.some(Boolean)) { const [l1, l2] = beamGutterLines(mergeBeam(game.program.filter(Boolean))); L(l1); L(l2); }
+    else L('(slot cards)');
+    gap(); L(`SLOTS ${game.program.filter(Boolean).length}/${SLOTS}`);
+    drawButton(g, BTN_REDRAW, run.root < REDRAW_COST);
+    drawButton(g, BTN_UNDO, !game.selection.length);
+    // START lives in the tray next to the cards (drawn by drawTray)
+  } else if (phase === 'target') {
+    const a = run.aggression, base = run.baseAggro;
+    const [l1, l2] = beamGutterLines(mergeBeam(game.program.filter(Boolean)));
+    L('BEAM'); L(l1); L(l2); gap();
+    L(`AGGRO x${a.toFixed(2)}`); L(`reward x${rewardMult(a, base).toFixed(2)}`); L(`${draftPicks(a, base)} draft`);
+    if (base < AGGRO_BASE) L('TRAINING');
+    drawButton(g, BTN_AGGRO_DOWN, run.root < AGGRO_REDUCE_COST);
+    drawButton(g, BTN_AGGRO_UP, false);
+  }
+
+  // transient feedback flows right below the stats (above the fixed buttons).
+  if (game.message) { gap(); wrap(game.message, GUTTER.w - 3).slice(0, 3).forEach((ln) => L(ln)); }
+}
+
+// --- TRAY: hand / draft / loadout ---
+function drawTray(g, game) {
+  const { phase } = game;
+  if (phase === 'draft') {
+    game.draft.forEach((c, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1), c, false));
+  } else if (phase === 'assemble') {
+    game.hand.forEach((h, i) => {
+      const n = game.run.deck.filter((c) => c.id === h.card.id).length;
+      drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, `x${n}`, h.card, h.used, HAND_CARDS[i].w);
+    });
+    drawButton(g, BTN_START, !game.program.some(Boolean));   // the primary go control, beside the cards
+  } else {
+    // target / exec / result: show the slotted loadout so you see what fired
+    const slotted = game.program.filter(Boolean);
+    if (slotted.length) slotted.forEach((c, i) => drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, `S${i + 1}`, c, false, HAND_CARDS[i].w));
+    if (game.phase === 'target') drawButton(g, BTN_FIRE, false);   // FIRE, beside the loadout
+  }
+}
+
+// panel titles change with the phase; the panels themselves never move
+function titles(phase) {
+  const tray = phase === 'draft' ? 'DRAFT — bank a card into your deck'
+    : phase === 'assemble' ? 'LOADOUT — slot cards, then ▶ START'
+      : phase === 'target' ? 'AIM — the turret sweeps · time your LAUNCH'
+        : 'LOADOUT — the beam you fired';
+  const field = phase === 'shop' ? 'ROOT SHOP' : 'THE MACHINE — one memory block';
+  return { field, tray };
+}
+
+// A 5×5 block-letter font (built from █, which the embedded GridMono covers) — the
+// "2× font" for the boot/title banner. Only the letters OVERRIDE needs are defined.
+const GLYPH5 = {
+  O: ['█████', '█   █', '█   █', '█   █', '█████'],
+  V: ['█   █', '█   █', '█   █', ' █ █ ', '  █  '],
+  E: ['█████', '█    ', '████ ', '█    ', '█████'],
+  R: ['████ ', '█   █', '████ ', '█  █ ', '█   █'],
+  I: ['█████', '  █  ', '  █  ', '  █  ', '█████'],
+  D: ['████ ', '█   █', '█   █', '█   █', '████ '],
+};
+// stamp `text` as 5-tall block letters from (x,y); letters are 5 wide + a 1-col gap.
+function drawBig(g, x, y, text) {
+  let cx = x;
+  for (const chr of text.toUpperCase()) {
+    const glyph = GLYPH5[chr];
+    if (glyph) { for (let r = 0; r < 5; r++) stamp(g, cx, y + r, glyph[r]); cx += 6; }
+    else cx += 3;   // unknown/space
+  }
+}
+const center = (g, y, s) => stamp(g, Math.max(0, Math.floor((COLS - s.length) / 2)), y, s);
+
+// The boot / title screen — a full-screen takeover (no three-panel layout). NEW
+// wipes the save; CONTINUE resumes. game.titleWins carries the saved breach count.
+function drawTitle(g, game) {
+  frame(g, 0, 0, COLS, ROWS);
+  drawBig(g, 16, 6, 'OVERRIDE');
+  center(g, 13, 'an idle deckbuilding intrusion battler · 1983');
+  const wins = game.titleWins || 0;
+  center(g, 16, wins > 0 ? `saved progress — ${wins} breach${wins === 1 ? '' : 'es'} logged`
+    : 'no saved progress yet — jack in to begin');
+  drawButton(g, BTN_TITLE_CONTINUE, false);
+  drawButton(g, BTN_TITLE_NEW, false);
+  center(g, 30, 'CONTINUE resumes your run · NEW wipes the save and starts fresh');
+  center(g, 34, '[ENTER] continue     [N] new');
+}
+
+export function buildScreen(game, now = 0) {
+  const g = blank();
+  const { phase } = game;
+  if (phase === 'title') { drawTitle(g, game); return g.map((r) => r.join('')).join('\n'); }
+  const t = titles(phase);
+  panelBox(g, FIELD, t.field);
+  panelBox(g, GUTTER, 'STATUS');
+  panelBox(g, TRAY, t.tray);
+
+  drawField(g, game, now);
+  drawGutter(g, game);
+  drawTray(g, game);
+
   return g.map((r) => r.join('')).join('\n');
 }

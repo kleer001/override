@@ -40,12 +40,29 @@ html, body {
 #screen {
   margin: 0;
   color: var(--amber);
+  /* GridMono (grid-font.css) is the SOLE grid font — a subset of DejaVu Sans Mono
+     with every glyph (ASCII + box-drawing + block + arrows) at one uniform advance,
+     embedded so the 80x40 grid never falls back to a device font and shears. The
+     monospace after it is a catastrophic-only net if the embed itself fails to load. */
+  font-family: 'GridMono', monospace;
   /* size so all 80 columns fit the viewport width, capped on desktop */
   font-size: min(1.95vw, 13px);
   line-height: 1.18;
   letter-spacing: 0;
   white-space: pre;
+  /* kill everything that can nudge a glyph off its cell */
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0, "kern" 0;
+  font-kerning: none;
+  text-rendering: optimizeSpeed;
   text-shadow: 0 0 4px rgba(255, 176, 0, 0.7), 0 0 10px rgba(255, 176, 0, 0.25);
+  /* the tap surface: kill mobile pan/zoom + long-press selection so every touch
+     reaches the pointerdown handler as a clean tap (touch-action isn't inherited
+     from .crt) */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* burned cells run hotter than base phosphor; opacity (set inline) does the pulse */

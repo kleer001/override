@@ -1,16 +1,17 @@
-// Beam-Card Model — pure simulation (research/ember-model.md §2–§9).
+// Beam-Card Model — the game's canonical pure simulation (research/ember-model.md
+// §2–§9). This is the reference implementation the whole game runs on: src/battle.js
+// layers run/aggression/CODE concerns on top, and preview/beam.html + beam-balance.js
+// consume it directly for calibration.
 //
-// NO DOM in this file: it is imported by preview/beam.js (the sandbox) AND by a
-// headless node smoke test. All randomness flows through a single seeded
-// mulberry32 rng so a (seed, params) pair replays identically. The real terrain
-// generator and reclaimRow are reused verbatim from src/terrain.js so tuned
-// numbers port straight into the game.
+// NO DOM in this file. All randomness flows through a seeded mulberry32 rng so a
+// (seed, params) pair replays identically. Terrain generation + reclaimRow are
+// reused from src/terrain.js.
 
-import { mulberry32, randInt } from '../src/rng.js';
+import { mulberry32, randInt } from './rng.js';
 import {
   generateMachine, reclaimRow,
-  FIELD_W, FIELD_H, COST, idx, WALL, SECTORS,
-} from '../src/terrain.js';
+  FIELD_W, FIELD_H, COST, idx, WALL, HONEY, SECTORS,
+} from './terrain.js';
 
 export { FIELD_W, FIELD_H, SECTORS, WALL, idx };
 
@@ -60,6 +61,16 @@ export function spineX(params, y) {
   return x < 0 ? 0 : x > FIELD_W - 1 ? FIELD_W - 1 : x;
 }
 
+// The AIM turret oscillates across the block on a fixed period (pendulum/sine).
+// The UI derives the current column from wall-clock `now`; the renderer and the
+// launch handler both call this so they fire from exactly where it's drawn. Pure —
+// the sim itself never calls it.
+export const AIM_PERIOD = 2500;   // ms per full back-and-forth sweep
+export function aimColAt(now) {
+  const c = (FIELD_W - 1) / 2;
+  return Math.round(c + c * Math.sin((2 * Math.PI * now) / AIM_PERIOD));
+}
+
 const clampBudgetCost = (terr, jit) => {
   const base = COST[terr];
   if (base === Infinity) return Infinity;                     // WALL stays a firebreak
@@ -78,20 +89,21 @@ export function defaultParams() {
     probMode: 'prob',                            // 'prob' (additive %) | 'mask' (every-Nth)
     prob: 60,                                     // merged emission probability %
     maskN: 5,                                     // every-Nth deterministic mask
-    pool: 800,                                     // REACH pool for the whole packet (§4; calibrated start)
+    pool: 1000,                                    // REACH pool for the whole packet (§4; calibrated on the 62×28 block)
     reachCap: 20,                                  // max REACH any one ember may hold
     spreadReach: 6,                                // GROWTH: reach of a child spawned when an ember reproduces
     reproduce: 0.15,                               // GROWTH: per-step chance a burning ember spawns a spreading child
-    scanSpeed: 0.5,                                // scan rows advanced per tick
+    scanSpeed: 0.40,                               // scan rows advanced per tick
     reclaim: 6,                                     // reclaimed cells per scanned row
-    breachHold: 18,                                 // ticks held ≥win to breach
+    breachHold: 15,                                 // ticks held ≥win to breach
     winCoverage: 50,                                // % of claimable cells to breach
   };
 }
 
-// Build a fresh sim over real generated terrain. sectorIndex 0..2.
-export function createSim(seed, sectorIndex, params) {
-  const machine = generateMachine(seed >>> 0);
+// Build a sim over an EXISTING machine (the game's persistent board). sectorIndex
+// 0..2; rng is a seeded mulberry32 (distinct from the terrain-gen rng). The battle
+// layer uses this so conquered sectors persist across a run on one shared machine.
+export function createSimOn(machine, sectorIndex, params, rng) {
   const sector = machine.sectors[sectorIndex % machine.sectors.length];
   // claimable = every non-WALL cell in the sector (coverage denominator).
   let claim = 0;
@@ -102,21 +114,31 @@ export function createSim(seed, sectorIndex, params) {
   return {
     machine, sector, claim,
     params,
-    rng: mulberry32((seed ^ 0x9e3779b9) >>> 0),   // sim rng, distinct from terrain gen
+    rng,
     heat: new Float32Array(FIELD_W * FIELD_H),      // per-cell burn strength (render ramp)
     reclaimed: new Set(),                            // cells reclaimed on the last tick (flash)
     embers: [],                                       // live embers
     spineRow: FIELD_H - 1,                             // next spine row to emit (bottom→top)
     maskIdx: 0,                                          // deterministic mask counter
     scanRow: 0, scanAcc: 0,                               // trace scan position
+    honeyBurned: 0,                                        // honeypots burned so far (trace spike)
     breachLeft: -1,                                        // breach countdown (ticks)
+    cov: 0,                                                 // cached coverage %, refreshed each tick
     outcome: null,                                          // null | 'win' | 'traced'
     tick: 0,
   };
 }
 
+// Convenience: fresh machine + sim (sandbox / balance harness / tests).
+export function createSim(seed, sectorIndex, params) {
+  const machine = generateMachine(seed >>> 0);
+  const rng = mulberry32((seed ^ 0x9e3779b9) >>> 0);
+  return createSimOn(machine, sectorIndex, params, rng);
+}
+
 function burn(sim, x, y, strength) {
   const c = idx(x, y);
+  if (!sim.machine.burned[c] && sim.machine.t[c] === HONEY) sim.honeyBurned++;  // tripped bait
   sim.machine.burned[c] = 1;
   if (strength > sim.heat[c]) sim.heat[c] = strength;         // hottest wins (near-spine glow)
 }
@@ -202,11 +224,13 @@ function stepEmbers(sim) {
 
 // The trace scan (§9): descend at scanSpeed; on each crossed row reclaim up to
 // `reclaim` burned cells back to neutral. Reuses the real reclaimRow, snapshotting
-// the row first so freshly-reclaimed cells can flash (render ramp `X`).
+// the row first so freshly-reclaimed cells can flash (render ramp `X`). Honeypots
+// tripped since the last tick nudge the scan faster (§9 trace spike).
 function advanceScan(sim) {
   const p = sim.params;
   sim.reclaimed = new Set();
-  sim.scanAcc += p.scanSpeed;
+  sim.scanAcc += p.scanSpeed + (sim.honeySpike || 0);
+  sim.honeySpike = 0;
   while (sim.scanAcc >= 1 && sim.scanRow < FIELD_H) {
     const y = sim.scanRow;
     const before = [];
@@ -234,11 +258,13 @@ export function stepSim(sim) {
   if (sim.outcome) return snapshot(sim);
   sim.tick++;
 
+  const honeyBefore = sim.honeyBurned;
   if (sim.spineRow >= 0) { emitSpineRow(sim, sim.spineRow); sim.spineRow--; }
   stepEmbers(sim);
+  if (sim.honeyBurned > honeyBefore) sim.honeySpike = (sim.honeySpike || 0) + (sim.honeyBurned - honeyBefore);
   advanceScan(sim);
 
-  const cov = coverage(sim);
+  const cov = sim.cov = coverage(sim);
   const p = sim.params;
   if (cov >= p.winCoverage) {
     if (sim.breachLeft < 0) sim.breachLeft = p.breachHold;   // start breach timer
@@ -255,7 +281,7 @@ export function stepSim(sim) {
 export function snapshot(sim) {
   return {
     tick: sim.tick,
-    coverage: coverage(sim),
+    coverage: sim.cov,
     embers: sim.embers.length,
     scanRow: sim.scanRow,
     breachLeft: sim.breachLeft,

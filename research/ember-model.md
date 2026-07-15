@@ -2,7 +2,8 @@
 
 *The settled core of OVERRIDE's mechanic. Supersedes, in order: the free
 omnidirectional flood (MVP), the ordered-accumulator point-ignition, and the
-opcode-alphabet sketch. Status: core locked 2026-07-14; constants un-tuned.*
+opcode-alphabet sketch. Status: core locked 2026-07-14; GROWTH folded in as the
+4th card aspect 2026-07-14; constants un-tuned.*
 
 Terminology: **embers → PINGS** informally; "ember" still appears in older code.
 The old ordered CPU **accumulator** (BRUTE+3 / XOR×2) is **retired** — its job
@@ -19,8 +20,8 @@ over the 2026-07-14 design pass:
 
 - Ignition is a **Peggle turret** firing **one packet** that draws a **beam spine**
   across the field; embers emit off the spine and spread while you watch.
-- The deck is **bundled-triple cards**: every card is a complete beam —
-  `(shape, direction, probability)` — and playing several **merges** them.
+- The deck is **bundled-quad cards**: every card is a complete beam —
+  `(shape, direction, probability, growth)` — and playing several **merges** them.
 - The fiction is a **script-kiddie arc**: cards are forbidden/pirated programs,
   slots are terminal memory, and cracking systems earns both (§7).
 
@@ -39,11 +40,15 @@ spend **cost**, not a gate — §4).
    (§2). At each spine cell it rolls the merged **probability**; on a hit it emits
    ember(s) in the merged **direction(s)**.
 4. **The watch** — hands off. Emitted embers travel outward over time, spending
-   **reach** against the terrain cost table (§4). The **trace scan** descends and
-   claws cells back (§9). Coverage is the tug-of-war.
+   **reach** against the terrain cost table (§4), and — driven by the merged
+   **growth** aspect — **reproduce**: a burning ember may spawn a child onto a
+   fresh unburned neighbour, so the fire sustains and fills instead of guttering
+   when the initial spray runs out (§4). The **trace scan** descends and claws
+   cells back (§9). Coverage is the tug-of-war.
 5. **Result** — hold **≥50% (WIN_COVERAGE)** through the **breach timer** → sector
    breached, loot a card, earn a slot, advance. Scan bottoms out first → traced,
-   run ends, bank meta (§9–§10).
+   run ends, bank meta (§9–§10). (Tier-1 50% is deliberately barely winnable — you
+   barely crack your own terminal; GROWTH is what makes it reachable, §4.)
 
 The only input in the whole battle is *arrange, slide, fire.*
 
@@ -62,18 +67,20 @@ The only input in the whole battle is *arrange, slide, fire.*
 
 ---
 
-## 3. THE CARD MODEL — bundled triples (the core)
+## 3. THE CARD MODEL — bundled quads (the core)
 
-**Every card is a complete, valid beam.** A card bundles three aspects:
+**Every card is a complete, valid beam.** A card bundles four aspects:
 
 | Aspect | What it sets | Tier-1 vocabulary | Default (unslotted) |
 |--------|--------------|-------------------|---------------------|
 | **Shape** | the spine curve `shape(y)` | Linear (pencil) · Sine · 3rd-harmonic · Rectified-sin · Tan · Sawtooth | Linear |
 | **Direction** | which way embers emit off the spine | `←` `→` · diagonals `↖↗↘↙` · `↑` `↓` | none (inert until a direction is present) |
 | **Probability** | which spine cells emit | 10% · 25% · 50%, or a deterministic pattern (every-other = 50%, every-fifth = 20%) | 0% (nothing fires) |
+| **Growth** | how burning embers **reproduce** — each burning ember's per-step chance to spawn a child onto a fresh unburned neighbour, and how far that child persists | None · Low (10%) · Med (20%) · High (40%) reproduce, coupled to a child spread-reach | 0% (fire dies when the spray budget is spent) |
 
-The starter forbidden card is **`SCRIPT.COM = Linear + Left + 25%`**. Weak on
-purpose — one card barely cracks your own terminal.
+The starter forbidden card is **`SCRIPT.COM = Linear + Left + 25% + Low-growth`**.
+Weak on purpose — one card, with just enough reproduce to barely crack your own
+terminal (§4 — GROWTH is what lets a single finite-REACH packet breach at all).
 
 ### Merge rules (how slotted cards combine into one beam)
 
@@ -89,7 +96,14 @@ purpose — one card barely cracks your own terminal.
   **Fourier synthesis** — you *build a waveform out of harmonics*, dead-on theme for
   an '83 signals/phreak game, and legible because you watch the waves add. Amplitude
   clips to the board.
-- **Order does not matter.** All three merges are commutative — this is the
+- **Growth ADDS** its reproduce chance, capped (Tier-1 cap ~60% — a high-growth
+  stack chaos-fills; overflow past the cap is wasted, same "bad stack" lever as
+  probability). The child **spread-reach** (how far a spawned child persists) takes
+  the **MAX** of the contributing cards — the most persistent growth on the beam
+  sets how long its children live. More growth = the fire *sustains* and fills 2D
+  instead of guttering when the initial spray budget runs out (§4). Growth is the
+  sustained-burn lever; REACH is the initial-spray lever — two separate knobs (§12).
+- **Order does not matter.** All four merges are commutative — this is the
   conscious trade for the bundled model (it retires the old ordered accumulator).
   Cost-benefit now lives in **slot allocation + additive stacking + bundled
   trade-offs**, not sequencing.
@@ -110,9 +124,13 @@ Masks read as *designed* textures (a regular comb — legible, on-theme for `COM
 ### Why bundling is the whole point (the MTG discipline)
 
 You draft the **package, not the aspect.** A gorgeous sine spine arrives welded to
-*its* direction and *its* probability. "Some cards are bad on purpose" gets its
-teeth here: a great shape stuck on `Left`-only at `10%` is a real cost you pay,
-pair, or pass. **Distinct decks are which compromises you accept.**
+*its* direction, *its* probability, and *its* growth. "Some cards are bad on
+purpose" gets its teeth here: a great shape stuck on `Left`-only at `10%` with
+`None`-growth is a real cost you pay, pair, or pass — and a monster reproduce rate
+can arrive welded to a shape you didn't want. Four welded aspects is the deliberate
+onboarding weight: the payoff is that the grail card `WORM` (High-growth self-spread)
+is worth chasing precisely because you can't buy its growth à la carte.
+**Distinct decks are which compromises you accept.**
 
 ---
 
@@ -120,18 +138,31 @@ pair, or pass. **Distinct decks are which compromises you accept.**
 
 On a firing spine cell, each unioned direction emits an ember. All embers from the
 packet draw from **one shared REACH pool**, so they **travel outward over time**,
-burning cells until their share of the pool is spent:
+burning cells until their share of the pool is spent — and as they burn they
+**reproduce** off the merged GROWTH aspect, so the fire keeps filling instead of
+dying at pool's end:
 
 ```
 POOL   = terminal REACH stat (+ any REACH cards)
-share  = min(REACH_CAP, POOL / max(1, emberCount))   // per-ember budget
+share  = min(REACH_CAP, POOL / max(1, emberCount))   // per-ember initial budget
+GROWTH = merged (reproduce %, spreadReach)           // §3 growth aspect
 per emitted ember:  budget = share
   each spread tick (cadence = default rate, §8):
     step one cell in the emission direction (± terrain-fingered jitter)
     budget -= COST[cell.terrain]      // BUS refunds, HARD is steep
     burn cell
+    if rng() < GROWTH.reproduce and emberCount < MAX_EMBERS:
+        spawn a child onto a random UNBURNED orthogonal neighbour,
+        child.budget = GROWTH.spreadReach      // fresh sustained-burn budget
     if budget <= 0 or cell is WALL: ember is spent
 ```
+
+**MAX_EMBERS** caps the live population (compute guard against a runaway branching
+process). The **unburned-neighbour rule** — children only seed onto not-yet-burned
+cells — plus the scan's ongoing erosion (§9) keeps reproduction *generative but
+gated*: it grows coverage toward an equilibrium against the scan, it does **not**
+reopen the free omnidirectional flood the MVP model killed (no child ever re-burns
+held ground, so growth can't run away past the board or the clock).
 
 **Reach is a SHARED POOL — this is the depth/width trade.** The retired accumulator's
 job (how far/deep a volley burns) is now a per-packet **REACH pool**: a **terminal
@@ -140,9 +171,18 @@ via ROOT and a few rare cards, but **split across every ember the packet emits**
 trade then falls out for free: a Curtain (high probability × both directions = many
 embers) spreads each ember *shallow* — wide but thin; a Lance (low probability × one
 direction = few embers) concentrates the pool — *deep* but narrow. `REACH_CAP` stops
-a lone ember from tunnelling the whole board. So the three-aspect card stays clean (no
-per-card reach number), width-vs-depth becomes a real build lever, and the terrain
-interaction (rips down BUS, stalls on HARD) is preserved.
+a lone ember from tunnelling the whole board. So the card carries no per-card reach
+number (reach stays a meta-stat), width-vs-depth becomes a real build lever, and the
+terrain interaction (rips down BUS, stalls on HARD) is preserved.
+
+**REACH and GROWTH are two separate budgets — don't conflate them.** REACH (the
+shared pool) is the *initial spray*: how far the first wave of embers throws before
+guttering. GROWTH (the card aspect) is the *sustained burn*: whether that spray keeps
+reproducing into fresh ground afterward. Calibration proved a single finite-REACH
+packet with no growth caps at ~40–57% and the fire *dies*; adding reproduce grows
+coverage toward an equilibrium (a curtain stack climbs 55% → 83% as growth rises). A
+deck can be deep-REACH/low-GROWTH (a lance that stabs far once) or shallow-REACH/
+high-GROWTH (a spark that catches and spreads) — genuinely different fires.
 
 **COST table** (unchanged; validated split):
 
@@ -150,10 +190,12 @@ interaction (rips down BUS, stalls on HARD) is preserved.
 |---------|------|------|
 | OPEN | 1 | baseline |
 | HONEY | 1 | random placement → you can't avoid tripping it (spikes the trace) |
-| VAULT | 2 | toll for the prize (resolves a CODE digit) |
 | HARD | 6 | a curve, not a wall — deep reach affords a few |
 | BUS | −1 | refund → embers rip down bus lines (accelerant) |
 | WALL | ∞ | unaffordable firebreak |
+
+*(VAULT/CODE cut 2026-07-14 — a precision reward the area-coverage field can't
+support; the win is pure coverage now. Five terrain types.)*
 
 No burn threshold — the heat-6 "wall" is a smooth cost curve.
 
@@ -161,30 +203,38 @@ No burn threshold — the heat-6 "wall" is a smooth cost curve.
 
 ## 5. The card pool (authored, ~25–30; representative slice)
 
-Do **not** expose the raw shape×direction×probability grid — it reads as a
+Do **not** expose the raw shape×direction×probability×growth grid — it reads as a
 spreadsheet. Hand-author named cards with identity and a deliberate wrinkle. Names
-are the free "dawn of computing" pipeline.
+are the free "dawn of computing" pipeline. **Growth** is the new 4th aspect
+(reproduce rate); it's welded to each card like the other three, so a great shape
+can arrive with dead growth and a monster spreader can arrive on a bad shape.
 
-| Card | Shape | Dir | Prob | Identity / wrinkle |
-|------|-------|-----|------|--------------------|
-| `SCRIPT.COM` | Linear | ← | 25% | the starter forbidden card |
-| `SCRIPT.SYS` | Linear | → | 25% | the mirror — early draft to open a curtain |
-| `BUFFER.OVR` | Linear | ←→ | 50% | overflow; the curtain workhorse |
-| `WORM` | Sine | ←→ | 25% | wide, thin — the Morris spread |
-| `HARMONIC` | Sine(2×) | ←→ | 25% | octave up; sums with WORM toward a square |
-| `PHREAK` | Sine(3×) | ← | 25% | 3rd harmonic; squares the wave |
-| `BLUEBOX` | Rect-sin | ↑ | 50% | phreak jets straight up toward objectives |
-| `LOGICBOMB` | Step | ↓ | 50% | drives downward, toward the core |
-| `XOR` | Linear | ↗↙ | 25% | crossing diagonals; fills gaps |
-| `DAEMON` | Linear | ← | every-5th (20%) | sparse but cheap; deterministic mask |
-| `NOP.SLED` | Linear | — | 50% | high prob, **no direction** — inert alone (pure enabler; bad on purpose) |
-| `TANGENT` | Tan | ←→ | 10% | asymptote blowout — mostly wasted, sometimes clutch |
-| `ROOTKIT` | Linear | ←→ | 75% | premium; expensive |
-| `PAYLOAD` | Sine | ←→ | 50% | rare workhorse you grind for |
-| `0DAY` | Sine | ←→ | 100% | legendary grail |
+| Card | Shape | Dir | Prob | Growth | Identity / wrinkle |
+|------|-------|-----|------|--------|--------------------|
+| `SCRIPT.COM` | Linear | ← | 25% | Low | the starter forbidden card — just enough reproduce to barely crack your own terminal |
+| `SCRIPT.SYS` | Linear | → | 25% | Low | the mirror — early draft to open a curtain |
+| `BUFFER.OVR` | Linear | ←→ | 50% | Med | overflow; the curtain workhorse |
+| `WORM` | Sine | ←→ | 25% | **High** | the Morris spread — low prob, but self-replicates hard; the growth grail |
+| `HARMONIC` | Sine(2×) | ←→ | 25% | Med | octave up; sums with WORM toward a square |
+| `PHREAK` | Sine(3×) | ← | 25% | Low | 3rd harmonic; squares the wave |
+| `BLUEBOX` | Rect-sin | ↑ | 50% | Low | phreak jets straight up toward objectives |
+| `LOGICBOMB` | Step | ↓ | 50% | Med | drives downward, toward the core |
+| `XOR` | Linear | ↗↙ | 25% | Low | crossing diagonals; fills gaps |
+| `DAEMON` | Linear | ← | every-5th (20%) | **High** | sparse spine but a persistent background spawner — deterministic mask meets self-spread |
+| `NOP.SLED` | Linear | — | 50% | None | high prob, **no direction, no growth** — inert alone (pure enabler; bad on purpose) |
+| `TANGENT` | Tan | ←→ | 10% | None | asymptote blowout — mostly wasted, sometimes clutch |
+| `ROOTKIT` | Linear | ←→ | 75% | Med | premium; expensive |
+| `PAYLOAD` | Sine | ←→ | 50% | High | rare workhorse you grind for |
+| `0DAY` | Sine | ←→ | 100% | High | legendary grail — dense *and* self-spreading |
 
-Later-tier cards add new aspects (§8): `FORK()` (spine emits sub-emitters),
-`FIREWALL.C` (hold/harden vs. the scan), homing/pierce IQ.
+Growth-vocabulary shorthand: **None** = 0% reproduce (fire dies at pool's end) ·
+**Low** ≈ 10% · **Med** ≈ 20% · **High** ≈ 40% (chaos-fill). `WORM` and `DAEMON`
+are the two cards drafted *for* their growth — the self-replication fantasy made
+literal.
+
+Later-tier cards add new aspects (§8): `FORK()` (spine emits sub-emitters — a
+*directed* escalation of baseline growth), `FIREWALL.C` (hold/harden vs. the scan),
+homing/pierce IQ.
 
 ---
 
@@ -194,58 +244,68 @@ Each stack shows the acquisition order, the **merged beam at each milestone**, a
 the intended **weakness** — because "bad on purpose" means no stack is universally
 best. These double as balance targets.
 
+Each line now also carries the **merged growth** (`gr`), because reproduction is
+what carries a stack past the ~40–57% single-spray ceiling to its listed coverage.
+
 ### A — THE CURTAIN *(bruiser / raw coverage)*
 ```
-SCRIPT.COM                    Lin · ←        · 25%   one weak edge sheet
-+ SCRIPT.COM (copy)           Lin · ←        · 50%   denser
-+ SCRIPT.SYS                  Lin · ←→       · 50%   curtain opens both ways
-+ BUFFER.OVR                  Lin · ←→       · 100%  solid wall, both sides   (cap hit)
-+ ROOTKIT                     Lin · ←→       · 100%  (overflow wasted) → bank REACH instead
+SCRIPT.COM                    Lin · ←        · 25%  · gr Low    one weak edge sheet
++ SCRIPT.COM (copy)           Lin · ←        · 50%  · gr Low    denser
++ SCRIPT.SYS                  Lin · ←→       · 50%  · gr Low    curtain opens both ways
++ BUFFER.OVR                  Lin · ←→       · 100% · gr Med    solid wall, both sides   (prob cap hit)
++ ROOTKIT                     Lin · ←→       · 100% · gr High   overflow → routes to growth; slab now self-sustains
 ```
-**Feel:** a solid advancing slab; overwhelms a sector. **Weakness:** zero precision,
-wastes reach on held ground, slow to 50% on huge sectors, scan-food if under-reached.
+**Feel:** a solid advancing slab that *keeps* advancing as growth climbs; overwhelms
+a sector. **Weakness:** zero precision, wastes reach on held ground, slow to 50% on
+huge sectors, scan-food if under-reached and under-grown.
 
-### B — THE LANCE *(sniper / vault-diver)*
+### B — THE LANCE *(sniper / deep striker)*
 ```
-SCRIPT.SYS                    Lin · →        · 25%   thin right jab
-+ REACH upgrades (meta)       Lin · →        · 25%   but travels deep
-+ PACKET                      Lin · →↑       · 50%   angled deep strike
-+ (T4) HOMING IQ              seeks unburned/vault cells
+SCRIPT.SYS                    Lin · →        · 25%  · gr Low    thin right jab
++ REACH upgrades (meta)       Lin · →        · 25%  · gr Low    but travels deep
++ PACKET                      Lin · →↑       · 50%  · gr Low    angled deep strike
++ (T4) HOMING IQ              seeks unburned cells
 ```
-**Feel:** a thin deep spear onto a vault strip (War-dialer synergy). **Weakness:**
-low total coverage — bad against a wide win condition; whiffs if aimed wrong.
+**Feel:** a thin deep spear — deliberately **low growth**, so all the pool
+concentrates into depth, not spread. **Weakness:** low total coverage — on a
+pure-coverage win it's the weakest archetype (its old vault/CODE payoff was cut);
+a niche pick until a Tier-2 objective rewards precise depth again.
 
 ### C — THE HARMONIC *(Fourier / show-off coverage)*
 ```
-WORM                          Sin · ←→       · 25%   soft wave
-+ HARMONIC                    Sin+Sin2 · ←→  · 50%   wave gains structure
-+ PHREAK                      …+Sin3 · ←→    · 75%   waveform squares up → broad even front
-+ PAYLOAD                     …           · 100%  dense structured curtain
+WORM                          Sin · ←→       · 25%  · gr High   soft wave that self-spreads
++ HARMONIC                    Sin+Sin2 · ←→  · 50%  · gr High   wave gains structure
++ PHREAK                      …+Sin3 · ←→    · 75%  · gr High   waveform squares up → broad even front
++ PAYLOAD                     …             · 100% · gr High   dense structured curtain, growing
 ```
-**Feel:** intricate wave-fronts that fill wide, evenly. **Weakness:** patterned
-coverage leaves periodic gaps the scan threads; amplitude can clip off-board.
+**Feel:** intricate wave-fronts that fill wide, evenly, and *keep filling* (WORM's
+growth is the engine). **Weakness:** patterned coverage leaves periodic gaps the
+scan threads; amplitude can clip off-board.
 
 ### D — THE FENCE *(vertical rush / beat the scan)*
 ```
-BLUEBOX                       Rect-sin · ↑   · 50%   picket of upward jets
-+ BLUEBOX (copy)              Rect-sin · ↑   · 100%  dense vertical comb
-+ LOGICBOMB                   +Step · ↑↓     · 100%  jets up AND drills down
+BLUEBOX                       Rect-sin · ↑   · 50%  · gr Low    picket of upward jets
++ BLUEBOX (copy)              Rect-sin · ↑   · 100% · gr Low    dense vertical comb
++ LOGICBOMB                   +Step · ↑↓     · 100% · gr Med    jets up AND drills down
 ```
 **Feel:** races vertically toward top objectives before the top-down scan reaches
-them. **Weakness:** thin horizontally — easy for the scan to reclaim the flanks.
+them; low growth keeps it a fast picket, not a slow flood. **Weakness:** thin
+horizontally — easy for the scan to reclaim the flanks.
 
 ### E — THE GLITCH DECK *(glass-cannon gambler)*
 ```
-TANGENT                       Tan · ←→       · 10%   usually fizzles…
-+ TANGENT (copy)              Tan · ←→       · 20%   …occasionally an asymptote blowout paints half a sector
-+ NOP.SLED                    (adds 50% prob to whatever fires)  · 70%
+TANGENT                       Tan · ←→       · 10%  · gr None   usually fizzles…
++ TANGENT (copy)              Tan · ←→       · 20%  · gr None   …occasionally an asymptote blowout paints half a sector
++ WORM                        …merged        · 45%  · gr High   the gamble: if TANGENT catches, High growth chaos-fills from it
 ```
-**Feel:** high-variance; some runs detonate, some flop. **Weakness:** literally
-unreliable — the deliberate bad-card build for players chasing a high.
+**Feel:** high-variance; some runs the spine barely fires, some it detonates and the
+High-growth graft turns a lucky asymptote into a sector-wide chaos-fill. **Weakness:**
+literally unreliable — the deliberate bad-card build for players chasing a high.
 
 **Stacking caps / diminishing returns:** probability caps at 100% (overflow wasted);
-direction caps at the 8 compass headings; shape amplitude clips to the board. Past a
-cap, surplus cards should convert to REACH or ROOT so a slot is never fully dead.
+growth caps at ~60% reproduce (overflow wasted); direction caps at the 8 compass
+headings; shape amplitude clips to the board. Past a cap, surplus cards should
+convert to REACH or ROOT so a slot is never fully dead.
 
 ---
 
@@ -271,17 +331,25 @@ gates the grail cards (`PAYLOAD`, `0DAY`).
 
 ## 8. Later-tier layers (staged, one subsystem per tier)
 
-Tier 1 is shape + direction + probability + a fixed emission rate. Deeper tiers add
-*new card aspects*, not bigger numbers:
+Tier 1 is the **four base aspects — shape + direction + probability + growth** — plus
+a fixed emission rate. GROWTH is in the base ladder, not a later tier, because
+calibration proved a growth-less packet *can't breach at all* (it caps ~40–57% then
+dies). What Tier 1 ships is **undirected** growth: children seed onto a random
+unburned neighbour. Deeper tiers add *new card aspects* and *shape* that growth, not
+bigger numbers:
 
 - **Tier 2 — rate:** cards that set emission cadence (ms) — flash-burn vs. slow tide.
-- **Tier 3 — branch (`FORK`):** emitted embers spawn sub-emitters, carrying a *split*
-  of remaining reach (total conserved → no runaway). Surface-area escalation.
+- **Tier 3 — branch (`FORK`):** growth gains *aim*. Instead of a child onto a random
+  neighbour, a firing emitter spawns full sub-**emitters** that inherit direction and
+  carry a *split* of remaining reach (total conserved → no runaway on top of the
+  Tier-1 MAX_EMBERS cap). Directed surface-area escalation — the power-tool version of
+  baseline reproduce.
 - **Tier 4 — hold / IQ:** `FIREWALL.C` hardens cells against the scan; the Ping-IQ
   ladder (Conduit → Homing → Leapfrog) routes embers around/over terrain.
 
-The retired opcode-alphabet's good ideas survive here: `FORK` = branch, `WALL`/
-`FIREWALL` = hold. They're late-game aspects, not the base.
+The retired opcode-alphabet's good ideas survive here: `FORK` = directed branch (an
+escalation of Tier-1 growth), `WALL`/`FIREWALL` = hold. FORK and hold are late-game
+aspects; base growth is not.
 
 ---
 
@@ -328,42 +396,90 @@ Distinct math that *looks* the same is still lame. Every aspect needs a signatur
 eye catches in under a second: a high-probability spine visibly **dense** with
 emission points; a summed harmonic where you can **see the waves add**; a wide-union
 direction that visibly **fans** both ways; a deep-REACH ember that visibly **drives**
-far before guttering. This is a `research/juice-model.md` requirement, not a
-finishing pass.
+far before guttering; a high-**GROWTH** fire that visibly **catches and multiplies** —
+you watch new embers bud off the burn front and the coverage keep climbing after the
+spray has landed, vs. a growth-less spray that throws once and stalls. This is a
+`research/juice-model.md` requirement, not a finishing pass.
 
 ---
 
 ## 12. Design dials — resolved & still-open
 
 **RESOLVED (2026-07-14):**
-- **REACH = a shared per-packet pool, split across emitted embers** (§4). Stays a
-  terminal meta-stat, not a card aspect — the three-aspect card is preserved, and
-  width-vs-depth emerges from ember count. Accumulator stays fully retired.
+- **GROWTH = the 4th card aspect** (§3). Cards are now bundled **quads**
+  `(shape, dir, prob, growth)`. Reproduce chance ADDS (cap ~60%), child spread-reach
+  takes the MAX. GROWTH is core at Tier 1 (a growth-less packet can't breach — it
+  caps ~40–57% then dies), so the "one aspect per tier" ladder puts base growth in the
+  Tier-1 set and reserves *directed* growth (`FORK`) for Tier 3 (§8). Full 4-aspect
+  weld is the accepted onboarding cost; the payoff is grail cards (`WORM`, `0DAY`)
+  you draft *for* their growth.
+- **REACH ≠ GROWTH — two separate budgets** (§4). REACH is the initial-spray pool
+  (how far the first wave throws); GROWTH is the sustained-burn lever (whether it
+  keeps reproducing after). REACH stays a **terminal meta-stat** (not a card aspect);
+  GROWTH lives on the card. Width-vs-depth still emerges from ember count; the new
+  spray-vs-sustain axis emerges from REACH-vs-GROWTH. Accumulator stays fully retired.
+- **Reproduction is generative-but-gated, not a free flood** (§4). Unburned-neighbour
+  rule + `MAX_EMBERS` cap + scan erosion bound it to an equilibrium; no child re-burns
+  held ground, so it does not reopen the flood the MVP killed.
 - **Direction-union vs. reach overshoot** — solved by the shared pool + `REACH_CAP`
   (§4): more embers just means each is shallower.
 - **Probability random vs. pattern stacking** — randoms sum (cap 100), masks union,
   masks resolve first and randoms fill the remainder (§3).
 - **Probability overflow** — wasted in Tier 1 (legible "bad stack"); a ROOT-shop
-  OVERCLOCK later converts surplus density → REACH pool.
+  OVERCLOCK later converts surplus density → REACH pool. (Growth overflow past its
+  ~60% cap is wasted the same way.)
 
-**STILL OPEN (need the `preview/beam.html` sandbox or a playtest):**
-- `POOL` base size, the `POOL / emberCount` split curve (linear may over-punish wide
-  decks — try sub-linear), and `REACH_CAP` — pure calibration.
+**RESOLVED by the headless balance pass (`preview/beam-balance.js`, 2026-07-14):**
+- **GROWTH mapping** — `None/Low/Med/High reproduce = 0 / 0.10 / 0.20 / 0.40`, merged
+  reproduce **cap 0.60**, child `spreadReach = 0 / 4 / 6 / 8` (merge MAXes it). Ablation
+  (`GROWTH_SCALE=0`) drops the two coverage decks from ~80% wins to 4–8% and caps their
+  *peak* coverage at 56–57% — the exact "single spray dies ~40–57%" ceiling, so growth
+  is confirmed load-bearing, not a free win.
+- **SHARED constants** `{pool 800, reachCap 20, scanSpeed 0.5, reclaim 6, breachHold 18,
+  winCoverage 50}` — hit the §13 target: CURTAIN/HARMONIC ~80% (strong ~5/6), the weak
+  starter 0/48 (peaks ≤19%), terrain gates ~13–17% BRUTAL. The plateau is wide (pool
+  800↔900, reclaim 5↔7 barely move win rates) — robust, not knife-edge.
+- **`POOL / emberCount` split** — validated: `pool` binds wide decks (CURTAIN ember
+  share ≈ 12 < cap), `reachCap` binds narrow decks (LANCE share hits 20) — the
+  depth/width trade emerges for free. Linear split is fine; no sub-linear tweak needed.
+
+**STILL OPEN (need the browser sandbox or a playtest):**
+- **LANCE/FENCE are weak on a pure-coverage win** — the field is one wide block and the
+  win is area %, so a narrow deep lance and a vertical fence both under-cover. Their old
+  precision payoff (vault/CODE) was cut; a Tier-2 objective that rewards depth/verticality
+  is what re-floats them. GLITCH's swing already reads correctly as the gambler. The wide
+  single block also means **shape width matters** — HARMONIC (sine snakes across columns)
+  out-covers CURTAIN (one linear column), a fair emergent differentiation.
 - Default Tier-1 emission **rate**: start ~60–100 ms/cell, tuned so embers finish
   spreading by ~40% of the scan's descent (i.e. against scan speed, not in isolation).
+  (Headless is rate-agnostic — one tick per step — so this needs the timed sandbox.)
 - Slot curve (start 1, +1 per breach, cap ~3 in Tier 1 → 6+ later) and card-rarity
-  weights (common 25% / single-dir / simple-shape … legendary `0DAY` 100%). An economy
-  playtest, not a lone number.
+  weights (common 25% / single-dir / simple-shape / low-growth … legendary `0DAY`
+  100% + high growth). An economy playtest, not a lone number.
 
 ## 13. Calibration sandbox (`preview/beam.html`)
 
-Reuses the real `src/terrain.js` generator so tuned numbers port straight in.
-Sliders: trigger column, shape set (with live Fourier sum preview), direction union,
-merged probability, REACH, emission rate, scan speed, reclaim/row, breach hold, win
-coverage. RESEED cycles sectors. Should let us *watch* the six escalation-stack end
-states move against real terrain and tune the caps.
+The play field is now ONE 62×28 **memory block** per run (SECTORS is a single entry),
+rendered in the three-panel play screen (FIELD · GUTTER · TRAY, see `src/layout.js`).
+Two tools, one sim (`src/beam.js`), both over the real `src/terrain.js` generator so
+tuned numbers port straight in:
+- **`preview/beam.html`** (browser) — sliders for trigger column, shape set (live
+  Fourier sum preview), direction union, merged probability, REACH pool + cap,
+  **reproduce + spread reach** (the GROWTH levers), emission rate, scan speed,
+  reclaim/row, breach hold, win coverage. A live **embers-alive** readout catches
+  reproduction spikes. RESEED cycles blocks. The five escalation-stack **presets**
+  mirror the merged card-decks below. *Watch* the end-states move against real terrain.
+- **`preview/beam-balance.js`** (headless, `node preview/beam-balance.js [seeds]`) —
+  builds the §6 decks from real §5 cards through the actual merge rules and sweeps them
+  across seeds (one block each), printing win-rate + peak-coverage + the terrain gate.
+  Env overrides (`POOL=… RECLAIM=… SCANSPEED=… GROWTH_SCALE=…`) for sweeps and ablations.
 
-**Prior validated split** (headless, 6 seeds, KERNEL): `COST = {OPEN 1, HARD 6,
-WALL ∞, BUS −1, VAULT 2, HONEY 1}`; strong deck ~5/6 (peaks 73–91%), weak 6/6 (<19%),
-lone strong loss = intended BRUTAL. Carry as starting numbers; the single-shot
-emit-and-spread loop needs a fresh equilibrium pass.
+**Validated equilibrium** (`beam-balance.js`, 30 seeds, single 62×28 block):
+`COST = {OPEN 1, HARD 6, WALL ∞, BUS −1, HONEY 1}`; shared `{pool 1000, reachCap 20,
+scanSpeed 0.40, reclaim 6, breachHold 15, winCoverage 50}`; GROWTH
+`None/Low/Med/High = 0/.10/.20/.40` (cap .60). Result: HARMONIC ~90% / CURTAIN ~60%
+(strong; the wide block rewards wide shapes), GLITCH ~50% (gambler), FENCE/LANCE weak
+by design, weak starter 0/30, BRUTAL ~13% = intended terrain gate. Growth-off ablation
+collapses coverage → growth is load-bearing. These are the ported game defaults
+(`src/battle.js`). The block is ~2× the old sector, so pool/scan were retuned up/down
+to keep the hold-through-breach window fair.

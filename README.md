@@ -10,6 +10,10 @@ vanilla ES modules, no build step, a WebGL CRT filter over a character grid,
 WebAudio, seeded `mulberry32` RNG. The CRT look, the character-grid renderer, and
 the number-station audio bed carry forward.
 
+### ▶ [Play it in your browser](https://kleer001.github.io/override/)
+
+<https://kleer001.github.io/override/> — or run it locally (see [Run the MVP](#run-the-mvp) below).
+
 ## Contents
 
 - [`GAME-SHEET.md`](GAME-SHEET.md) — the player-facing pitch: fantasy, core loop,

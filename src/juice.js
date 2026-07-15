@@ -9,11 +9,11 @@
 // The board is rendered via innerHTML, so every emitted char is HTML-escaped.
 
 import { FIELD_W, FIELD_H, SECTORS, idx } from './terrain.js';
-import { FIELD_TOP, COLS } from './layout.js';
+import { FIELD_OY, FIELD_OX, COLS } from './layout.js';
 
 const TWO_PI = Math.PI * 2;
 const PERIOD = 1400;      // active-burn pulse: one dim->bright->dim cycle (ms)
-const DIM = 0.35, FULL = 1, MED = 0.72, DARK = 0.12;
+const DIM = 0.35, FULL = 1, MED = 0.72;
 const FLASH_MS = 150;     // the single conquer flash
 const FAST_PERIOD = 500;  // celebration pulse, ~2x the active pulse
 const FAST_PULSES = 4;
@@ -36,16 +36,19 @@ const pulsePeriod = () => (reduced ? PERIOD * 2 : PERIOD);
 const wave = (dt, p) => 0.5 - 0.5 * Math.cos(TWO_PI * dt / p); // 0 at dt=0, 1 at p/2
 const round2 = (v) => Math.round(v * 100) / 100;
 
-// column -> sector index (firewall gaps stay -1)
+// BLOCK column -> sector index (single block => all 0; any gap stays -1)
 const SECTOR_OF = new Int8Array(FIELD_W).fill(-1);
 SECTORS.forEach((s, i) => { for (let x = s.x0; x <= s.x1; x++) SECTOR_OF[x] = i; });
 
-// visual state lives here, keyed to the machine so a new run resets it. Pulse
-// phase reads machine.bornAt (set when a cell burns); this map only tracks each
-// conquered sector's celebration start.
-let state = { machine: null, celeb: new Map(), det: { at: -1e9, strength: 0 } };
+// visual state lives here, keyed to the machine so a new run resets it. `born` is
+// a per-cell birth time stamped the first frame the compositor sees a cell burned
+// (−1 = unborn) — this is presentation-only, so the sim stays pure/deterministic and
+// never needs a wall-clock. `celeb` tracks each conquered sector's celebration start.
+let state = { machine: null, celeb: new Map(), det: { at: -1e9, strength: 0 }, born: null };
 function sync(machine) {
-  if (state.machine !== machine) state = { machine, celeb: new Map(), det: { at: -1e9, strength: 0 } };
+  if (state.machine !== machine) {
+    state = { machine, celeb: new Map(), det: { at: -1e9, strength: 0 }, born: new Float64Array(FIELD_W * FIELD_H).fill(-1) };
+  }
 }
 
 // main.js calls this the frame a mult card detonates (now = performance.now()).
@@ -58,10 +61,10 @@ export function detonate(now, strength = 1) {
 const esc = (ch) => ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '&' ? '&amp;' : ch;
 const escLine = (ln) => ln.replace(/[<>&]/g, esc);
 
-// render.js draws the field for the target phase and any node-bearing exec/result
+// the memory block is drawn in the FIELD panel for every phase except the shop
+// (which fills the field area with the item list instead)
 function boardShown(game) {
-  return game.phase === 'target' ||
-    (game.node && ['exec', 'result', 'tierclear', 'gameover'].includes(game.phase));
+  return !!(game.run && game.run.machine) && game.phase !== 'shop';
 }
 
 // mark each conquered sector's celebration start the first frame we see it owned
@@ -69,15 +72,17 @@ function markConquered(machine, now) {
   for (const sec of machine.sectors) if (sec.conquered && !state.celeb.has(sec.id)) state.celeb.set(sec.id, now);
 }
 
-function cellStyle(row, x, y, machine, now) {
-  const ch = row[x] ?? ' ';
+// x,y are BLOCK coordinates (0..FIELD_W-1, 0..FIELD_H-1); ch is the glyph there.
+function cellStyle(ch, x, y, machine, now) {
   const si = SECTOR_OF[x];
-  if (si < 0) return { cls: '', op: 1, ch };                 // firewall gap
-  // field row 0 carries the sector labels (buildScreen stamps them there) —
-  // leave it unstyled so a burn never dims or clobbers the label text.
-  if (y === 0) return { cls: '', op: 1, ch };
+  if (si < 0) return { cls: '', op: 1, ch };
+  const c = idx(x, y);
   const sec = machine.sectors[si];
-  const burned = machine.burned[idx(x, y)] === 1;
+  const burned = machine.burned[c] === 1;
+  // per-cell birth time: stamp when first seen burned, clear on reclaim, so each
+  // cluster breathes on its own phase instead of all in unison.
+  if (burned) { if (state.born[c] < 0) state.born[c] = now; }
+  else if (state.born[c] >= 0) state.born[c] = -1;
   if (sec.conquered) {
     const el = now - (state.celeb.get(sec.id) ?? now);
     if (burned) {
@@ -87,13 +92,15 @@ function cellStyle(row, x, y, machine, now) {
         if (el < CELEB_END) return { cls: 'brn', op: round2(DIM + (FULL - DIM) * wave(el - FLASH_MS, FAST_PERIOD)), ch };
       }
       // settled: locked-in grid — pull board glyphs to '#', never touch labels
-      return { cls: 'brn', op: MED, ch: (ch === '@' || ch === '$') ? '#' : ch };
+      return { cls: 'brn', op: MED, ch: (ch === '@') ? '#' : ch };
     }
-    return (!reduced && el < CELEB_END) ? { cls: '', op: 1, ch } : { cls: '', op: DARK, ch }; // ground goes dark
+    // Ground stays LIT. A breach ends the run, and the result banner + CONTINUE
+    // button are drawn over this ground — the old "dark ground as you move to the
+    // next sector" (multi-sector model) would black the overlay out. Keep it full.
+    return { cls: '', op: 1, ch };
   }
   if (burned) {
-    const born = machine.bornAt[idx(x, y)] || now;
-    const pulse = round2(DIM + (FULL - DIM) * wave(now - born, pulsePeriod()));
+    const pulse = round2(DIM + (FULL - DIM) * wave(now - state.born[c], pulsePeriod()));
     const det = now - state.det.at;
     if (!reduced && det >= 0 && det < DET_TOTAL) {
       // the detonation surge: solid white-hot mass, then ease back to the pulse.
@@ -107,7 +114,10 @@ function cellStyle(row, x, y, machine, now) {
   return { cls: '', op: 1, ch };
 }
 
-function composeRow(row, y, machine, now) {
+// `line` is the full 80-wide screen row; `y` is the block row. Only screen columns
+// that fall inside the block (offset by FIELD_OX) get brightness spans; the field
+// borders, the gutter, and everything else pass through raw.
+function composeRow(line, y, machine, now) {
   let out = '', buf = '', key = null, cls = '', op = 1;
   const flush = () => {
     if (!buf) return;
@@ -115,8 +125,10 @@ function composeRow(row, y, machine, now) {
     else out += (cls ? `<span class="${cls}" style="opacity:${op}">` : `<span style="opacity:${op}">`) + buf + '</span>';
     buf = '';
   };
-  for (let x = 0; x < COLS; x++) {
-    const s = cellStyle(row, x, y, machine, now);
+  for (let sx = 0; sx < COLS; sx++) {
+    const ch = line[sx] ?? ' ';
+    const bx = sx - FIELD_OX;
+    const s = (bx < 0 || bx >= FIELD_W) ? { cls: '', op: 1, ch } : cellStyle(ch, bx, y, machine, now);
     const k = (s.cls === '' && s.op === 1) ? 'RAW' : `${s.cls}|${s.op}`;
     if (k !== key) { flush(); key = k; cls = s.cls; op = s.op; }
     buf += escLine(s.ch);
@@ -132,8 +144,8 @@ export function composeBoard(text, game, now) {
   sync(machine);
   markConquered(machine, now);
   for (let i = 0; i < lines.length; i++) {
-    lines[i] = (i >= FIELD_TOP && i < FIELD_TOP + FIELD_H)
-      ? composeRow(lines[i], i - FIELD_TOP, machine, now)
+    lines[i] = (i >= FIELD_OY && i < FIELD_OY + FIELD_H)
+      ? composeRow(lines[i], i - FIELD_OY, machine, now)
       : escLine(lines[i]);
   }
   return lines.join('\n');
