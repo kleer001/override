@@ -13,7 +13,7 @@ const WEAK = [CARDS['SCRIPT.COM']];
 function play(machine, si, program, aggro = 0.75, override) {
   machine.burned.fill(0);
   machine.sectors[si].conquered = false;
-  const node = createNode(machine, si, null, aggro, aggro, program, {});
+  const node = createNode(machine, si, aggro, aggro, program, {});
   if (override) override(node.sim.params);          // ablation hook (before firing)
   return runBattle(node);
 }
@@ -137,7 +137,7 @@ test('deterministic: same seed => identical terrain and battle outcome', () => {
 function nodeFor(machine, si, program, override) {
   machine.burned.fill(0);
   machine.sectors[si].conquered = false;
-  const node = createNode(machine, si, null, 0.75, 0.75, program, {});
+  const node = createNode(machine, si, 0.75, 0.75, program, {});
   if (override) override(node.sim.params);
   return node;
 }

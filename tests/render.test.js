@@ -35,7 +35,7 @@ function assembleGame() {
 function execGame() {
   const g = assembleGame();
   g.program = [g.run.deck[0], g.run.deck[1], g.run.deck[2]];
-  g.node = createNode(g.run.machine, 0, null, 0.75, 0.75, g.program, {});
+  g.node = createNode(g.run.machine, 0, 0.75, 0.75, g.program, {});
   fire(g.node);
   for (let i = 0; i < 25; i++) stepBattle(g.node);
   g.phase = 'exec';

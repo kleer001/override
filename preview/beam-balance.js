@@ -24,7 +24,8 @@ const mergeDeck = (names) => mergeBeam(names.map((n) => CARDS[n]));
 
 // The §6 escalation stacks as end-state card lists (+ a deliberately weak starter).
 const DECKS = {
-  WEAK:     ['SCRIPT.COM'],                                              // one forbidden card
+  WEAK:     ['SCRIPT.COM'],                                              // the one-card starter (lin·←·50·Med) — soft-locks ~0%
+  ONRAMP:   ['SCRIPT.COM', 'FORK.COM'],                                  // starter + the 10-ROOT deck-add → lin·←→·100·gr.60
   CURTAIN:  ['SCRIPT.COM', 'SCRIPT.COM', 'SCRIPT.SYS', 'BUFFER.OVR', 'ROOTKIT'],
   LANCE:    ['SCRIPT.SYS', 'SCRIPT.SYS'],                                // thin, deep, low-growth
   HARMONIC: ['WORM', 'HARMONIC', 'PHREAK', 'PAYLOAD'],

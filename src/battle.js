@@ -7,7 +7,7 @@
 //
 // The machine (three sectors) persists across a run, so conquered sectors stay
 // burned and the board fills up. This layer wraps the pure sim in src/beam.js with
-// the run's aggression dial, character bonuses, CODE digits, and a battle log.
+// the run's aggression dial and a battle log.
 
 import { mulberry32 } from './rng.js';
 import { generateMachine, sectorStats, FIELD_H, WIN_COVERAGE } from './terrain.js';
@@ -43,9 +43,9 @@ export function draftPicks(aggro, base = AGGRO_BASE) {
 }
 
 // Build the full beam params for a node from an already-merged beam, overlaying the
-// shared terminal/scan constants scaled by aggression + character bonuses. Every
-// key the sim reads is set here explicitly (no defaultParams fallback in the game).
-function beamParams(machine, secIdx, merged, aggro, char, extra) {
+// shared terminal/scan constants scaled by aggression. Every key the sim reads is
+// set here explicitly (no defaultParams fallback in the game).
+function beamParams(machine, secIdx, merged, aggro, extra) {
   const sector = machine.sectors[secIdx];
   return {
     p: extra.triggerCol != null
@@ -54,8 +54,8 @@ function beamParams(machine, secIdx, merged, aggro, char, extra) {
     shapes: merged.shapes, amp: merged.amp, freq: merged.freq, dirs: merged.dirs,
     probMode: merged.probMode, prob: merged.prob, maskN: merged.maskN,
     reproduce: merged.reproduce, spreadReach: merged.spreadReach,
-    pool: POOL + (char?.poolBonus || 0) + (extra.poolBonus || 0),
-    reachCap: REACH_CAP + (char?.reachCapBonus || 0),
+    pool: POOL + (extra.poolBonus || 0),
+    reachCap: REACH_CAP,
     scanSpeed: SCAN_SPEED * aggro,               // aggression = scan speed…
     reclaim: Math.max(1, Math.round(RECLAIM * aggro)),   // …and bite
     breachHold: BREACH_HOLD,
@@ -65,16 +65,16 @@ function beamParams(machine, secIdx, merged, aggro, char, extra) {
 
 // Create a node: a beam battle over the run's shared machine. Does not fire yet —
 // call fire() (or step it) to begin the watch.
-export function createNode(machine, secIdx, char, aggro = AGGRO_BASE, baseAggro = AGGRO_BASE, program = [], extra = {}) {
+export function createNode(machine, secIdx, aggro = AGGRO_BASE, baseAggro = AGGRO_BASE, program = [], extra = {}) {
   const sector = machine.sectors[secIdx];
   const merged = mergeBeam(program.filter(Boolean));
-  const params = beamParams(machine, secIdx, merged, aggro, char, extra);
+  const params = beamParams(machine, secIdx, merged, aggro, extra);
   const rng = mulberry32((machine.seed ^ (secIdx * 0x9e3779b9) ^ 0x85ebca6b) >>> 0);
   const sim = createSimOn(machine, secIdx, params, rng);
   return {
-    machine, secIdx, sector, aggro, baseAggro, char,
+    machine, secIdx, sector, aggro, baseAggro,
     sim, program, beamLines: beamGutterLines(merged),   // cached 2-line gutter readout
-    fired: false, packets: 1 + (char?.packetBonus || 0),
+    fired: false,
     outcome: null,
     log: [`> jacked into ${sector.id}. terrain: ${sector.difficulty}. aggression x${aggro.toFixed(2)}.`],
   };

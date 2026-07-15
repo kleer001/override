@@ -1,9 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SHOP_ITEMS, CHAR_UNLOCK, CARD_UNLOCK } from '../src/shop.js';
-import { DRAFT_POOL, SHOP_CARDS } from '../src/cards.js';
-import { CHARACTERS } from '../src/characters.js';
+import { SHOP_ITEMS, DECK_CARD, CARD_UNLOCK } from '../src/shop.js';
+import { DRAFT_POOL, SHOP_CARDS, CARDS } from '../src/cards.js';
 
 // Mirrors the persistence + composition logic in main.js against an in-memory
 // store, so the ROOT-shop economy is testable without a DOM. If main.js's logic
@@ -11,48 +10,47 @@ import { CHARACTERS } from '../src/characters.js';
 function makeShop(root = 1000) {
   const store = new Map();
   const getJSON = (k, d) => (store.has(k) ? JSON.parse(store.get(k)) : d);
-  const unlockedChars = () => getJSON('chars', ['wardial']);
   const unlockedCards = () => getJSON('cards', []);
-  const availChars = () => CHARACTERS.filter((c) => unlockedChars().includes(c.id));
   const draftPool = () => DRAFT_POOL.concat(unlockedCards().map((id) => SHOP_CARDS[id]).filter(Boolean));
+  const deck = [{ ...CARDS['SCRIPT.COM'] }];       // the one-card starter
   let retry = 0;
-  const owned = (it) => it.kind === 'char' ? unlockedChars().includes(CHAR_UNLOCK[it.id])
-    : it.kind === 'card' ? unlockedCards().includes(CARD_UNLOCK[it.id]) : false;
+  const owned = (it) => it.kind === 'card' ? unlockedCards().includes(CARD_UNLOCK[it.id]) : false;
   function buy(id) {
     const it = SHOP_ITEMS.find((s) => s.id === id);
     if (!it || owned(it) || root < it.cost) return false;
     root -= it.cost;
-    if (it.kind === 'char') { const u = unlockedChars(); u.push(CHAR_UNLOCK[it.id]); store.set('chars', JSON.stringify(u)); }
+    if (it.kind === 'deckcard') deck.push({ ...CARDS[DECK_CARD[it.id]] });
     else if (it.kind === 'card') { const u = unlockedCards(); u.push(CARD_UNLOCK[it.id]); store.set('cards', JSON.stringify(u)); }
     else if (it.kind === 'retry') retry++;
     else if (it.kind === 'curse') store.set('oc', '1');
     return true;
   }
-  return { availChars, draftPool, buy, owned, oc: () => store.get('oc') === '1', getRetry: () => retry, getRoot: () => root };
+  return { draftPool, buy, owned, deck, oc: () => store.get('oc') === '1', getRetry: () => retry, getRoot: () => root };
 }
 
 test('shop catalog is well-formed and self-consistent', () => {
   for (const it of SHOP_ITEMS) {
     assert.ok(it.cost > 0 && it.name && it.desc && it.kind, `bad item ${it.id}`);
   }
-  for (const id of Object.keys(CHAR_UNLOCK)) assert.ok(SHOP_ITEMS.some((i) => i.id === id && i.kind === 'char'));
+  for (const id of Object.keys(DECK_CARD)) assert.ok(SHOP_ITEMS.some((i) => i.id === id && i.kind === 'deckcard'));
   for (const id of Object.keys(CARD_UNLOCK)) assert.ok(SHOP_ITEMS.some((i) => i.id === id && i.kind === 'card'));
+  for (const cid of Object.values(DECK_CARD)) assert.ok(CARDS[cid], `CARDS missing ${cid}`);
   for (const cid of Object.values(CARD_UNLOCK)) assert.ok(SHOP_CARDS[cid], `SHOP_CARDS missing ${cid}`);
 });
 
-test('defaults: only War-dialer unlocked, base draft pool only', () => {
+test('defaults: base draft pool only until cards are unlocked', () => {
   const s = makeShop();
-  assert.deepEqual(s.availChars().map((c) => c.id), ['wardial']);
   assert.equal(s.draftPool().length, DRAFT_POOL.length);
 });
 
-test('permanent: buying a character unlock adds it to the roster (no double-charge)', () => {
+test('deck-add: FORK.COM drops straight into the deck (cheap, repeatable)', () => {
   const s = makeShop();
-  const before = s.getRoot();
-  assert.ok(s.buy('char_shotgun'));
-  assert.deepEqual(s.availChars().map((c) => c.id).sort(), ['shotgun', 'wardial']);
-  assert.ok(s.getRoot() < before);
-  assert.ok(!s.buy('char_shotgun'));                 // already owned — refused
+  const before = s.deck.length;
+  assert.ok(s.buy('deck_FORK'));
+  assert.equal(s.deck.length, before + 1);
+  assert.ok(s.deck.some((c) => c.id === 'FORK.COM'));
+  assert.ok(s.buy('deck_FORK'));                     // repeatable — never "owned"
+  assert.equal(s.deck.length, before + 2);
 });
 
 test('permanent: buying a card unlock expands the draft pool', () => {
@@ -73,7 +71,7 @@ test('consumables: retry tokens stack, overclock arms', () => {
 });
 
 test('cannot buy above your ROOT balance', () => {
-  const s = makeShop(50);                             // less than any char cost
-  assert.ok(!s.buy('char_shotgun'));                 // 120 > 50
-  assert.deepEqual(s.availChars().map((c) => c.id), ['wardial']);
+  const s = makeShop(5);                              // less than any item cost
+  assert.ok(!s.buy('deck_FORK'));                    // 10 > 5
+  assert.equal(s.deck.length, 1);
 });

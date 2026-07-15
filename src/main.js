@@ -7,7 +7,7 @@
 
 import { mulberry32, shuffle } from './rng.js';
 import { startingDeck, DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
-import { SHOP_ITEMS, CHAR_UNLOCK, CARD_UNLOCK } from './shop.js';
+import { SHOP_ITEMS, DECK_CARD, CARD_UNLOCK } from './shop.js';
 import { generateMachine, createNode, fire, stepBattle, coverage, aimColAt, REDRAW_COST, SLOTS,
   rewardMult, draftPicks, AGGRO_BASE, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
 import { buildScreen } from './render.js';
@@ -60,12 +60,10 @@ const paint = (now) => { screen.innerHTML = composeBoard(buildScreen(game, now),
 const draw = () => paint(clock());
 
 // --- ROOT shop persistence ---
-const CHARS_KEY = 'override.chars';
 const CARDS_KEY = 'override.cards';
 const RETRY_KEY = 'override.retry';
 const OC_KEY = 'override.overclock';
 const loadJSON = (k, d) => { const r = localStorage.getItem(k); return r ? JSON.parse(r) : d; };
-const unlockedChars = () => loadJSON(CHARS_KEY, ['wardial']);
 const unlockedCards = () => loadJSON(CARDS_KEY, []);
 const loadRetry = () => parseInt(localStorage.getItem(RETRY_KEY) || '0', 10) || 0;
 const saveRetry = (v) => localStorage.setItem(RETRY_KEY, String(v));
@@ -73,9 +71,8 @@ const saveRetry = (v) => localStorage.setItem(RETRY_KEY, String(v));
 const draftPool = () => DRAFT_POOL.concat(unlockedCards().map((id) => SHOP_CARDS[id]).filter(Boolean));
 
 function shopOwned(item) {
-  if (item.kind === 'char') return unlockedChars().includes(CHAR_UNLOCK[item.id]);
   if (item.kind === 'card') return unlockedCards().includes(CARD_UNLOCK[item.id]);
-  return false;
+  return false;   // deck-adds / consumables are repeatable
 }
 
 // Onboarding ramp: fixed tutorial curve keyed to runs started (not rubber-banding).
@@ -95,7 +92,7 @@ function startRun() {
   if (overclock) { localStorage.removeItem(OC_KEY); baseAggro = Math.min(AGGRO_MAX, +(baseAggro + 0.25).toFixed(2)); }
   game.run = {
     tier: 1, root: loadRoot(), points: loadPoints(), deck: loadDeck(),
-    machine, char: null,
+    machine,
     aggression: baseAggro, baseAggro, pendingDrafts: 0, plays,
     overclockPool: overclock ? 300 : 0, retry: loadRetry(),
   };
@@ -188,7 +185,7 @@ function lowerAggro() {
 function fireAt(blockCol) {
   const r = game.run;
   const triggerCol = Math.max(0, Math.min(FIELD_W - 1, blockCol | 0));
-  game.node = createNode(r.machine, 0, r.char, r.aggression, r.baseAggro, game.program.slice(),
+  game.node = createNode(r.machine, 0, r.aggression, r.baseAggro, game.program.slice(),
     { triggerCol, poolBonus: r.overclockPool });
   game.phase = 'exec';
   startExec();
@@ -279,7 +276,7 @@ function buyShop(id) {
   const root = loadRoot();
   if (root < item.cost) { game.message = `need ${item.cost} ROOT.`; sfx.undo(); draw(); return; }
   saveRoot(root - item.cost);
-  if (item.kind === 'char') { const u = unlockedChars(); u.push(CHAR_UNLOCK[item.id]); localStorage.setItem(CHARS_KEY, JSON.stringify(u)); }
+  if (item.kind === 'deckcard') { game.run.deck.push({ ...CARDS[DECK_CARD[item.id]] }); saveDeck(game.run.deck); }
   else if (item.kind === 'card') { const u = unlockedCards(); u.push(CARD_UNLOCK[item.id]); localStorage.setItem(CARDS_KEY, JSON.stringify(u)); }
   else if (item.kind === 'retry') { saveRetry(loadRetry() + 1); }
   else if (item.kind === 'curse') { localStorage.setItem(OC_KEY, '1'); }

@@ -167,7 +167,7 @@ function drawGutter(g, game) {
   if (game.message) { gap(); wrap(game.message, GUTTER.w - 3).slice(0, 3).forEach((ln) => L(ln)); }
 }
 
-// --- TRAY: hand / draft / jack-ins / loadout ---
+// --- TRAY: hand / draft / loadout ---
 function drawTray(g, game) {
   const { phase } = game;
   if (phase === 'draft') {
