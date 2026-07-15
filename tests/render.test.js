@@ -53,7 +53,8 @@ test('font embed: grid-font.css declares GridMono and styles.css uses it as the 
 });
 
 test('closed glyph alphabet: the renderer only emits glyphs the embedded font covers', () => {
-  for (const [name, game] of [['assemble', assembleGame()], ['target', { ...assembleGame(), phase: 'target' }], ['exec', execGame()]]) {
+  const titleGame = { phase: 'title', titleWins: 3, run: null, node: null };
+  for (const [name, game] of [['title', titleGame], ['assemble', assembleGame()], ['target', { ...assembleGame(), phase: 'target' }], ['exec', execGame()]]) {
     const bad = offenders(buildScreen(game, 1000));
     assert.deepEqual(bad, [], `phase ${name} emitted glyphs outside GridMono: ${bad.map((c) => 'U+' + c.codePointAt(0).toString(16)).join(' ')}`);
   }

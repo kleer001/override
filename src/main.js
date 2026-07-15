@@ -15,7 +15,7 @@ import { composeBoard, detonate, setReducedMotion } from './juice.js';
 import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
 import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE, BTN_CONTINUE,
-  BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
+  BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, BTN_TITLE_CONTINUE, BTN_TITLE_NEW, inRect } from './layout.js';
 import { generateMachineUpTo, FIELD_W, WIN_COVERAGE } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
@@ -125,6 +125,21 @@ function startRun() {
   game.bannerLines = [];
   newAssemble();                                   // straight into the loadout — no character picker
   if (overclock) { game.message = 'OVERCLOCK: bigger REACH, faster trace.'; draw(); }
+}
+
+// The boot / title screen. CONTINUE resumes saved progress; NEW wipes it.
+function showTitle() {
+  game.phase = 'title';
+  game.titleWins = loadWins();
+  game.run = null; game.node = null; game.bannerLines = []; game.message = '';
+  draw();
+}
+// Wipe every persisted key so NEW truly starts from zero (deck reverts to the
+// starter, ROOT to 120, wins/plays to 0). Keep the deck-version stamp current so
+// the fresh starter isn't re-wiped by the migration guard on the next load.
+function resetSave() {
+  for (const k of [ROOT_KEY, DECK_KEY, PLAYS_KEY, WINS_KEY, CARDS_KEY, RETRY_KEY, OC_KEY]) localStorage.removeItem(k);
+  localStorage.setItem(DECK_VERSION_KEY, DECK_VERSION);
 }
 
 function dealHand() {
@@ -330,7 +345,10 @@ function pickDraft(i) {
 // --- pointer input (mouse + touch) ---
 function onTapCell(col, row) {
   resumeAudio();
-  if (game.phase === 'assemble') {
+  if (game.phase === 'title') {
+    if (inRect(col, row, BTN_TITLE_CONTINUE)) return startRun();
+    if (inRect(col, row, BTN_TITLE_NEW)) { resetSave(); return startRun(); }
+  } else if (game.phase === 'assemble') {
     for (let i = 0; i < HAND_CARDS.length; i++) if (inRect(col, row, HAND_CARDS[i])) return loadSlot(i);
     if (inRect(col, row, BTN_REDRAW)) return redraw();
     if (inRect(col, row, BTN_UNDO)) return undoSlot();
@@ -354,7 +372,10 @@ installPointer(screen, onTapCell);
 window.addEventListener('keydown', (e) => {
   resumeAudio();
   const k = e.key;
-  if (game.phase === 'assemble') {
+  if (game.phase === 'title') {
+    if (k === 'Enter') startRun();
+    else if (k === 'n' || k === 'N') { resetSave(); startRun(); }
+  } else if (game.phase === 'assemble') {
     if (k >= '1' && k <= '5') loadSlot(+k - 1);
     else if (k === 'r' || k === 'R') redraw();
     else if (k === 'Backspace') { e.preventDefault(); undoSlot(); }
@@ -394,5 +415,4 @@ function animLoop(t) {
 }
 requestAnimationFrame(animLoop);
 
-startRun();
-draw();
+showTitle();   // boot into the title screen — CONTINUE / NEW gate the first run

@@ -49,6 +49,11 @@ export const BTN_AGGRO_UP = { ...GBTN(23), label: 'HARDER ▶' };
 export const BTN_CONTINUE = { x: 23, y: 21, w: 18, h: 3, label: 'CONTINUE ▶' };
 export const BTN_JACKIN = { x: 23, y: 26, w: 18, h: 3, label: 'JACK IN ▶' };
 
+// title / boot screen (a full-screen takeover): CONTINUE resumes saved progress,
+// NEW wipes the save and starts fresh. Chunky, thumb-sized buttons.
+export const BTN_TITLE_CONTINUE = { x: 14, y: 24, w: 24, h: 5, label: 'CONTINUE ▶' };
+export const BTN_TITLE_NEW = { x: 42, y: 24, w: 24, h: 5, label: 'NEW ▶' };
+
 // shop: one tappable row per item inside the field area
 export const shopRow = (i) => ({ x: 2, y: 7 + i, w: 60, h: 1 });
 

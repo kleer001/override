@@ -8,7 +8,7 @@ import { mergeBeam, beamGutterLines, cardLabel } from './cards.js';
 import {
   COLS, ROWS, FIELD, GUTTER, TRAY, FIELD_OX, FIELD_OY,
   HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE, BTN_CONTINUE,
-  BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN,
+  BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, BTN_TITLE_CONTINUE, BTN_TITLE_NEW,
 } from './layout.js';
 export { COLS, ROWS };
 
@@ -196,9 +196,46 @@ function titles(phase) {
   return { field, tray };
 }
 
+// A 5×5 block-letter font (built from █, which the embedded GridMono covers) — the
+// "2× font" for the boot/title banner. Only the letters OVERRIDE needs are defined.
+const GLYPH5 = {
+  O: ['█████', '█   █', '█   █', '█   █', '█████'],
+  V: ['█   █', '█   █', '█   █', ' █ █ ', '  █  '],
+  E: ['█████', '█    ', '████ ', '█    ', '█████'],
+  R: ['████ ', '█   █', '████ ', '█  █ ', '█   █'],
+  I: ['█████', '  █  ', '  █  ', '  █  ', '█████'],
+  D: ['████ ', '█   █', '█   █', '█   █', '████ '],
+};
+// stamp `text` as 5-tall block letters from (x,y); letters are 5 wide + a 1-col gap.
+function drawBig(g, x, y, text) {
+  let cx = x;
+  for (const chr of text.toUpperCase()) {
+    const glyph = GLYPH5[chr];
+    if (glyph) { for (let r = 0; r < 5; r++) stamp(g, cx, y + r, glyph[r]); cx += 6; }
+    else cx += 3;   // unknown/space
+  }
+}
+const center = (g, y, s) => stamp(g, Math.max(0, Math.floor((COLS - s.length) / 2)), y, s);
+
+// The boot / title screen — a full-screen takeover (no three-panel layout). NEW
+// wipes the save; CONTINUE resumes. game.titleWins carries the saved breach count.
+function drawTitle(g, game) {
+  frame(g, 0, 0, COLS, ROWS);
+  drawBig(g, 16, 6, 'OVERRIDE');
+  center(g, 13, 'an idle deckbuilding intrusion battler · 1983');
+  const wins = game.titleWins || 0;
+  center(g, 16, wins > 0 ? `saved progress — ${wins} breach${wins === 1 ? '' : 'es'} logged`
+    : 'no saved progress yet — jack in to begin');
+  drawButton(g, BTN_TITLE_CONTINUE, false);
+  drawButton(g, BTN_TITLE_NEW, false);
+  center(g, 30, 'CONTINUE resumes your run · NEW wipes the save and starts fresh');
+  center(g, 34, '[ENTER] continue     [N] new');
+}
+
 export function buildScreen(game, now = 0) {
   const g = blank();
   const { phase } = game;
+  if (phase === 'title') { drawTitle(g, game); return g.map((r) => r.join('')).join('\n'); }
   const t = titles(phase);
   panelBox(g, FIELD, t.field);
   panelBox(g, GUTTER, 'STATUS');
