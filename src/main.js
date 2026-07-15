@@ -36,6 +36,15 @@ const kick = (amount) => { if (!reduceMotion) trauma.add(amount); };
 const ROOT_KEY = 'override.root';
 const DECK_KEY = 'override.deck';
 const PLAYS_KEY = 'override.plays';
+const WINS_KEY = 'override.wins';
+// Bump when the STARTER deck definition changes so a stale saved deck (e.g. an old
+// XOR-laden starter) is wiped and the new starter takes effect on next load.
+const DECK_VERSION_KEY = 'override.deckver';
+const DECK_VERSION = '2';
+if (localStorage.getItem(DECK_VERSION_KEY) !== DECK_VERSION) {
+  localStorage.removeItem(DECK_KEY);
+  localStorage.setItem(DECK_VERSION_KEY, DECK_VERSION);
+}
 
 const game = {
   phase: 'assemble', run: null, node: null,
@@ -52,6 +61,8 @@ const loadDeck = () => {
 const saveDeck = (deck) => localStorage.setItem(DECK_KEY, JSON.stringify(deck.map((c) => c.id)));
 const loadPlays = () => parseInt(localStorage.getItem(PLAYS_KEY) || '0', 10) || 0;
 const savePlays = (v) => localStorage.setItem(PLAYS_KEY, String(v));
+const loadWins = () => parseInt(localStorage.getItem(WINS_KEY) || '0', 10) || 0;
+const saveWins = (v) => localStorage.setItem(WINS_KEY, String(v));
 const clock = () => performance.now();
 const paint = (now) => { screen.innerHTML = composeBoard(buildScreen(game, now), game, now); };
 const draw = () => paint(clock());
@@ -72,36 +83,40 @@ function shopOwned(item) {
   return false;   // deck-adds / consumables are repeatable
 }
 
-// Onboarding ramp: fixed tutorial curve keyed to runs started (not rubber-banding).
-function onboardingBase(plays) {
-  const EASY = 0.5, REAL = AGGRO_BASE;
-  if (plays <= 1) return EASY;
-  if (plays >= 6) return REAL;
-  return +(EASY + (REAL - EASY) * ((plays - 1) / 5)).toFixed(2);
+// Difficulty ramps on WINS, not runs — a mastery ladder, not a clock. You only
+// face harder terrain/trace once you've proven you can clear the tier below. It's
+// self-balancing: every win also grants a draft, so the deck grows in lockstep
+// with the difficulty it unlocks. Losses never push difficulty up.
+
+// Aggression (trace-scan speed) warmup, keyed to wins.
+function onboardingBase(wins) {
+  const EASY = 0.5, REAL = AGGRO_BASE;   // 0.5 → 0.75 over the first three wins
+  if (wins <= 0) return EASY;
+  if (wins >= 3) return REAL;
+  return +(EASY + (REAL - EASY) * (wins / 3)).toFixed(2);
 }
 
-// Terrain difficulty CEILING keyed to runs started — the block generator rerolls
-// until it's at most this tier. The opening levels are forced gentle (RNG can't
-// hand a new player an unwinnable BRUTAL wall), lifting to fully-random by run 7.
-// Same tutorial window as onboardingBase — after that the procedural spread opens up.
-function difficultyCeil(plays) {
-  if (plays <= 1) return 'EASY';    // first two runs: guaranteed a soft block
-  if (plays <= 3) return 'MED';     // then let it climb
-  if (plays <= 5) return 'HARD';
-  return 'BRUTAL';                  // run 7+: any block the generator rolls
+// Terrain difficulty CEILING keyed to wins — the block generator rerolls until it's
+// at most this tier, so RNG can't hand you an unwinnable wall before you're ready.
+// Clear a tier (a win) to unlock the next; fully-random blocks arrive at 3 wins.
+function difficultyCeil(wins) {
+  if (wins <= 0) return 'EASY';    // no wins yet: a soft block to learn on
+  if (wins === 1) return 'MED';    // cleared one → step up
+  if (wins === 2) return 'HARD';
+  return 'BRUTAL';                 // 3+ wins: any block the generator rolls
 }
 
 function startRun() {
-  const plays = loadPlays();
-  const machine = generateMachineUpTo((Date.now() ^ 0x9e3779b9) >>> 0, difficultyCeil(plays));
+  const plays = loadPlays(), wins = loadWins();
+  const machine = generateMachineUpTo((Date.now() ^ 0x9e3779b9) >>> 0, difficultyCeil(wins));
   game.seed = machine.seed;                          // adopt the chosen block's seed for hand/draft RNG
-  let baseAggro = onboardingBase(plays);
+  let baseAggro = onboardingBase(wins);
   const overclock = localStorage.getItem(OC_KEY) === '1';
   if (overclock) { localStorage.removeItem(OC_KEY); baseAggro = Math.min(AGGRO_MAX, +(baseAggro + 0.25).toFixed(2)); }
   game.run = {
     tier: 1, root: loadRoot(), deck: loadDeck(),
     machine,
-    aggression: baseAggro, baseAggro, pendingDrafts: 0, plays,
+    aggression: baseAggro, baseAggro, pendingDrafts: 0, plays, wins,
     overclockPool: overclock ? 300 : 0, retry: loadRetry(),
   };
   savePlays(plays + 1);
@@ -234,6 +249,7 @@ function showResult() {
     const overkill = Math.round(Math.max(0, node.crack - WIN_COVERAGE) * mult);   // coverage past 50% pays extra
     const reward = Math.round(50 * mult) + overkill;
     r.root += reward; saveRoot(r.root);
+    r.wins += 1; saveWins(r.wins);                    // a clear lifts the difficulty ceiling next run
     r.pendingDrafts = draftPicks(node.aggro, node.baseAggro);
     kick(0.7);
     sfx.lock(); sfx.win();

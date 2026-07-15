@@ -108,10 +108,11 @@ export function beamGutterLines(merged) {
   return [`${sh} ${dir}`, `${density} ${gr}`];
 }
 
-// Tier-1 starting deck — ONE forbidden card. You barely crack your own terminal;
-// the deck grows from there. (Tune by eye: add ids/copies here.)
+// Tier-1 starting deck — the SCRIPT.COM + FORK.COM pair. Merged they make a
+// left+right curtain (lin·←→·100%·gr0.30) that cracks an EASY block about half the
+// time; the deck grows from there. (Tune by eye: add ids/copies here.)
 export function startingDeck() {
-  return ['SCRIPT.COM'].map((id) => ({ ...CARDS[id] }));
+  return ['SCRIPT.COM', 'FORK.COM'].map((id) => ({ ...CARDS[id] }));
 }
 
 // Cards always available in the draft-between-nodes pool (warez looted off breached

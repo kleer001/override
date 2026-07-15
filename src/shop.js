@@ -1,13 +1,13 @@
 // ROOT shop catalog. Pure data — persistence + application live in main.js.
 // Design: research/ROOT-shop-design.md. PERMANENT items are pool expansion (unlock
 // options, never raw stats); DECK items drop a basic card straight into your deck
-// (the cheap on-ramp out of the one-card starter); consumables carry the numeric
-// power and a single blessing/curse. Costs are starting points to tune (a run banks
-// ~40-90 ROOT per breach; players open with 120).
+// (a cheap way to thicken the curtain); consumables carry the numeric power and a
+// single blessing/curse. Costs are starting points to tune (a run banks ~40-90 ROOT
+// per breach; players open with 120).
 
 export const SHOP_ITEMS = [
-  // --- DECK: a basic card straight into the deck (repeatable, the cheap on-ramp) ---
-  { id: 'deck_FORK',     kind: 'deckcard', cost: 10, name: 'FORK.COM',            desc: 'into deck — right sheet 50%, high growth; pairs with SCRIPT.COM for a full curtain' },
+  // --- DECK: a basic card straight into the deck (repeatable, cheap) ---
+  { id: 'deck_FORK',     kind: 'deckcard', cost: 10, name: 'FORK.COM',            desc: 'into deck — another right sheet 50%; thickens the curtain, adds reproduce' },
   // --- PERMANENT: pool expansion (StS-anchored, persists forever) ---
   { id: 'card_ROOTKIT',  kind: 'card', cost: 100, name: 'UNLOCK CARD: ROOTKIT', desc: 'into draft pool — premium density, both ways' },
   { id: 'card_PAYLOAD',  kind: 'card', cost: 140, name: 'UNLOCK CARD: PAYLOAD', desc: 'into draft pool — dense and self-spreading' },
