@@ -14,9 +14,8 @@ import { buildScreen } from './render.js';
 import { composeBoard, detonate, setReducedMotion } from './juice.js';
 import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
-import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_CONTINUE, FIELD_FIRE, FIELD_OX,
+import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE, BTN_CONTINUE, FIELD_FIRE, FIELD_OX,
   BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
-import { CHARACTERS } from './characters.js';
 import { FIELD_W, WIN_COVERAGE } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
@@ -42,6 +41,7 @@ const PLAYS_KEY = 'override.plays';
 const game = {
   phase: 'assemble', run: null, node: null,
   program: new Array(SLOTS).fill(null), selection: [], hand: [], draft: [],
+  aimCol: 0,                    // turret column during the AIM phase
   message: '', bannerLines: [], seed: 0, redrawCount: 0,
 };
 
@@ -57,7 +57,7 @@ const savePoints = (v) => localStorage.setItem(POINTS_KEY, String(v));
 const loadPlays = () => parseInt(localStorage.getItem(PLAYS_KEY) || '0', 10) || 0;
 const savePlays = (v) => localStorage.setItem(PLAYS_KEY, String(v));
 const clock = () => performance.now();
-const paint = (now) => { screen.innerHTML = composeBoard(buildScreen(game), game, now); };
+const paint = (now) => { screen.innerHTML = composeBoard(buildScreen(game, now), game, now); };
 const draw = () => paint(clock());
 
 // --- ROOT shop persistence ---
@@ -71,7 +71,6 @@ const unlockedCards = () => loadJSON(CARDS_KEY, []);
 const loadRetry = () => parseInt(localStorage.getItem(RETRY_KEY) || '0', 10) || 0;
 const saveRetry = (v) => localStorage.setItem(RETRY_KEY, String(v));
 
-const availChars = () => CHARACTERS.filter((c) => unlockedChars().includes(c.id));
 const draftPool = () => DRAFT_POOL.concat(unlockedCards().map((id) => SHOP_CARDS[id]).filter(Boolean));
 
 function shopOwned(item) {
@@ -99,22 +98,14 @@ function startRun() {
     tier: 1, root: loadRoot(), points: loadPoints(), deck: loadDeck(),
     machine, char: null,
     aggression: baseAggro, baseAggro, pendingDrafts: 0, plays,
-    availChars: availChars(), overclockPool: overclock ? 300 : 0, retry: loadRetry(),
+    overclockPool: overclock ? 300 : 0, retry: loadRetry(),
   };
   savePlays(plays + 1);
   trauma.reset();
   game.node = null;
   game.bannerLines = [];
-  game.phase = 'charselect';
-  game.message = overclock ? 'OVERCLOCK: bigger REACH, faster trace.' : '';
-  draw();
-}
-
-function pickChar(i) {
-  if (game.phase !== 'charselect' || !game.run.availChars[i]) return;
-  game.run.char = game.run.availChars[i];
-  sfx.lock();
-  newAssemble();
+  newAssemble();                                   // straight into the loadout — no character picker
+  if (overclock) { game.message = 'OVERCLOCK: bigger REACH, faster trace.'; draw(); }
 }
 
 function dealHand() {
@@ -169,7 +160,16 @@ function undoSlot() {
 function gotoTarget() {
   if (!game.program.some(Boolean)) return;
   game.phase = 'target';
-  game.message = 'tap a column on the block to fire';
+  game.aimCol = FIELD_W >> 1;                     // turret starts at the block centre
+  game.message = 'slide the turret — tap a column, then FIRE.';
+  sfx.ui();
+  draw();
+}
+
+// slide the turret to a block column (the aim) — does not fire.
+function moveAim(blockCol) {
+  if (game.phase !== 'target') return;
+  game.aimCol = Math.max(0, Math.min(FIELD_W - 1, blockCol | 0));
   sfx.ui();
   draw();
 }
@@ -217,7 +217,7 @@ async function startExec() {
       if (!breached) { breached = true; sfx.crack(); if (!reduceMotion) detonate(clock(), 0.7); kick(0.5); }
     } else if (snap.breachLeft < 0) wasBreaching = false;
     draw();
-    await sleep(reduceMotion ? 0 : TICK_MS);
+    await sleep(TICK_MS);   // pacing is NOT a motion effect — reduced-motion only drops shake/flash (via kick/detonate guards), not the watch itself
   }
   if (node.outcome === 'lose') { sfx.flatline(); kick(0.9); }
   showResult();
@@ -313,9 +313,7 @@ function pickDraft(i) {
 // --- pointer input (mouse + touch) ---
 function onTapCell(col, row) {
   resumeAudio();
-  if (game.phase === 'charselect') {
-    for (let i = 0; i < CHARACTERS.length; i++) if (inRect(col, row, DRAFT_CARDS[i])) return pickChar(i);
-  } else if (game.phase === 'assemble') {
+  if (game.phase === 'assemble') {
     for (let i = 0; i < HAND_CARDS.length; i++) if (inRect(col, row, HAND_CARDS[i])) return loadSlot(i);
     if (inRect(col, row, BTN_REDRAW)) return redraw();
     if (inRect(col, row, BTN_UNDO)) return undoSlot();
@@ -323,7 +321,8 @@ function onTapCell(col, row) {
   } else if (game.phase === 'target') {
     if (inRect(col, row, BTN_AGGRO_DOWN)) return lowerAggro();
     if (inRect(col, row, BTN_AGGRO_UP)) return raiseAggro();
-    if (inRect(col, row, FIELD_FIRE)) return fireAt(col - FIELD_OX);
+    if (inRect(col, row, BTN_FIRE)) return fireAt(game.aimCol);
+    if (inRect(col, row, FIELD_FIRE)) return moveAim(col - FIELD_OX);   // tap the block to slide the turret
   } else if (game.phase === 'draft') {
     for (let i = 0; i < DRAFT_CARDS.length; i++) if (inRect(col, row, DRAFT_CARDS[i])) return pickDraft(i);
   } else if (game.phase === 'shop') {
@@ -339,16 +338,16 @@ installPointer(screen, onTapCell);
 window.addEventListener('keydown', (e) => {
   resumeAudio();
   const k = e.key;
-  if (game.phase === 'charselect') {
-    if (k >= '1' && k <= '3') pickChar(+k - 1);
-  } else if (game.phase === 'assemble') {
+  if (game.phase === 'assemble') {
     if (k >= '1' && k <= '5') loadSlot(+k - 1);
     else if (k === 'r' || k === 'R') redraw();
     else if (k === 'Backspace') { e.preventDefault(); undoSlot(); }
     else if (k === 'Enter') gotoTarget();
   } else if (game.phase === 'target') {
-    if (k >= '1' && k <= '9') fireAt(Math.round((+k - 1) / 8 * (FIELD_W - 1)));   // 1..9 = columns L→R
-    else if (k === 'Enter' || k === ' ') fireAt(FIELD_W >> 1);                     // centre
+    if (k >= '1' && k <= '9') moveAim(Math.round((+k - 1) / 8 * (FIELD_W - 1)));   // 1..9 slide the turret L→R
+    else if (k === 'ArrowLeft') moveAim(game.aimCol - 1);
+    else if (k === 'ArrowRight') moveAim(game.aimCol + 1);
+    else if (k === 'Enter' || k === ' ') fireAt(game.aimCol);                      // FIRE at the current aim
     else if (k === '+' || k === '=') raiseAggro();
     else if (k === '-' || k === '_') lowerAggro();
   } else if (game.phase === 'draft') {
@@ -362,7 +361,8 @@ window.addEventListener('keydown', (e) => {
 });
 
 // pulse loop: repaint while the field is live so captures breathe; shake every frame.
-const needsAnim = () => game.node && (game.phase === 'exec' || game.phase === 'result');
+// repaint continuously during AIM (the turret pulses) and the live watch
+const needsAnim = () => game.phase === 'target' || (game.node && (game.phase === 'exec' || game.phase === 'result'));
 let lastPaint = 0, lastFrame = 0, shaking = false;
 function applyShake(dt) {
   trauma.decay(dt);

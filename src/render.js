@@ -7,11 +7,9 @@ import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO
 import { mergeBeam, beamGutterLines, cardLabel } from './cards.js';
 import {
   COLS, ROWS, FIELD, GUTTER, TRAY, FIELD_OX, FIELD_OY,
-  HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_CONTINUE,
+  HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE, BTN_CONTINUE,
   BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN,
 } from './layout.js';
-import { CHARACTERS } from './characters.js';
-
 export { COLS, ROWS };
 
 const TERRAIN_G = [' ', '▒', '▓', '═', '"'];       // OPEN HARD WALL BUS HONEY
@@ -95,11 +93,26 @@ function drawShop(g, game) {
   drawButton(g, BTN_JACKIN, false);
 }
 
-function drawField(g, game) {
+// AIM overlay: the turret sits at the bottom of the block under the aim column and
+// a dotted preview spine shows where the packet will draw — both pulse so it reads
+// as a live, movable aimer.
+function drawAim(g, game, now) {
+  const merged = mergeBeam(game.program.filter(Boolean));
+  const preview = { p: game.aimCol, shapes: merged.shapes, amp: merged.amp, freq: merged.freq };
+  const on = Math.floor(now / 260) % 2 === 0;                     // ~2 Hz blink
+  for (let y = 0; y < FIELD_H; y++) {
+    const sx = spineX(preview, y);
+    if (on || y % 2 === 0) g[FIELD_OY + y][FIELD_OX + sx] = '¦';  // pending spine (dotted)
+  }
+  g[FIELD_OY + FIELD_H - 1][FIELD_OX + game.aimCol] = on ? '▲' : '△';   // pulsing turret
+}
+
+function drawField(g, game, now) {
   const { phase, run, node } = game;
   if (phase === 'shop') { drawShop(g, game); return; }
   const sim = node && node.sim;
   drawBlockCells(g, run.machine, sim);
+  if (phase === 'target') drawAim(g, game, now);
   // result banner over the block
   if (phase === 'result') {
     const msg = (game.bannerLines || []);
@@ -157,10 +170,7 @@ function drawGutter(g, game) {
 // --- TRAY: hand / draft / jack-ins / loadout ---
 function drawTray(g, game) {
   const { phase } = game;
-  if (phase === 'charselect') {
-    const chars = (game.run && game.run.availChars) || CHARACTERS;
-    chars.slice(0, 3).forEach((ch, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1), { name: ch.name, desc: ch.desc }, false));
-  } else if (phase === 'draft') {
+  if (phase === 'draft') {
     game.draft.forEach((c, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1), c, false));
   } else if (phase === 'assemble') {
     game.hand.forEach((h, i) => {
@@ -172,20 +182,21 @@ function drawTray(g, game) {
     // target / exec / result: show the slotted loadout so you see what fired
     const slotted = game.program.filter(Boolean);
     if (slotted.length) slotted.forEach((c, i) => drawCard(g, HAND_CARDS[i].x, HAND_CARDS[i].y, `S${i + 1}`, c, false, HAND_CARDS[i].w));
+    if (game.phase === 'target') drawButton(g, BTN_FIRE, false);   // FIRE, beside the loadout
   }
 }
 
 // panel titles change with the phase; the panels themselves never move
 function titles(phase) {
-  const tray = phase === 'charselect' ? 'SELECT YOUR JACK-IN'
-    : phase === 'draft' ? 'DRAFT — bank a card into your deck'
-      : phase === 'assemble' ? 'LOADOUT — slot cards, then ▶ START'
+  const tray = phase === 'draft' ? 'DRAFT — bank a card into your deck'
+    : phase === 'assemble' ? 'LOADOUT — slot cards, then ▶ START'
+      : phase === 'target' ? 'AIM — slide the turret, then FIRE'
         : 'LOADOUT — the beam you fired';
   const field = phase === 'shop' ? 'ROOT SHOP' : 'THE MACHINE — one memory block';
   return { field, tray };
 }
 
-export function buildScreen(game) {
+export function buildScreen(game, now = 0) {
   const g = blank();
   const { phase } = game;
   const t = titles(phase);
@@ -193,7 +204,7 @@ export function buildScreen(game) {
   panelBox(g, GUTTER, 'STATUS');
   panelBox(g, TRAY, t.tray);
 
-  drawField(g, game);
+  drawField(g, game, now);
   drawGutter(g, game);
   drawTray(g, game);
 
