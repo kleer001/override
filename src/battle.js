@@ -29,9 +29,9 @@ export const BREACH_HOLD = 15;      // ticks held ≥WIN_COVERAGE to breach
 // --- AGGRESSION: the single difficulty dial. It scales the whole trace scan (the
 // enemy), mirroring how your deck scales the whole beam. The player raises it for
 // free (harder scan, bigger reward) or spends ROOT to lower it (safer). ---
-export const AGGRO_BASE = 0.75;        // the "real" graduated baseline (post-onboarding)
+export const AGGRO_BASE = 0.75;        // reference "standard" aggression (reward is relative to your own baseline)
 export const AGGRO_STEP = 0.25;
-export const AGGRO_MIN = 0.5;
+export const AGGRO_MIN = 0.3;          // absolute floor — matches the DDA baseline's low end
 export const AGGRO_MAX = 2.5;
 export const AGGRO_REDUCE_COST = 15;   // ROOT to lower aggression one step
 

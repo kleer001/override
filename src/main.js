@@ -9,7 +9,7 @@ import { mulberry32, shuffle } from './rng.js';
 import { startingDeck, DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
 import { SHOP_ITEMS, DECK_CARD, CARD_UNLOCK } from './shop.js';
 import { createNode, fire, stepBattle, coverage, aimColAt, REDRAW_COST, SLOTS,
-  rewardMult, draftPicks, AGGRO_BASE, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
+  rewardMult, draftPicks, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
 import { buildScreen } from './render.js';
 import { composeBoard, detonate, setReducedMotion } from './juice.js';
 import { createTrauma } from './shake.js';
@@ -83,21 +83,23 @@ function shopOwned(item) {
   return false;   // deck-adds / consumables are repeatable
 }
 
-// Difficulty ramps on WINS, not runs — a mastery ladder, not a clock. You only
-// face harder terrain/trace once you've proven you can clear the tier below. It's
-// self-balancing: every win also grants a draft, so the deck grows in lockstep
-// with the difficulty it unlocks. Losses never push difficulty up.
+// --- Dynamic difficulty (DDA): the trace-scan baseline adapts to the player. ---
+// We don't trust a fixed win% guess — the baseline aggression nudges UP a little on
+// a breach and DOWN a little on a loss, converging on the win rate implied by the
+// step ratio: p·UP = (1−p)·DOWN → p = DOWN/(UP+DOWN). With 0.04/0.03 that's ~43%
+// ("about half, not more"). Kept as the BASELINE the player still dials from, and
+// clamped to a band so it can't run away. Persisted across runs.
+const AGGRO_KEY = 'override.aggro';
+const DDA_START = 0.30, DDA_UP = 0.04, DDA_DOWN = 0.03, DDA_MIN = 0.30, DDA_MAX = 1.50;
+const clampDDA = (v) => Math.max(DDA_MIN, Math.min(DDA_MAX, v));
+const loadAggro = () => clampDDA(parseFloat(localStorage.getItem(AGGRO_KEY)) || DDA_START);
+const saveAggro = (v) => localStorage.setItem(AGGRO_KEY, clampDDA(v).toFixed(2));
+// nudge the persisted baseline after an outcome (applies to the NEXT run).
+const adaptAggro = (won) => saveAggro(loadAggro() + (won ? DDA_UP : -DDA_DOWN));
 
-// Aggression (trace-scan speed) warmup, keyed to wins.
-function onboardingBase(wins) {
-  const EASY = 0.5, REAL = AGGRO_BASE;   // 0.5 → 0.75 over the first three wins
-  if (wins <= 0) return EASY;
-  if (wins >= 3) return REAL;
-  return +(EASY + (REAL - EASY) * (wins / 3)).toFixed(2);
-}
-
-// Terrain difficulty CEILING keyed to wins — the block generator rerolls until it's
+// Terrain difficulty CEILING keyed to WINS — the block generator rerolls until it's
 // at most this tier, so RNG can't hand you an unwinnable wall before you're ready.
+// (The aggression DDA above tunes the trace SPEED; this gates the map's terrain.)
 // Clear a tier (a win) to unlock the next; fully-random blocks arrive at 3 wins.
 function difficultyCeil(wins) {
   if (wins <= 0) return 'EASY';    // no wins yet: a soft block to learn on
@@ -110,7 +112,7 @@ function startRun() {
   const plays = loadPlays(), wins = loadWins();
   const machine = generateMachineUpTo((Date.now() ^ 0x9e3779b9) >>> 0, difficultyCeil(wins));
   game.seed = machine.seed;                          // adopt the chosen block's seed for hand/draft RNG
-  let baseAggro = onboardingBase(wins);
+  let baseAggro = loadAggro();                        // adaptive baseline (DDA), tuned by past outcomes
   const overclock = localStorage.getItem(OC_KEY) === '1';
   if (overclock) { localStorage.removeItem(OC_KEY); baseAggro = Math.min(AGGRO_MAX, +(baseAggro + 0.25).toFixed(2)); }
   game.run = {
@@ -138,7 +140,7 @@ function showTitle() {
 // starter, ROOT to 120, wins/plays to 0). Keep the deck-version stamp current so
 // the fresh starter isn't re-wiped by the migration guard on the next load.
 function resetSave() {
-  for (const k of [ROOT_KEY, DECK_KEY, PLAYS_KEY, WINS_KEY, CARDS_KEY, RETRY_KEY, OC_KEY]) localStorage.removeItem(k);
+  for (const k of [ROOT_KEY, DECK_KEY, PLAYS_KEY, WINS_KEY, AGGRO_KEY, CARDS_KEY, RETRY_KEY, OC_KEY]) localStorage.removeItem(k);
   localStorage.setItem(DECK_VERSION_KEY, DECK_VERSION);
 }
 
@@ -259,6 +261,7 @@ function showResult() {
   const node = game.node, r = game.run;
   game.phase = 'result';
   node.crack = coverage(node.sim);
+  adaptAggro(node.outcome === 'win');   // DDA: nudge the baseline for the NEXT run (win up, loss down)
   if (node.outcome === 'win') {
     const mult = rewardMult(node.aggro, node.baseAggro);
     const overkill = Math.round(Math.max(0, node.crack - WIN_COVERAGE) * mult);   // coverage past 50% pays extra
