@@ -134,7 +134,7 @@ function drawGutter(g, game) {
   const L = (s = '') => stamp(g, GUTTER.x + 2, 1 + r++, String(s).slice(0, GUTTER.w - 3));
   const gap = () => { r++; };
 
-  L(`ROOT ${run.root}`); L(`PTS  ${run.points}`); L(`DECK ${run.deck.length}`); gap();
+  L(`ROOT ${run.root}`); L(`DECK ${run.deck.length}`); gap();
 
   if (node && (phase === 'exec' || phase === 'result')) {
     const sim = node.sim, cp = crackPct(node);
@@ -150,7 +150,7 @@ function drawGutter(g, game) {
     if (game.program.some(Boolean)) { const [l1, l2] = beamGutterLines(mergeBeam(game.program.filter(Boolean))); L(l1); L(l2); }
     else L('(slot cards)');
     gap(); L(`SLOTS ${game.program.filter(Boolean).length}/${SLOTS}`);
-    drawButton(g, BTN_REDRAW, run.points < REDRAW_COST);
+    drawButton(g, BTN_REDRAW, run.root < REDRAW_COST);
     drawButton(g, BTN_UNDO, !game.selection.length);
     // START lives in the tray next to the cards (drawn by drawTray)
   } else if (phase === 'target') {
@@ -159,7 +159,7 @@ function drawGutter(g, game) {
     L('BEAM'); L(l1); L(l2); gap();
     L(`AGGRO x${a.toFixed(2)}`); L(`reward x${rewardMult(a, base).toFixed(2)}`); L(`${draftPicks(a, base)} draft`);
     if (base < AGGRO_BASE) L('TRAINING');
-    drawButton(g, BTN_AGGRO_DOWN, run.points < AGGRO_REDUCE_COST);
+    drawButton(g, BTN_AGGRO_DOWN, run.root < AGGRO_REDUCE_COST);
     drawButton(g, BTN_AGGRO_UP, false);
   }
 

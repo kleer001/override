@@ -29,7 +29,7 @@ function assembleGame() {
   // slots exercise the widest glyph set — arrows, mask, all the aspect lines.
   const deck = ['SCRIPT.COM', 'SCRIPT.SYS', 'BUFFER.OVR', 'WORM', 'DAEMON'].map((id) => ({ ...CARDS[id] }));
   const hand = shuffle(deck, mulberry32(7)).slice(0, 5).map((c) => ({ name: c.name, card: c, used: false }));
-  const run = { tier: 1, root: 120, points: 0, deck, machine, aggression: 0.75, baseAggro: 0.75, pendingDrafts: 0 };
+  const run = { tier: 1, root: 120, deck, machine, aggression: 0.75, baseAggro: 0.75, pendingDrafts: 0 };
   return { phase: 'assemble', run, node: null, program: [deck[0], deck[1], null], selection: [0, 1], hand, draft: [], message: 'need 10 PTS to redraw.', bannerLines: [] };
 }
 function execGame() {

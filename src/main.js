@@ -35,7 +35,6 @@ const trauma = createTrauma();
 const kick = (amount) => { if (!reduceMotion) trauma.add(amount); };
 const ROOT_KEY = 'override.root';
 const DECK_KEY = 'override.deck';
-const POINTS_KEY = 'override.points';
 const PLAYS_KEY = 'override.plays';
 
 const game = {
@@ -51,8 +50,6 @@ const loadDeck = () => {
   return raw ? JSON.parse(raw).map((id) => ({ ...CARDS[id] })).filter((c) => c.id) : startingDeck();
 };
 const saveDeck = (deck) => localStorage.setItem(DECK_KEY, JSON.stringify(deck.map((c) => c.id)));
-const loadPoints = () => parseInt(localStorage.getItem(POINTS_KEY) || '0', 10) || 0;
-const savePoints = (v) => localStorage.setItem(POINTS_KEY, String(v));
 const loadPlays = () => parseInt(localStorage.getItem(PLAYS_KEY) || '0', 10) || 0;
 const savePlays = (v) => localStorage.setItem(PLAYS_KEY, String(v));
 const clock = () => performance.now();
@@ -91,7 +88,7 @@ function startRun() {
   const overclock = localStorage.getItem(OC_KEY) === '1';
   if (overclock) { localStorage.removeItem(OC_KEY); baseAggro = Math.min(AGGRO_MAX, +(baseAggro + 0.25).toFixed(2)); }
   game.run = {
-    tier: 1, root: loadRoot(), points: loadPoints(), deck: loadDeck(),
+    tier: 1, root: loadRoot(), deck: loadDeck(),
     machine,
     aggression: baseAggro, baseAggro, pendingDrafts: 0, plays,
     overclockPool: overclock ? 300 : 0, retry: loadRetry(),
@@ -125,8 +122,8 @@ function newAssemble() {
 function redraw() {
   if (game.phase !== 'assemble') return;
   const r = game.run;
-  if (r.points < REDRAW_COST) { game.message = `need ${REDRAW_COST} PTS to redraw.`; draw(); return; }
-  r.points -= REDRAW_COST; savePoints(r.points);
+  if (r.root < REDRAW_COST) { game.message = `need ${REDRAW_COST} ROOT to redraw.`; draw(); return; }
+  r.root -= REDRAW_COST; saveRoot(r.root);
   game.redrawCount++;
   dealHand();
   game.message = '';
@@ -175,8 +172,8 @@ function raiseAggro() {
 }
 function lowerAggro() {
   if (game.phase !== 'target' || game.run.aggression <= AGGRO_MIN) return;
-  if (game.run.points < AGGRO_REDUCE_COST) { game.message = `need ${AGGRO_REDUCE_COST} PTS to de-risk.`; draw(); return; }
-  game.run.points -= AGGRO_REDUCE_COST; savePoints(game.run.points);
+  if (game.run.root < AGGRO_REDUCE_COST) { game.message = `need ${AGGRO_REDUCE_COST} ROOT to de-risk.`; draw(); return; }
+  game.run.root -= AGGRO_REDUCE_COST; saveRoot(game.run.root);
   game.run.aggression = +(game.run.aggression - AGGRO_STEP).toFixed(2);
   sfx.ui(); draw();
 }
@@ -223,14 +220,13 @@ function showResult() {
   node.crack = coverage(node.sim);
   if (node.outcome === 'win') {
     const mult = rewardMult(node.aggro, node.baseAggro);
-    const reward = Math.round(50 * mult);
+    const overkill = Math.round(Math.max(0, node.crack - WIN_COVERAGE) * mult);   // coverage past 50% pays extra
+    const reward = Math.round(50 * mult) + overkill;
     r.root += reward; saveRoot(r.root);
-    const bonus = Math.round(Math.max(0, node.crack - WIN_COVERAGE) * mult);
-    r.points += bonus; savePoints(r.points);
     r.pendingDrafts = draftPicks(node.aggro, node.baseAggro);
     kick(0.7);
     sfx.lock(); sfx.win();
-    game.bannerLines = ['>> THE MACHINE BREACHED <<', `+${reward} ROOT · +${bonus} PTS · ${r.pendingDrafts} card draft`];
+    game.bannerLines = ['>> THE MACHINE BREACHED <<', `+${reward} ROOT · ${r.pendingDrafts} card draft`];
     game.message = `breached at ${node.crack.toFixed(0)}% (aggro x${node.aggro.toFixed(2)}).`;
   } else if (r.retry > 0) {
     r.retry -= 1; saveRetry(r.retry);

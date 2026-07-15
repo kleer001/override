@@ -15,7 +15,7 @@ import { createSimOn, stepSim, coverage, spineX, aimColAt } from './beam.js';
 import { mergeBeam, beamGutterLines } from './cards.js';
 
 export { generateMachine };
-export const REDRAW_COST = 10;      // points spent to reshuffle the hand in assemble
+export const REDRAW_COST = 10;      // ROOT spent to reshuffle the hand in assemble
 export const SLOTS = 3;             // beam slots in assemble (Tier 1)
 
 // --- Tier-1 shared terminal/scan constants (validated in beam-balance.js on the
@@ -28,12 +28,12 @@ export const BREACH_HOLD = 15;      // ticks held ≥WIN_COVERAGE to breach
 
 // --- AGGRESSION: the single difficulty dial. It scales the whole trace scan (the
 // enemy), mirroring how your deck scales the whole beam. The player raises it for
-// free (harder scan, bigger reward) or spends PTS to lower it (safer). ---
+// free (harder scan, bigger reward) or spends ROOT to lower it (safer). ---
 export const AGGRO_BASE = 0.75;        // the "real" graduated baseline (post-onboarding)
 export const AGGRO_STEP = 0.25;
 export const AGGRO_MIN = 0.5;
 export const AGGRO_MAX = 2.5;
-export const AGGRO_REDUCE_COST = 15;   // PTS to lower aggression one step
+export const AGGRO_REDUCE_COST = 15;   // ROOT to lower aggression one step
 
 // Reward/draft are relative to the run's baseline, so the current default always
 // pays "standard" and cranking ABOVE it is what pays more.

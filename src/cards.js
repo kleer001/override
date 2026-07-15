@@ -32,7 +32,7 @@ function ampFor(shapes) {
 // shape ∈ beam SHAPES keys; dirs ⊆ the 8 compass headings; growth ∈ GROWTH keys.
 export const CARDS = {
   'SCRIPT.COM': { id: 'SCRIPT.COM', name: 'SCRIPT.COM', shape: 'linear', dirs: ['←'],       prob: 50, growth: 'Med',  desc: 'the starter warez — a left sheet at 50% with a steady reproduce' },
-  'FORK.COM':   { id: 'FORK.COM',   name: 'FORK.COM',   shape: 'linear', dirs: ['→'],       prob: 50, growth: 'High', desc: 'the cheap mirror — a right sheet that self-replicates hard; merge with SCRIPT.COM for a full-width curtain' },
+  'FORK.COM':   { id: 'FORK.COM',   name: 'FORK.COM',   shape: 'linear', dirs: ['→'],       prob: 50, growth: 'Low',  desc: 'the cheap mirror — a right sheet at 50%; merge with SCRIPT.COM for a full-width curtain' },
   'SCRIPT.SYS': { id: 'SCRIPT.SYS', name: 'SCRIPT.SYS', shape: 'linear', dirs: ['→'],       prob: 25, growth: 'Low',  desc: 'the mirror — opens a curtain the other way' },
   'BUFFER.OVR': { id: 'BUFFER.OVR', name: 'BUFFER.OVR', shape: 'linear', dirs: ['←', '→'],  prob: 50, growth: 'Med',  desc: 'overflow both ways — the curtain workhorse' },
   'WORM':       { id: 'WORM',       name: 'WORM',       shape: 'sine',   dirs: ['←', '→'],  prob: 25, growth: 'High', desc: 'the Morris spread — low density but self-replicates hard' },
