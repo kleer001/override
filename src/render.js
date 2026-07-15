@@ -3,7 +3,7 @@
 // controls), TRAY (cards). See src/layout.js for the geometry.
 
 import { FIELD_W, FIELD_H, WALL, idx, WIN_COVERAGE } from './terrain.js';
-import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, SLOTS, spineX } from './battle.js';
+import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, SLOTS, spineX, aimColAt } from './battle.js';
 import { mergeBeam, beamGutterLines, cardLabel } from './cards.js';
 import {
   COLS, ROWS, FIELD, GUTTER, TRAY, FIELD_OX, FIELD_OY,
@@ -93,18 +93,18 @@ function drawShop(g, game) {
   drawButton(g, BTN_JACKIN, false);
 }
 
-// AIM overlay: the turret sits at the bottom of the block under the aim column and
-// a dotted preview spine shows where the packet will draw — both pulse so it reads
-// as a live, movable aimer.
+// AIM overlay: the turret oscillates across the base of the block (aimColAt drives
+// its column from wall-clock `now`) and a dotted preview spine sweeps with it,
+// showing where the packet will draw. The player times LAUNCH to this sweep.
 function drawAim(g, game, now) {
   const merged = mergeBeam(game.program.filter(Boolean));
-  const preview = { p: game.aimCol, shapes: merged.shapes, amp: merged.amp, freq: merged.freq };
-  const on = Math.floor(now / 260) % 2 === 0;                     // ~2 Hz blink
+  const col = aimColAt(now);
+  const preview = { p: col, shapes: merged.shapes, amp: merged.amp, freq: merged.freq };
   for (let y = 0; y < FIELD_H; y++) {
     const sx = spineX(preview, y);
-    if (on || y % 2 === 0) g[FIELD_OY + y][FIELD_OX + sx] = '¦';  // pending spine (dotted)
+    if (y % 2 === 0) g[FIELD_OY + y][FIELD_OX + sx] = '¦';        // dotted preview spine
   }
-  g[FIELD_OY + FIELD_H - 1][FIELD_OX + game.aimCol] = on ? '▲' : '△';   // pulsing turret
+  g[FIELD_OY + FIELD_H - 1][FIELD_OX + col] = '▲';               // the sweeping turret
 }
 
 function drawField(g, game, now) {
@@ -190,7 +190,7 @@ function drawTray(g, game) {
 function titles(phase) {
   const tray = phase === 'draft' ? 'DRAFT — bank a card into your deck'
     : phase === 'assemble' ? 'LOADOUT — slot cards, then ▶ START'
-      : phase === 'target' ? 'AIM — slide the turret, then FIRE'
+      : phase === 'target' ? 'AIM — the turret sweeps · time your LAUNCH'
         : 'LOADOUT — the beam you fired';
   const field = phase === 'shop' ? 'ROOT SHOP' : 'THE MACHINE — one memory block';
   return { field, tray };

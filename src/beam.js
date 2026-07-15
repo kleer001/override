@@ -61,6 +61,16 @@ export function spineX(params, y) {
   return x < 0 ? 0 : x > FIELD_W - 1 ? FIELD_W - 1 : x;
 }
 
+// The AIM turret oscillates across the block on a fixed period (pendulum/sine).
+// The UI derives the current column from wall-clock `now`; the renderer and the
+// launch handler both call this so they fire from exactly where it's drawn. Pure —
+// the sim itself never calls it.
+export const AIM_PERIOD = 2500;   // ms per full back-and-forth sweep
+export function aimColAt(now) {
+  const c = (FIELD_W - 1) / 2;
+  return Math.round(c + c * Math.sin((2 * Math.PI * now) / AIM_PERIOD));
+}
+
 const clampBudgetCost = (terr, jit) => {
   const base = COST[terr];
   if (base === Infinity) return Infinity;                     // WALL stays a firebreak

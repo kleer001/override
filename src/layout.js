@@ -29,9 +29,10 @@ export const FIELD_FIRE = { x: FIELD_OX, y: FIELD_OY, w: 62, h: 28 };
 // tray: five hand cards (14 wide x 8 tall) with a big START button to their right
 export const HAND_CARDS = Array.from({ length: 5 }, (_, i) => ({ x: 2 + i * 14, y: 31, w: 14, h: 8 }));
 // the primary "go" control — a tall, thumb-sized button right beside the cards.
-// In assemble it reads START (enters AIM); in the AIM phase it reads FIRE.
+// In assemble it reads START (enters AIM); in the AIM phase the same button reads
+// LAUNCH (fires at the oscillating turret's current column).
 export const BTN_START = { x: 72, y: 31, w: 7, h: 8, label: 'START' };
-export const BTN_FIRE = { x: 72, y: 31, w: 7, h: 8, label: 'FIRE' };
+export const BTN_FIRE = { x: 72, y: 31, w: 7, h: 8, label: 'LAUNCH' };
 
 // draft / char-select: three cards centered in the tray (pitch 17)
 const DRAFT_X0 = Math.floor((COLS - (3 * 15 + 2 * 2)) / 2);

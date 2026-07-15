@@ -8,13 +8,13 @@
 import { mulberry32, shuffle } from './rng.js';
 import { startingDeck, DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
 import { SHOP_ITEMS, CHAR_UNLOCK, CARD_UNLOCK } from './shop.js';
-import { generateMachine, createNode, fire, stepBattle, coverage, REDRAW_COST, SLOTS,
+import { generateMachine, createNode, fire, stepBattle, coverage, aimColAt, REDRAW_COST, SLOTS,
   rewardMult, draftPicks, AGGRO_BASE, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
 import { buildScreen } from './render.js';
 import { composeBoard, detonate, setReducedMotion } from './juice.js';
 import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
-import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE, BTN_CONTINUE, FIELD_FIRE, FIELD_OX,
+import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE, BTN_CONTINUE,
   BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, inRect } from './layout.js';
 import { FIELD_W, WIN_COVERAGE } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
@@ -41,7 +41,6 @@ const PLAYS_KEY = 'override.plays';
 const game = {
   phase: 'assemble', run: null, node: null,
   program: new Array(SLOTS).fill(null), selection: [], hand: [], draft: [],
-  aimCol: 0,                    // turret column during the AIM phase
   message: '', bannerLines: [], seed: 0, redrawCount: 0,
 };
 
@@ -160,18 +159,16 @@ function undoSlot() {
 function gotoTarget() {
   if (!game.program.some(Boolean)) return;
   game.phase = 'target';
-  game.aimCol = FIELD_W >> 1;                     // turret starts at the block centre
-  game.message = 'slide the turret — tap a column, then FIRE.';
+  game.message = 'the turret sweeps — time your LAUNCH.';
   sfx.ui();
   draw();
 }
 
-// slide the turret to a block column (the aim) — does not fire.
-function moveAim(blockCol) {
+// LAUNCH: fire at the turret's column at THIS instant (same clock the render uses,
+// so the packet leaves from exactly where the turret is drawn).
+function launch() {
   if (game.phase !== 'target') return;
-  game.aimCol = Math.max(0, Math.min(FIELD_W - 1, blockCol | 0));
-  sfx.ui();
-  draw();
+  fireAt(aimColAt(clock()));
 }
 
 function raiseAggro() {
@@ -321,8 +318,7 @@ function onTapCell(col, row) {
   } else if (game.phase === 'target') {
     if (inRect(col, row, BTN_AGGRO_DOWN)) return lowerAggro();
     if (inRect(col, row, BTN_AGGRO_UP)) return raiseAggro();
-    if (inRect(col, row, BTN_FIRE)) return fireAt(game.aimCol);
-    if (inRect(col, row, FIELD_FIRE)) return moveAim(col - FIELD_OX);   // tap the block to slide the turret
+    if (inRect(col, row, BTN_FIRE)) return launch();   // LAUNCH at the swinging turret
   } else if (game.phase === 'draft') {
     for (let i = 0; i < DRAFT_CARDS.length; i++) if (inRect(col, row, DRAFT_CARDS[i])) return pickDraft(i);
   } else if (game.phase === 'shop') {
@@ -344,10 +340,7 @@ window.addEventListener('keydown', (e) => {
     else if (k === 'Backspace') { e.preventDefault(); undoSlot(); }
     else if (k === 'Enter') gotoTarget();
   } else if (game.phase === 'target') {
-    if (k >= '1' && k <= '9') moveAim(Math.round((+k - 1) / 8 * (FIELD_W - 1)));   // 1..9 slide the turret L→R
-    else if (k === 'ArrowLeft') moveAim(game.aimCol - 1);
-    else if (k === 'ArrowRight') moveAim(game.aimCol + 1);
-    else if (k === 'Enter' || k === ' ') fireAt(game.aimCol);                      // FIRE at the current aim
+    if (k === 'Enter' || k === ' ') launch();          // LAUNCH at the swinging turret
     else if (k === '+' || k === '=') raiseAggro();
     else if (k === '-' || k === '_') lowerAggro();
   } else if (game.phase === 'draft') {

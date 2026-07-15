@@ -11,7 +11,7 @@
 
 import { mulberry32 } from './rng.js';
 import { generateMachine, sectorStats, FIELD_H, WIN_COVERAGE } from './terrain.js';
-import { createSimOn, stepSim, coverage, spineX } from './beam.js';
+import { createSimOn, stepSim, coverage, spineX, aimColAt } from './beam.js';
 import { mergeBeam, beamGutterLines } from './cards.js';
 
 export { generateMachine };
@@ -126,8 +126,8 @@ export function runBattlePeak(node) {
 // Whole battle in one call (headless / tests) — the outcome-only variant.
 export function runBattle(node) { return runBattlePeak(node).node; }
 
-// Re-expose spineX for the renderer (pending-spine preview).
-export { spineX, coverage };
+// Re-expose sim helpers the UI needs (pending-spine preview, oscillating aim).
+export { spineX, coverage, aimColAt };
 
 function push(node, line) {
   node.log.push(line);
