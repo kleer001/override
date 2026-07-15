@@ -31,7 +31,7 @@ function ampFor(shapes) {
 // The Tier-1 card pool (ember-model.md §5). Each card is a bundled quad + identity.
 // shape ∈ beam SHAPES keys; dirs ⊆ the 8 compass headings; growth ∈ GROWTH keys.
 export const CARDS = {
-  'SCRIPT.COM': { id: 'SCRIPT.COM', name: 'SCRIPT.COM', shape: 'linear', dirs: ['←'],       prob: 25, growth: 'Low',  desc: 'the starter warez — a thin left sheet, just enough reproduce to crack your own box' },
+  'SCRIPT.COM': { id: 'SCRIPT.COM', name: 'SCRIPT.COM', shape: 'linear', dirs: ['←'],       prob: 50, growth: 'Low',  desc: 'the starter warez — a left sheet at 50%, just enough reproduce to crack your own box' },
   'SCRIPT.SYS': { id: 'SCRIPT.SYS', name: 'SCRIPT.SYS', shape: 'linear', dirs: ['→'],       prob: 25, growth: 'Low',  desc: 'the mirror — opens a curtain the other way' },
   'BUFFER.OVR': { id: 'BUFFER.OVR', name: 'BUFFER.OVR', shape: 'linear', dirs: ['←', '→'],  prob: 50, growth: 'Med',  desc: 'overflow both ways — the curtain workhorse' },
   'WORM':       { id: 'WORM',       name: 'WORM',       shape: 'sine',   dirs: ['←', '→'],  prob: 25, growth: 'High', desc: 'the Morris spread — low density but self-replicates hard' },
@@ -107,14 +107,10 @@ export function beamGutterLines(merged) {
   return [`${sh} ${dir}`, `${density} ${gr}`];
 }
 
-// Tier-1 starting deck (9 cards) — the curtain starter, per SPEC-SHEET.
+// Tier-1 starting deck — ONE forbidden card. You barely crack your own terminal;
+// the deck grows from there. (Tune by eye: add ids/copies here.)
 export function startingDeck() {
-  return [
-    'SCRIPT.COM', 'SCRIPT.COM', 'SCRIPT.COM', 'SCRIPT.COM',
-    'SCRIPT.SYS', 'SCRIPT.SYS',
-    'BUFFER.OVR', 'BUFFER.OVR',
-    'NOP.SLED',
-  ].map((id) => ({ ...CARDS[id] }));
+  return ['SCRIPT.COM'].map((id) => ({ ...CARDS[id] }));
 }
 
 // Cards always available in the draft-between-nodes pool (warez looted off breached

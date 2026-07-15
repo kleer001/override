@@ -19,7 +19,7 @@ function play(machine, si, program, aggro = 0.75, override) {
 }
 
 test('merge: probability ADDS and caps at 100%', () => {
-  assert.equal(mergeBeam([CARDS['SCRIPT.COM'], CARDS['SCRIPT.COM']]).prob, 50);   // 25+25
+  assert.equal(mergeBeam([CARDS['SCRIPT.SYS'], CARDS['SCRIPT.SYS']]).prob, 50);   // 25+25
   assert.equal(mergeBeam([CARDS['ROOTKIT'], CARDS['ROOTKIT']]).prob, 100);        // 75+75 -> cap
 });
 
