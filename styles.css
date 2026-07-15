@@ -46,6 +46,13 @@ html, body {
   letter-spacing: 0;
   white-space: pre;
   text-shadow: 0 0 4px rgba(255, 176, 0, 0.7), 0 0 10px rgba(255, 176, 0, 0.25);
+  /* the tap surface: kill mobile pan/zoom + long-press selection so every touch
+     reaches the pointerdown handler as a clean tap (touch-action isn't inherited
+     from .crt) */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* burned cells run hotter than base phosphor; opacity (set inline) does the pulse */
