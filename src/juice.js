@@ -13,7 +13,7 @@ import { FIELD_OY, FIELD_OX, COLS } from './layout.js';
 
 const TWO_PI = Math.PI * 2;
 const PERIOD = 1400;      // active-burn pulse: one dim->bright->dim cycle (ms)
-const DIM = 0.35, FULL = 1, MED = 0.72, DARK = 0.12;
+const DIM = 0.35, FULL = 1, MED = 0.72;
 const FLASH_MS = 150;     // the single conquer flash
 const FAST_PERIOD = 500;  // celebration pulse, ~2x the active pulse
 const FAST_PULSES = 4;
@@ -94,7 +94,10 @@ function cellStyle(ch, x, y, machine, now) {
       // settled: locked-in grid — pull board glyphs to '#', never touch labels
       return { cls: 'brn', op: MED, ch: (ch === '@') ? '#' : ch };
     }
-    return (!reduced && el < CELEB_END) ? { cls: '', op: 1, ch } : { cls: '', op: DARK, ch }; // ground goes dark
+    // Ground stays LIT. A breach ends the run, and the result banner + CONTINUE
+    // button are drawn over this ground — the old "dark ground as you move to the
+    // next sector" (multi-sector model) would black the overlay out. Keep it full.
+    return { cls: '', op: 1, ch };
   }
   if (burned) {
     const pulse = round2(DIM + (FULL - DIM) * wave(now - state.born[c], pulsePeriod()));
