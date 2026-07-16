@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CARDS, mergeBeam, GROWTH_CAP } from '../src/cards.js';
+import { CARDS, buildChain, chainSeedTotal, CONNECTORS } from '../src/cards.js';
 import { generateMachine, createNode, runBattle, runBattlePeak, rewardMult, draftPicks } from '../src/battle.js';
 import { WIN_COVERAGE, idx, FIELD_H, energyTo, COST, OPEN, generateMachineUpTo, tierRank } from '../src/terrain.js';
 
-// A strong coverage deck (curtain-ish: dense, both directions, high growth) and a
-// deliberately weak starter (one thin card). These are the balance anchors.
-const STRONG = [CARDS['BUFFER.OVR'], CARDS['BUFFER.OVR'], CARDS['WORM']];
+// A strong chain (dense, fast, forking) and the deliberately weak one-card starter.
+// These are the balance anchors (research/lsystem-growth.md §5, §10).
+const STRONG = [CARDS['BUFFER.OVR'], CARDS['ROOTKIT'], CARDS['WORM']];
 const WEAK = [CARDS['SCRIPT.COM']];
 
 function play(machine, si, program, aggro = 0.75, override) {
@@ -17,37 +17,43 @@ function play(machine, si, program, aggro = 0.75, override) {
   if (override) override(node.sim.params);          // ablation hook (before firing)
   return runBattle(node);
 }
+// build a fresh node on a reset sector (peak helper needs the node, not the outcome)
+function nodeFor(machine, si, program, override) {
+  machine.burned.fill(0);
+  machine.sectors[si].conquered = false;
+  const node = createNode(machine, si, 0.75, 0.75, program, {});
+  if (override) override(node.sim.params);
+  return node;
+}
 
-test('merge: probability ADDS and caps at 100%', () => {
-  assert.equal(mergeBeam([CARDS['SCRIPT.SYS'], CARDS['SCRIPT.SYS']]).prob, 50);   // 25+25
-  assert.equal(mergeBeam([CARDS['ROOTKIT'], CARDS['ROOTKIT']]).prob, 100);        // 75+75 -> cap
+// --- the chain build (research/lsystem-growth.md §7) -------------------------
+
+test('buildChain: shape SUMS (Fourier) while the growth programs stay an ordered chain', () => {
+  const m = buildChain([CARDS['WORM'], CARDS['HARMONIC']]);   // sine + sine2
+  assert.ok(m.shapes.sine && m.shapes.sine2, 'both harmonics present (summed)');
+  assert.equal(m.chain.length, 2);
+  assert.equal(m.chain[0].grammar, CARDS['WORM'].grammar);      // deck order preserved
+  assert.equal(m.chain[1].grammar, CARDS['HARMONIC'].grammar);
 });
 
-test('merge: direction UNIONS across cards', () => {
-  const m = mergeBeam([CARDS['SCRIPT.COM'], CARDS['SCRIPT.SYS']]);   // ← + →
-  assert.deepEqual([...m.dirs].sort(), ['←', '→']);
+test('buildChain: each segment carries grammar/pace/seeds/connector', () => {
+  const seg = buildChain([CARDS['ROOTKIT']]).chain[0];
+  assert.equal(seg.grammar, CARDS['ROOTKIT'].grammar);
+  assert.equal(seg.pace, CARDS['ROOTKIT'].pace);
+  assert.equal(seg.seeds, CARDS['ROOTKIT'].seeds);
+  assert.ok(CONNECTORS.includes(seg.connector));
 });
 
-test('merge: growth ADDS (cap) and child spread-reach MAXes', () => {
-  const m = mergeBeam([CARDS['WORM'], CARDS['WORM'], CARDS['WORM']]);   // 0.40 x3 = 1.2
-  assert.equal(m.reproduce, GROWTH_CAP);                                 // capped at 0.60
-  assert.equal(m.spreadReach, 8);                                        // High spread-reach (max)
-  // MAX not SUM: a High + a Low card keeps the High spread-reach
-  assert.equal(mergeBeam([CARDS['WORM'], CARDS['SCRIPT.COM']]).spreadReach, 8);
+test('buildChain: the chain is ORDER-DEPENDENT (unlike the old commutative merge)', () => {
+  const a = buildChain([CARDS['SCRIPT.COM'], CARDS['WORM']]).chain.map((s) => s.grammar);
+  const b = buildChain([CARDS['WORM'], CARDS['SCRIPT.COM']]).chain.map((s) => s.grammar);
+  assert.notDeepEqual(a, b, 'reordering the deck reorders the connector chain');
 });
 
-test('merge: order does not matter (all four merges commute)', () => {
-  const a = mergeBeam([CARDS['SCRIPT.COM'], CARDS['WORM'], CARDS['BUFFER.OVR']]);
-  const b = mergeBeam([CARDS['BUFFER.OVR'], CARDS['SCRIPT.COM'], CARDS['WORM']]);
-  assert.equal(a.prob, b.prob);
-  assert.equal(a.reproduce, b.reproduce);
-  assert.deepEqual([...a.dirs].sort(), [...b.dirs].sort());
-});
-
-test('merge: a mask card (DAEMON) switches probability to deterministic comb', () => {
-  const m = mergeBeam([CARDS['DAEMON']]);
-  assert.equal(m.probMode, 'mask');
-  assert.equal(m.maskN, 5);
+test('buildChain: an invalid/empty grammar is sanitised to a lone F, seed total sums seeds', () => {
+  const seg = buildChain([{ shape: 'linear', grammar: 'xyz', pace: 3, seeds: 5, connector: 'SCATTER' }]).chain[0];
+  assert.equal(seg.grammar, 'F', 'unknown symbols dropped → falls back to F');
+  assert.equal(chainSeedTotal(buildChain(STRONG).chain), STRONG.reduce((n, c) => n + c.seeds, 0));
 });
 
 test('COST table: OPEN cheap, HARD dear, WALL unaffordable, BUS refunds', () => {
@@ -68,7 +74,32 @@ test('all five terrain types appear in every sector (16 seeds)', () => {
   }
 });
 
-test('a strong beam breaches the block, holding through the breach timer', () => {
+// --- the turtle VM (research/lsystem-growth.md §1, §3) -----------------------
+
+test('determinism: same swarm + same field twice → byte-for-byte identical burn', () => {
+  const a = generateMachine(9), b = generateMachine(9);
+  const na = nodeFor(a, 0, STRONG), nb = nodeFor(b, 0, STRONG);
+  runBattlePeak(na); runBattlePeak(nb);
+  assert.deepEqual(Array.from(a.burned), Array.from(b.burned), 'the L-system VM is RNG-free — identical result');
+});
+
+test('searching reroute never re-treads: no F ever burns an already-burned cell (forky decks, 20 seeds)', () => {
+  for (let seed = 1; seed <= 20; seed++) {
+    const node = nodeFor(generateMachine(seed), 0, [CARDS['0DAY']]);   // dense forks + branch = heavy VM
+    runBattlePeak(node);
+    assert.equal(node.sim.reTread, 0, `seed ${seed}: a strand re-trod its own trail`);
+  }
+});
+
+test('coverage regression: a fixed deck on a fixed board holds its expected band', () => {
+  // Guards against silent VM/smolder regressions (research/lsystem-growth.md §9).
+  const { peak } = runBattlePeak(nodeFor(generateMachine(7), 0, STRONG));
+  assert.ok(peak > 55 && peak < 82, `seed 7 STRONG peaked ${peak.toFixed(1)}% — outside [55,82]`);
+});
+
+// --- balance (research/lsystem-growth.md §5, §10) ---------------------------
+
+test('a strong chain breaches the block, holding through the breach timer', () => {
   for (let seed = 1; seed <= 40; seed++) {
     const node = play(generateMachine(seed), 0, STRONG);
     if (node.outcome === 'win') {
@@ -80,23 +111,26 @@ test('a strong beam breaches the block, holding through the breach timer', () =>
   assert.fail('expected at least one breachable block across 40 seeds');
 });
 
-test('a weak beam loses far more often than a strong one', () => {
+test('a weak chain loses far more often than a strong one; the one-card starter never breaches', () => {
   let weakWins = 0, strongWins = 0;
   for (let seed = 1; seed <= 40; seed++) {
     if (play(generateMachine(seed), 0, WEAK).outcome === 'win') weakWins++;
     if (play(generateMachine(seed), 0, STRONG).outcome === 'win') strongWins++;
   }
   assert.ok(strongWins > weakWins, `strong (${strongWins}) should beat weak (${weakWins})`);
-  assert.equal(weakWins, 0, 'the one-card starter should never breach the block');
+  assert.equal(weakWins, 0, 'the one-card starter should never breach the block at standard aggression');
 });
 
-test('GROWTH is load-bearing: stripping reproduce collapses coverage', () => {
-  let withGrowth = 0, without = 0;
+test('forking is load-bearing: the branching skeleton is the area engine (§6)', () => {
+  // Coverage is earned by fork density, not a smolder flood. Strip every K (forks →
+  // plain advances) and the same deck collapses toward thin forkless runners.
+  const stripForks = (p) => { p.chain = p.chain.map((s) => ({ ...s, grammar: s.grammar.replace(/K/g, 'F') })); };
+  let withForks = 0, without = 0;
   for (let seed = 1; seed <= 30; seed++) {
-    withGrowth += runBattlePeak(nodeFor(generateMachine(seed), 0, STRONG)).peak;
-    without += runBattlePeak(nodeFor(generateMachine(seed), 0, STRONG, (p) => { p.reproduce = 0; })).peak;
+    withForks += runBattlePeak(nodeFor(generateMachine(seed), 0, STRONG)).peak;
+    without += runBattlePeak(nodeFor(generateMachine(seed), 0, STRONG, stripForks)).peak;
   }
-  assert.ok(withGrowth > without * 1.3, `growth should lift total peak coverage (${withGrowth.toFixed(0)} vs ${without.toFixed(0)})`);
+  assert.ok(withForks > without * 1.4, `forking should lift coverage well above forkless (${withForks.toFixed(0)} vs ${without.toFixed(0)})`);
 });
 
 test('aggression is a difficulty dial: higher aggression wins less', () => {
@@ -128,15 +162,12 @@ test('difficulty varies and is derived from energy-to-cover', () => {
 });
 
 test('difficulty ceiling: forced-EASY opener never hands out a harder block', () => {
-  // The onboarding forces the first blocks to EASY (RNG must not gate a new player).
-  // Sweep many wall-clock-ish seeds; every forced block must land at or below the cap.
   for (let seed = 1; seed <= 60; seed++) {
     const easy = generateMachineUpTo(seed, 'EASY');
     assert.equal(easy.sectors[0].difficulty, 'EASY', `seed ${seed} failed to force EASY`);
     const med = generateMachineUpTo(seed, 'MED');
     assert.ok(tierRank(med.sectors[0].difficulty) <= tierRank('MED'), `seed ${seed} exceeded MED cap`);
   }
-  // A wide-open ceiling still returns a real block (fallback path never nulls).
   assert.ok(generateMachineUpTo(12345, 'BRUTAL').sectors[0].difficulty);
 });
 
@@ -145,12 +176,3 @@ test('deterministic: same seed => identical terrain and battle outcome', () => {
   assert.deepEqual(Array.from(a.t), Array.from(b.t));
   assert.equal(play(a, 0, STRONG).outcome, play(b, 0, STRONG).outcome);
 });
-
-// build a fresh node on a reset sector (peak helper needs the node, not the outcome)
-function nodeFor(machine, si, program, override) {
-  machine.burned.fill(0);
-  machine.sectors[si].conquered = false;
-  const node = createNode(machine, si, 0.75, 0.75, program, {});
-  if (override) override(node.sim.params);
-  return node;
-}

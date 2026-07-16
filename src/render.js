@@ -3,8 +3,8 @@
 // controls), TRAY (cards). See src/layout.js for the geometry.
 
 import { FIELD_W, FIELD_H, WALL, idx, WIN_COVERAGE } from './terrain.js';
-import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, SLOTS, spineX, aimColAt } from './battle.js';
-import { mergeBeam, beamGutterLines, cardLines, cardLabel, CARDS } from './cards.js';
+import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, SLOTS, spineX, aimColAt, heatAt } from './battle.js';
+import { buildChain, beamGutterLines, cardLines, cardLabel, CARDS } from './cards.js';
 import {
   COLS, ROWS, FIELD, GUTTER, TRAY, FIELD_OX, FIELD_OY,
   HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE, BTN_CONTINUE,
@@ -53,7 +53,7 @@ function drawButton(g, r, dim) {
 }
 
 // a card panel (default 15 wide): name + its aspect stats on two lines (stats
-// only, no flavor — shape · direction · density · growth via cardLines).
+// only, no flavor — grammar, then pace · seeds · connector via cardLines).
 function drawCard(g, x, y, key, card, spent, w = 15) {
   frame(g, x, y, w, 8);
   stamp(g, x, y, '┌' + `[${key}]` + '─'.repeat(w - 2 - (key.length + 2)) + '┐');   // key in the top edge
@@ -66,14 +66,12 @@ function drawCard(g, x, y, key, card, spent, w = 15) {
 function drawBlockCells(g, machine, sim) {
   const params = sim ? sim.params : null;
   for (let y = 0; y < FIELD_H; y++) {
-    const sx = (sim && y <= sim.spineRow) ? spineX(params, y) : -1;   // pending-spine col (per row, not per cell)
     for (let x = 0; x < FIELD_W; x++) {
       const c = idx(x, y);
       let ch;
       if (sim && y === sim.scanRow && sim.scanRow < FIELD_H) ch = '#';                 // scan line
       else if (sim && sim.reclaimed && sim.reclaimed.has(c)) ch = 'X';                 // reclaim flash
-      else if (machine.burned[c]) ch = sim ? rampGlyph(sim.heat[c]) : '#';
-      else if (x === sx) ch = '|';                                                     // pending spine
+      else if (machine.burned[c]) ch = sim ? rampGlyph(heatAt(sim, c)) : '#';
       else ch = TERRAIN_G[machine.t[c]];
       g[FIELD_OY + y][FIELD_OX + x] = ch;
     }
@@ -102,8 +100,8 @@ function drawShop(g, game) {
     const price = it.owned ? 'OWNED' : `${it.cost} ROOT`;
     const tag = (locked ? '* ' : '') + price;                 // '*' flags can't-afford
     stamp(g, 60 - tag.length, r.y, tag);
-    // card items lead with their beam aspect line (e.g. Lin·→·50%·L); the prose
-    // sits in parens to set it apart from the stats.
+    // card items lead with their beam aspect line (grammar·pace·seeds·connector);
+    // the prose sits in parens to set it apart from the stats.
     const card = CARDS[it.name];
     const dot = card ? `${cardLabel(card)}  ` : '';
     stamp(g, r.x + 4, r.y + 1, `${dot}(${it.desc})`.slice(0, 55));
@@ -118,7 +116,7 @@ function drawShop(g, game) {
 // its column from wall-clock `now`) and a dotted preview spine sweeps with it,
 // showing where the packet will draw. The player times LAUNCH to this sweep.
 function drawAim(g, game, now) {
-  const merged = mergeBeam(game.program.filter(Boolean));
+  const merged = buildChain(game.program.filter(Boolean));
   const col = aimColAt(now);
   const preview = { p: col, shapes: merged.shapes, amp: merged.amp, freq: merged.freq };
   for (let y = 0; y < FIELD_H; y++) {
@@ -162,13 +160,13 @@ function drawGutter(g, game) {
     L('TRACE'); L(bar((sim.scanRow / FIELD_H) * 100, 10)); L(`${sim.scanRow}/${FIELD_H}`); gap();
     L('COVERAGE'); L(bar(cp, 10)); L(`${cp.toFixed(0)}% /${WIN_COVERAGE}%`);
     L(sim.breachLeft > 0 ? `HOLD ${sim.breachLeft}` : sim.breachLeft === 0 ? 'BREACH!' : ''); gap();
-    L(`EMBERS ${sim.embers.length}`); gap();
+    L(`STRANDS ${sim.turtles.length}`); gap();
     const [bl1, bl2] = node.beamLines;                          // cached at fire — no per-frame merge
     L('BEAM'); L(bl1); L(bl2); gap();
     L(`AGGRO x${node.aggro.toFixed(2)}`);
   } else if (phase === 'assemble') {
     L('BEAM');
-    if (game.program.some(Boolean)) { const [l1, l2] = beamGutterLines(mergeBeam(game.program.filter(Boolean))); L(l1); L(l2); }
+    if (game.program.some(Boolean)) { const [l1, l2] = beamGutterLines(buildChain(game.program.filter(Boolean))); L(l1); L(l2); }
     else L('(slot cards)');
     gap(); L(`SLOTS ${game.program.filter(Boolean).length}/${SLOTS}`);
     drawButton(g, BTN_REDRAW, run.root < REDRAW_COST);
@@ -176,7 +174,7 @@ function drawGutter(g, game) {
     // START lives in the tray next to the cards (drawn by drawTray)
   } else if (phase === 'target') {
     const a = run.aggression, base = run.baseAggro;
-    const [l1, l2] = beamGutterLines(mergeBeam(game.program.filter(Boolean)));
+    const [l1, l2] = beamGutterLines(buildChain(game.program.filter(Boolean)));
     L('BEAM'); L(l1); L(l2); gap();
     L(`AGGRO x${a.toFixed(2)}`); L(`reward x${rewardMult(a, base).toFixed(2)}`); L(`${draftPicks(a, base)} draft`);
     if (base < AGGRO_BASE) L('TRAINING');

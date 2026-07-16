@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OVERRIDE — beam-card calibration</title>
+  <title>OVERRIDE — L-system calibration</title>
   <link rel="icon" href="data:," />
   <link rel="stylesheet" href="../styles.css" />
   <style>
@@ -43,37 +43,36 @@
     </div>
 
     <div class="panel">
-      <h1>BEAM-CARD SANDBOX</h1>
+      <h1>L-SYSTEM SANDBOX</h1>
 
       <div style="margin:4px 0;">
         <b>PRESETS</b> <span id="presets"></span>
+        <span class="hint">(load a real card chain, <b id="chainlen">1</b> seg)</span>
       </div>
 
       <h2>SPINE</h2>
-      <div class="row"><label>trigger col p</label><input id="p" type="range" min="0" max="79" value="13"><output id="p_o"></output></div>
-      <div class="row"><label>amplitude</label><input id="amp" type="range" min="0" max="20" step="1" value="4"><output id="amp_o"></output></div>
+      <div class="row"><label>trigger col p</label><input id="p" type="range" min="0" max="61" value="30"><output id="p_o"></output></div>
+      <div class="row"><label>amplitude</label><input id="amp" type="range" min="0" max="20" step="1" value="6"><output id="amp_o"></output></div>
       <div class="row"><label>frequency</label><input id="freq" type="range" min="1" max="8" step="1" value="2"><output id="freq_o"></output></div>
       <div>shapes (SUM):</div>
       <div class="cbwrap" id="shapes"></div>
       <div>waveform Σ:</div>
       <pre id="wave"></pre>
 
-      <h2>EMISSION</h2>
-      <div>direction union:</div>
-      <div class="cbwrap" id="dirs"></div>
-      <div class="row"><label>prob mode</label>
-        <select id="probMode"><option value="prob">additive %</option><option value="mask">every-Nth</option></select>
+      <h2>GROWTH (turtle, single segment)</h2>
+      <div class="row"><label>grammar F/L/R/K</label><input id="grammar" type="text" value="FFFFF" style="flex:1;background:#2a1c00;color:var(--amber);border:1px solid var(--amber-dim);font:inherit;padding:3px;"></div>
+      <div class="row"><label>pace (ticks/step)</label><input id="pace" type="range" min="1" max="8" step="1" value="3"><output id="pace_o"></output></div>
+      <div class="row"><label>seeds</label><input id="seeds" type="range" min="1" max="48" step="1" value="10"><output id="seeds_o"></output></div>
+      <div class="row"><label>connector</label>
+        <select id="connector"><option>SCATTER</option><option>SPROUT</option><option>BRANCH</option><option>OVERLAY</option></select>
       </div>
-      <div class="row"><label>probability</label><input id="prob" type="range" min="0" max="100" step="5" value="50"><output id="prob_o"></output></div>
-      <div class="row"><label>mask N</label><input id="maskN" type="range" min="2" max="10" step="1" value="5"><output id="maskN_o"></output></div>
-      <div class="row"><label>REACH pool</label><input id="pool" type="range" min="100" max="1600" step="20" value="1000"><output id="pool_o"></output></div>
-      <div class="row"><label>REACH cap</label><input id="reachCap" type="range" min="2" max="40" step="1" value="20"><output id="reachCap_o"></output></div>
-      <div class="row"><label>spread reach</label><input id="spreadReach" type="range" min="0" max="14" step="1" value="6"><output id="spreadReach_o"></output></div>
-      <div class="row"><label>reproduce</label><input id="reproduce" type="range" min="0" max="0.6" step="0.01" value="0.15"><output id="reproduce_o"></output></div>
+
+      <h2>SWARM</h2>
+      <div class="row"><label>seed fan</label><input id="seedFan" type="range" min="0" max="4" step="1" value="2"><output id="seedFan_o"></output></div>
       <div class="row"><label>rate (ms)</label><input id="rate" type="range" min="20" max="300" step="10" value="70"><output id="rate_o"></output></div>
 
       <h2>TRACE SCAN</h2>
-      <div class="row"><label>scan speed</label><input id="scanSpeed" type="range" min="0.1" max="4" step="0.02" value="0.4"><output id="scanSpeed_o"></output></div>
+      <div class="row"><label>scan speed</label><input id="scanSpeed" type="range" min="0.1" max="4" step="0.02" value="0.3"><output id="scanSpeed_o"></output></div>
       <div class="row"><label>reclaim/row</label><input id="reclaim" type="range" min="0" max="30" step="1" value="6"><output id="reclaim_o"></output></div>
       <div class="row"><label>breach hold</label><input id="breachHold" type="range" min="0" max="60" step="1" value="15"><output id="breachHold_o"></output></div>
       <div class="row"><label>win cov %</label><input id="winCoverage" type="range" min="20" max="90" step="1" value="50"><output id="winCoverage_o"></output></div>
@@ -87,14 +86,14 @@
 
       <div class="stat">sector <b id="secid">—</b> · gen difficulty <b id="diff">—</b> · seed <b id="seedval">—</b></div>
       <div class="stat big">coverage <b id="cov">0</b>% <span id="covneed">/ 50%</span></div>
-      <div class="stat">embers alive <b id="embers">0</b> · scan row <b id="scanrow">0 / 33</b></div>
-      <div class="stat">breach <b id="breach">—</b> · tick <b id="tickval">0</b></div>
+      <div class="stat">strands alive <b id="strands">0</b> · scan row <b id="scanrow">0 / 28</b></div>
+      <div class="stat">breach <b id="breach">—</b> · tick <b id="tickval">0</b> · re-tread <b id="retread">0</b></div>
       <div class="stat big" id="status">idle.</div>
 
-      <div class="hint">Reuses the real <code>src/terrain.js</code> generator + <code>reclaimRow</code>,
-        so tuned numbers port straight to the game. Ramp <code>· : = + * @ %</code> = burn strength;
-        <code>#</code> scan line, <code>X</code> reclaim flash, <code>|</code> pending spine.
-        <code>?seed=1&amp;sector=0</code> in the URL.</div>
+      <div class="hint">Reuses the real <code>src/terrain.js</code> generator + <code>reclaimRow</code> and the
+        real <code>buildChain</code>, so tuned numbers port straight to the game. Manual controls edit a
+        single-segment chain; PRESETS load a multi-card chain. Ramp <code>· : = + * @ %</code> = burn
+        strength; <code>#</code> scan line, <code>X</code> reclaim flash. <code>?seed=1</code> in the URL.</div>
     </div>
   </div>
 
