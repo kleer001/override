@@ -116,6 +116,7 @@ function render() {
 }
 
 // --- controls ---
+build(); // seed sector/machine before the sliders' initial sync() calls render()
 for (let i = 0; i < 3; i++) {
   const sel = document.getElementById('c' + i);
   NAMES.forEach((n) => { const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o); });
@@ -134,8 +135,6 @@ document.getElementById('anim').onclick = () => {
   const step = () => { animN += 2; render(); if (animN < P.pings) animRAF = requestAnimationFrame(step); else { animRAF = null; render(); } };
   animRAF = requestAnimationFrame(step);
 };
-
-build();
 </script>
 </body>
 </html>
