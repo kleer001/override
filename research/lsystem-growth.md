@@ -5,9 +5,10 @@ the beam still fires a spine and emits strands, but a strand is no longer an
 isotropic `reproduce%`-into-a-random-neighbour ember with a `spreadReach`. It is a
 **deterministic L-system turtle** drawn at a per-card **pace**, racing the trace
 scan. No budget, no reproduce level. Everything else in ember-model — turret, beam
-spine, probability→seed count, direction, terrain cost, trace scan, WIN_COVERAGE
-50% — stands. Status: prototype-validated 2026-07-16 (`scratchpad/pace*.mjs`);
-constants un-tuned; not yet in `src/`.*
+spine, probability→seed count, terrain cost, trace scan, WIN_COVERAGE 50% — stands
+(direction is no longer a separate aspect; it folds into the grammar, §2). Status:
+prototype-validated 2026-07-16 (`scratchpad/pace*.mjs`, `order2.mjs`); constants
+un-tuned; not yet in `src/`.*
 
 Terminology: a growing ember is a **turtle**; its trail is the **skeleton**; the
 fill behind it is **smolder**.
@@ -53,6 +54,12 @@ Four symbols, one read per turtle per step:
 Two turn symbols (not one "rotate") is the minimum that lets grammars express
 zig-zags and worms rather than one-handed curls. Headings are the existing 8
 compass directions; `L`/`R` step ±1 around them.
+
+**Direction lives in the grammar.** Every turtle seeds from a fixed canonical
+heading (up, away from the turret); a strand's launch direction is just a prefix of
+turns — `RRFFF` climbs, then the `RR` points it east before running. So there is no
+separate `dir` channel: the grammar carries shape *and* aim, and a strand can even
+change course mid-draw, which a static field never could.
 
 ---
 
@@ -119,30 +126,48 @@ strength/rules to be set from testing.
 
 ---
 
-## 7. The card, and the merge (union of strands)
+## 7. The card, and the merge (connector chain)
 
-A card's growth aspect is:
+A card's growth aspect has four channels:
 
 ```
-growth: { grammar: 'FFFFFFK', pace: 4, seeds: 12, dir: 'N' }
+growth: { grammar: 'FFFFFFK', pace: 4, seeds: 12, connector: 'SCATTER' }
 ```
 
-- **grammar** `F/L/R/K` — the strand's shape
-- **pace** — its tempo (§4)
-- **seeds** — how many strands it rakes off the beam spine (this is the old
-  probability/density axis: the coverage multiplier)
-- **dir** — the strands' initial heading
+- **grammar** `F/L/R/K` — shape *and* launch direction (§2)
+- **pace** — tempo (§4)
+- **seeds** — strands raked off the beam spine (the old probability/density axis:
+  the coverage multiplier)
+- **connector** — how the **next** card in the deck couples to this one
 
-Merging cards is a **union of strands** — every card contributes its own seeds
-running its own grammar at its own pace; the beam is a heterogeneous swarm. There
-is **no arithmetic**: no pool to sum, no level to average, so a whole class of
-merge pathologies simply cannot arise. (Rejected alternative: folding cards into
-one hybrid grammar via string operators. It yields prettier single silhouettes but
-forces every strand onto one pace, which kills the pace-diversity synergy in §8.)
+The deck is read **top-to-bottom as a chain** —
+`seed → card₁ → [card₁.connector] → card₂ → [card₂.connector] → card₃ …` — which is
+the "assembling a program" fiction made literal. A card's connector governs *its*
+junction to the card after it, so the merge is **order-dependent by construction**:
+
+- **`SCATTER`** — no handoff; the next card seeds fresh from the spine. This is the
+  order-blind union — cards run as an independent swarm.
+- **`SPROUT`** — the next card continues from this card's frontier tips; the chain
+  grows longer (a runner that sprouts forks where it traps).
+- **`BRANCH`** — the next card fans out as children off the tips; the chain bushes.
+- **`OVERLAY`** — the next card runs concurrently from the same seed points.
+
+There is still **no arithmetic** — no pool to sum, no level to average — so the
+merge pathologies of a numeric budget cannot arise. `SCATTER` is the neutral
+default; the coupling connectors add ordered structure on top. (Rejected
+alternative: commutative string-operators that fold cards into one hybrid grammar —
+they lose both order and pace diversity.)
+
+**Order matters, non-monotonically.** Prototype, a two-card `SPROUT` chain (16
+strands): a runner-then-forker draws 36%, but forker-then-runner draws **55%** — a
+19-point swing, and the winner flips with the geometry (bushing low first builds
+safe area the scan reaches last, *then* runners climb out of it). Unlike a simple
+launch stagger, there is no monotonic "lead with the fast card" rule; the right
+sequence is a real puzzle.
 
 **Seed count self-optimises.** More strands is not strictly better: they crowd at
 the spine and self-trap into each other. Prototype at p4 — 16 seeds → 67%, 48 seeds
-→ 52%. There is an emergent sweet spot, no cap needed.
+→ 52%. An emergent sweet spot, no cap needed.
 
 ---
 
@@ -156,25 +181,28 @@ is genuinely non-additive:
   first; the slow strands trickle into the gaps *later*, so they don't crowd and
   self-trap. Temporal separation makes strands cooperate instead of compete. This
   is the engine of the system — a "scouts and fillers" archetype, no special card.
+- **Connector order** (§7) is the second synergy axis — sequencing the chain to
+  build safe area before climbing is worth ~19 points and is non-monotonic.
 - **Direction fan** is a minor, situational knob (+~7% for a wide lateral fan that
   spreads into territory the scan reaches last; full 8-way does not help). Spice,
   not a headline.
 
-So the "dynamic synergy" the growth rework was chasing is produced by the same
-mechanic that replaced budget: diverse paces in one swarm.
+So the "dynamic synergy" the growth rework was chasing comes from the two mechanics
+that replaced budget: diverse *paces* in one swarm, and the *order* of the chain.
 
 ---
 
 ## 9. Implementation touch points
 
-- `src/cards.js` — growth aspect → `{grammar, pace, seeds, dir}`; drop the `GROWTH`
-  reproduce/reach table and the additive `mergeBeam` growth math; merge = union of
-  strand specs.
+- `src/cards.js` — growth aspect → `{grammar, pace, seeds, connector}`; drop the
+  `GROWTH` reproduce/reach table and the additive `mergeBeam` growth math; merge
+  becomes an ordered connector chain over the slotted cards.
 - `src/beam.js` — replace the reproduce block in `stepEmbers` with the turtle VM
-  (symbols, looped `pc`, searching reroute, fork); per-strand pace clock; add the
-  smolder pass; end the run at scan-bottom and track peak coverage.
-- `src/battle.js` — gutter readout shows grammar / pace / seeds; wire scan speed to
-  `aggression`.
+  (symbols, looped `pc`, searching reroute, fork); per-strand pace clock; the
+  connector handoff (tip → next segment) on trap; add the smolder pass; end the run
+  at scan-bottom and track peak coverage.
+- `src/battle.js` — gutter readout shows the chain (grammar / pace / connector per
+  card) and seed total; wire scan speed to `aggression`.
 - `src/juice.js` — a beat for the advancing frontier; see [`juice-model.md`](juice-model.md).
 - `tests/` — determinism (same swarm + field twice → identical), searching-reroute
   never re-treads, coverage regression on a fixed seeded board at fixed scan speed.
@@ -187,9 +215,10 @@ mechanic that replaced budget: diverse paces in one swarm.
   scan speed; the p≈4 figure is prototype-relative.
 - **Smolder** strength & bias — tune to land 50% at "barely winnable."
 - **Turtle-type roster** — validate a starter set (runner / forker / coiler /
-  wanderer) feels distinct; pace and dir per card.
-- **Seed sweet spot** per grammar and how `dir` seeds initial headings off the
-  spine.
+  wanderer) feels distinct; pace and connector per card.
+- **Connector semantics** — pin down `SPROUT`/`BRANCH`/`OVERLAY` handoff rules and
+  which the starter cards carry; confirm order stays non-monotonic across the roster.
+- **Seed sweet spot** per grammar, and the canonical launch heading off the spine.
 - **Enclosed-territory** coverage (Qix/Go) — parked; possible later spice for
   looping grammars.
 
@@ -201,5 +230,7 @@ Langton's ant; diffusion-limited aggregation / dielectric (Lichtenberg) breakdow
 turtle graphics & bounded L-systems (structure from dumb local rules). The
 pace-diversity synergy is the deckbuilding lineage (composition patterns from
 Balatro / Slay the Spire / Noita wand chains) expressed as tempo blending rather
-than number-stacking. Prototypes: `scratchpad/pace{2,3,4}.mjs` (correct geometry,
-run-ends-at-scan-bottom, pace/scan sweeps, pace-mix + direction-fan synergy).
+than number-stacking, plus the ordered connector chain (Noita wand-chains: a card
+transforms what comes after it). Prototypes: `scratchpad/pace{2,3,4}.mjs`
+(geometry, run-ends-at-scan-bottom, pace/scan sweeps, pace-mix + direction-fan) and
+`order2.mjs` (connector chain, non-monotonic order).
