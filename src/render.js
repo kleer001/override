@@ -4,7 +4,7 @@
 
 import { FIELD_W, FIELD_H, WALL, idx, WIN_COVERAGE } from './terrain.js';
 import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, SLOTS, spineX, aimColAt } from './battle.js';
-import { mergeBeam, beamGutterLines, cardLabel } from './cards.js';
+import { mergeBeam, beamGutterLines, cardLines, cardLabel, CARDS } from './cards.js';
 import {
   COLS, ROWS, FIELD, GUTTER, TRAY, FIELD_OX, FIELD_OY,
   HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE, BTN_CONTINUE,
@@ -52,14 +52,14 @@ function drawButton(g, r, dim) {
   stamp(g, r.x + Math.max(1, Math.floor((r.w - t.length) / 2)), r.y + Math.floor(h / 2), t);   // vertically centred
 }
 
-// a card panel (default 15 wide): name, compact aspect line, wrapped identity
+// a card panel (default 15 wide): name + its aspect stats on two lines (stats
+// only, no flavor — shape · direction · density · growth via cardLines).
 function drawCard(g, x, y, key, card, spent, w = 15) {
   frame(g, x, y, w, 8);
   stamp(g, x, y, '┌' + `[${key}]` + '─'.repeat(w - 2 - (key.length + 2)) + '┐');   // key in the top edge
   if (spent) { stamp(g, x + 2, y + 3, 'SLOTTED'); return; }
   stamp(g, x + 2, y + 1, card.name.slice(0, w - 3));
-  if (card.dirs) stamp(g, x + 2, y + 2, cardLabel(card).slice(0, w - 3));
-  wrap(card.desc, w - 4).slice(0, 3).forEach((ln, i) => stamp(g, x + 2, y + 4 + i, ln));
+  cardLines(card).forEach((ln, i) => stamp(g, x + 2, y + 3 + i, ln.slice(0, w - 3)));
 }
 
 // --- FIELD: the memory block (idle terrain, or live burn), or the shop list ---
@@ -81,15 +81,36 @@ function drawBlockCells(g, machine, sim) {
   if (sim) g[FIELD_OY + FIELD_H - 1][FIELD_OX + params.p] = '▲';                        // turret
 }
 
+const SHOP_TYPE = { deckcard: 'DECK', card: 'UNLOCK', retry: '1-USE', curse: 'CURSE' };
+
 function drawShop(g, game) {
   const d = game.shopData || { root: 0, retry: 0, overclock: false, items: [] };
-  stamp(g, 2, 2, 'ROOT SHOP — spend ROOT, then JACK IN');
-  stamp(g, 2, 4, `ROOT: ${d.root}   retry: ${d.retry}${d.overclock ? '   OVERCLOCK ARMED' : ''}`);
+  // balance plate — the "how much have I got" anchor, boxed so it reads first
+  frame(g, 3, 1, 24, 3);
+  stamp(g, 5, 2, `ROOT BALANCE  ${d.root}`);
+  stamp(g, 30, 2, `retry:${d.retry}   overclock:${d.overclock ? 'ARMED' : 'off'}`);
+  stamp(g, 3, 5, '═'.repeat(57));
+  // column captions, aligned to the item rows below
+  stamp(g, 3, 6, 'BUY  ITEM'); stamp(g, 34, 6, 'TYPE'); stamp(g, 52, 6, 'COST');
+  let anyLocked = false;
   d.items.forEach((it, i) => {
     const r = shopRow(i);
-    const tag = it.owned ? 'OWNED' : `${it.cost}R`;
-    stamp(g, r.x, r.y, `[${i + 1}] ${it.name.padEnd(22)}${tag.padStart(7)} ${it.desc}`.slice(0, r.w));
+    const locked = !it.owned && d.root < it.cost;
+    anyLocked = anyLocked || locked;
+    stamp(g, r.x, r.y, `[${i + 1}] ${it.name.slice(0, 26).padEnd(27)}`);
+    stamp(g, 34, r.y, (SHOP_TYPE[it.kind] || '').padEnd(8));
+    const price = it.owned ? 'OWNED' : `${it.cost} ROOT`;
+    const tag = (locked ? '* ' : '') + price;                 // '*' flags can't-afford
+    stamp(g, 60 - tag.length, r.y, tag);
+    // card items lead with their beam aspect line (e.g. Lin·→·50%·L); the prose
+    // sits in parens to set it apart from the stats.
+    const card = CARDS[it.name];
+    const dot = card ? `${cardLabel(card)}  ` : '';
+    stamp(g, r.x + 4, r.y + 1, `${dot}(${it.desc})`.slice(0, 55));
   });
+  // feedback / legend line above the button
+  const foot = game.message ? game.message : anyLocked ? '* = not enough ROOT yet' : '';
+  stamp(g, 3, 24, foot.slice(0, 57));
   drawButton(g, BTN_JACKIN, false);
 }
 

@@ -88,6 +88,15 @@ export function cardLabel(card) {
   return `${SHAPE_ABBR[card.shape]}·${dir}·${density}·${GROWTH_ABBR[card.growth]}`;
 }
 
+// The card's four aspects as two short lines for the tall card panel (a single
+// line can reach 13 cols — e.g. Sin2·←→·25%·M — which overflows a 14-wide card):
+// line 1 = shape + direction, line 2 = density + growth.
+export function cardLines(card) {
+  const dir = card.dirs.length ? card.dirs.join('') : '—';
+  const density = card.mask ? `1/${card.mask}` : `${card.prob}%`;
+  return [`${SHAPE_ABBR[card.shape]} ${dir}`, `${density} · ${GROWTH_ABBR[card.growth]}`];
+}
+
 // A short one-line readout of a merged beam for the assemble UI.
 export function beamLabel(merged) {
   const sh = Object.keys(merged.shapes).filter((k) => merged.shapes[k])

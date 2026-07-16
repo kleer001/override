@@ -5,17 +5,19 @@
 // single blessing/curse. Costs are starting points to tune (a run banks ~40-90 ROOT
 // per breach; players open with 120).
 
+// name = the item's identity; the shop UI shows kind as a TYPE tag beside it, so
+// names stay terse and descriptions carry no redundant "into pool/deck —" prefix.
 export const SHOP_ITEMS = [
   // --- DECK: a basic card straight into the deck (repeatable, cheap) ---
-  { id: 'deck_FORK',     kind: 'deckcard', cost: 10, name: 'FORK.COM',            desc: 'into deck — another right sheet 50%; thickens the curtain, adds reproduce' },
+  { id: 'deck_FORK',     kind: 'deckcard', cost: 10, name: 'FORK.COM',    desc: 'a right-sheet card, 50% + reproduce' },
   // --- PERMANENT: pool expansion (StS-anchored, persists forever) ---
-  { id: 'card_ROOTKIT',  kind: 'card', cost: 100, name: 'UNLOCK CARD: ROOTKIT', desc: 'into draft pool — premium density, both ways' },
-  { id: 'card_PAYLOAD',  kind: 'card', cost: 140, name: 'UNLOCK CARD: PAYLOAD', desc: 'into draft pool — dense and self-spreading' },
-  { id: 'card_0DAY',     kind: 'card', cost: 200, name: 'UNLOCK CARD: 0DAY',    desc: 'into draft pool — the legendary grail beam' },
+  { id: 'card_ROOTKIT',  kind: 'card', cost: 100, name: 'ROOTKIT', desc: 'premium density, fires both ways' },
+  { id: 'card_PAYLOAD',  kind: 'card', cost: 140, name: 'PAYLOAD', desc: 'dense and self-spreading' },
+  { id: 'card_0DAY',     kind: 'card', cost: 200, name: '0DAY',    desc: 'the grail — full density, high growth' },
   // --- CONSUMABLE: numeric power, single-use ---
-  { id: 'retry',         kind: 'retry', cost: 100, name: 'RETRY TOKEN',         desc: 'survive one lost battle — holds until used' },
+  { id: 'retry',         kind: 'retry', cost: 100, name: 'RETRY TOKEN', desc: 'survive one lost battle this run' },
   // --- CURSE / BLESSING (~1-in-3 of the consumable shelf) ---
-  { id: 'overclock',     kind: 'curse', cost: 70,  name: 'OVERCLOCK (next run)', desc: '+REACH pool all run, BUT trace +0.25 aggression' },
+  { id: 'overclock',     kind: 'curse', cost: 70,  name: 'OVERCLOCK', desc: 'more reach all run, but +0.25 trace' },
 ];
 
 // item id -> the thing it grants

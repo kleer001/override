@@ -56,8 +56,9 @@ export const BTN_JACKIN = { x: 23, y: 26, w: 18, h: 3, label: 'JACK IN ▶' };
 export const BTN_TITLE_CONTINUE = { x: 14, y: 24, w: 24, h: 5, label: 'CONTINUE ▶' };
 export const BTN_TITLE_NEW = { x: 42, y: 24, w: 24, h: 5, label: 'NEW ▶' };
 
-// shop: one tappable row per item inside the field area
-export const shopRow = (i) => ({ x: 2, y: 7 + i, w: 60, h: 1 });
+// shop: each item is a 2-row slot inside the field area — the name+type+price
+// line and the description below it, with a blank row between items (pitch 3).
+export const shopRow = (i) => ({ x: 3, y: 7 + i * 3, w: 57, h: 2 });
 
 export function inRect(col, row, r) {
   return col >= r.x && col < r.x + r.w && row >= r.y && row < r.y + r.h;
