@@ -21,9 +21,6 @@ export const SLOTS = 3;             // beam slots in assemble (Tier 1)
 
 // --- Tier-1 shared terminal/scan constants (un-tuned, research/lsystem-growth.md
 // §10; the pace-vs-scan knife-edge is where balance lives). ---
-export const SMOLDER_DELAY = 8;     // ticks before a burned cell blooms (§6)
-export const SMOLDER_BLOOM = 2;     // neighbours a smolder bloom fills (biased safe-side)
-export const SMOLDER_GEN = 8;       // generations a skeleton cell thickens — fills the pockets its strands reach
 export const SEED_FAN = 2;          // launch-heading fan half-width (anti-crowding, §8)
 export const SCAN_SPEED = 0.40;     // scan rows/tick at aggression 1
 export const RECLAIM = 6;           // reclaimed cells/row at aggression 1
@@ -56,7 +53,7 @@ function beamParams(machine, secIdx, merged, aggro, extra) {
       : (sector.x0 + sector.x1) >> 1,            // default: fire from sector centre
     shapes: merged.shapes, amp: merged.amp, freq: merged.freq,
     chain: extra.seedBonus ? boostSeeds(merged.chain, extra.seedBonus) : merged.chain,
-    smolderDelay: SMOLDER_DELAY, smolderBloom: SMOLDER_BLOOM, smolderGen: SMOLDER_GEN, seedFan: SEED_FAN,
+    seedFan: SEED_FAN,
     scanSpeed: SCAN_SPEED * aggro,               // aggression = scan speed…
     reclaim: Math.max(1, Math.round(RECLAIM * aggro)),   // …and bite
     breachHold: BREACH_HOLD,
@@ -97,8 +94,8 @@ export function fire(node) {
   push(node, `> packet fired at col ${node.sim.params.p}. beam spine drawn — watch it spread.`);
 }
 
-// Advance the watch one tick (grow strands → smolder → scan). Mirrors stepSim and
-// lifts the outcome resolution to the node. Returns the sim snapshot.
+// Advance the watch one tick (grow strands → scan). Mirrors stepSim and lifts the
+// outcome resolution to the node. Returns the sim snapshot.
 export function stepBattle(node) {
   if (node.outcome) return;
   const snap = stepSim(node.sim);

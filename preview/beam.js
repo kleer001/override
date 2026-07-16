@@ -121,20 +121,26 @@ function renderWave() {
 }
 
 // --- control wiring ---
-const RANGE_KEYS = ['p', 'amp', 'freq', 'pace', 'seeds', 'smolderDelay', 'smolderBloom', 'smolderGen', 'seedFan', 'rate', 'scanSpeed', 'reclaim', 'breachHold', 'winCoverage'];
+// Scalars are safe to mutate on the LIVE sim (sim.params === P); the CHAIN is not —
+// changing its length mid-run would orphan the turtles' segment indices, so chain
+// edits rebuild a fresh sim instead.
+const RANGE_KEYS = ['p', 'amp', 'freq', 'pace', 'seeds', 'seedFan', 'rate', 'scanSpeed', 'reclaim', 'breachHold', 'winCoverage'];
+const SCALAR_KEYS = ['p', 'amp', 'freq', 'seedFan', 'rate', 'scanSpeed', 'reclaim', 'breachHold', 'winCoverage'];
 
-function readControlsIntoP() {
+function readScalarsIntoP() {
   P.p = clampCol(+$('p').value);
   P.amp = +$('amp').value; P.freq = +$('freq').value;
-  P.smolderDelay = +$('smolderDelay').value;
-  P.smolderBloom = +$('smolderBloom').value;
-  P.smolderGen = +$('smolderGen').value;
   P.seedFan = +$('seedFan').value;
   P.scanSpeed = +$('scanSpeed').value; P.reclaim = +$('reclaim').value;
   P.breachHold = +$('breachHold').value; P.winCoverage = +$('winCoverage').value;
   for (const k of SHAPE_KEYS) P.shapes[k] = $('sh_' + k).checked;
+}
+// Manual chain edits replace the (possibly multi-segment preset) chain with the
+// single segment the controls describe, then rebuild.
+function applyChainAndBuild() {
+  readScalarsIntoP();
   P.chain = singleChain();
-  $('chainlen').textContent = P.chain.length;
+  build();
 }
 
 function syncControlsFromP() {
@@ -142,8 +148,7 @@ function syncControlsFromP() {
   $('grammar').value = P.grammar || 'FFFFF';
   $('pace').value = P.pace || 3; $('seeds').value = P.seeds || 10;
   $('connector').value = P.connector || 'SCATTER';
-  $('smolderDelay').value = P.smolderDelay; $('smolderBloom').value = P.smolderBloom;
-  $('smolderGen').value = P.smolderGen; $('seedFan').value = P.seedFan;
+  $('seedFan').value = P.seedFan;
   $('scanSpeed').value = P.scanSpeed; $('reclaim').value = P.reclaim;
   $('breachHold').value = P.breachHold; $('winCoverage').value = P.winCoverage;
   for (const k of SHAPE_KEYS) $('sh_' + k).checked = P.shapes[k];
@@ -155,17 +160,19 @@ function updateOutputs() {
 }
 
 function wireControls() {
-  for (const k of RANGE_KEYS) {
-    $(k).addEventListener('input', () => { readControlsIntoP(); updateOutputs(); if (k === 'rate') restartTimer(); render(); });
+  for (const k of SCALAR_KEYS) {
+    $(k).addEventListener('input', () => { readScalarsIntoP(); updateOutputs(); if (k === 'rate') restartTimer(); render(); });
   }
-  $('grammar').addEventListener('input', () => { readControlsIntoP(); render(); });
-  $('connector').addEventListener('change', () => { readControlsIntoP(); render(); });
-  for (const k of SHAPE_KEYS) $('sh_' + k).addEventListener('change', () => { readControlsIntoP(); render(); });
+  // chain-shaping controls rebuild a fresh sim (chain length must not change live)
+  for (const k of ['pace', 'seeds']) $(k).addEventListener('input', () => { updateOutputs(); applyChainAndBuild(); });
+  $('grammar').addEventListener('input', applyChainAndBuild);
+  $('connector').addEventListener('change', applyChainAndBuild);
+  for (const k of SHAPE_KEYS) $('sh_' + k).addEventListener('change', () => { readScalarsIntoP(); render(); });
 
-  $('play').onclick = () => { readControlsIntoP(); if (sim.outcome) build(); start(); render(); };
+  $('play').onclick = () => { readScalarsIntoP(); if (sim.outcome) build(); start(); render(); };
   $('pause').onclick = () => { stop(); render(); };
-  $('step').onclick = () => { stop(); readControlsIntoP(); if (!sim.outcome) stepSim(sim); render(); };
-  $('reset').onclick = () => { readControlsIntoP(); build(); };
+  $('step').onclick = () => { stop(); readScalarsIntoP(); if (!sim.outcome) stepSim(sim); render(); };
+  $('reset').onclick = () => applyChainAndBuild();
   $('reseed').onclick = () => { seed = (Math.imul(seed, 48271) + 1) >>> 0; build(); };
   $('sector').addEventListener('change', () => { sectorIndex = +$('sector').value; P.p = (SECTORS[sectorIndex].x0 + SECTORS[sectorIndex].x1) >> 1; syncControlsFromP(); build(); });
   for (const name of Object.keys(PRESETS)) $('pre_' + name).onclick = () => applyPreset(name);

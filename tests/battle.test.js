@@ -121,13 +121,16 @@ test('a weak chain loses far more often than a strong one; the one-card starter 
   assert.equal(weakWins, 0, 'the one-card starter should never breach the block at standard aggression');
 });
 
-test('smolder is load-bearing: stripping it collapses a sparse deck’s coverage (§6)', () => {
-  let withSmolder = 0, without = 0;
+test('forking is load-bearing: the branching skeleton is the area engine (§6)', () => {
+  // Coverage is earned by fork density, not a smolder flood. Strip every K (forks →
+  // plain advances) and the same deck collapses toward thin forkless runners.
+  const stripForks = (p) => { p.chain = p.chain.map((s) => ({ ...s, grammar: s.grammar.replace(/K/g, 'F') })); };
+  let withForks = 0, without = 0;
   for (let seed = 1; seed <= 30; seed++) {
-    withSmolder += runBattlePeak(nodeFor(generateMachine(seed), 0, WEAK)).peak;
-    without += runBattlePeak(nodeFor(generateMachine(seed), 0, WEAK, (p) => { p.smolderGen = 0; })).peak;
+    withForks += runBattlePeak(nodeFor(generateMachine(seed), 0, STRONG)).peak;
+    without += runBattlePeak(nodeFor(generateMachine(seed), 0, STRONG, stripForks)).peak;
   }
-  assert.ok(withSmolder > without * 2, `smolder should multiply thin-filament coverage (${withSmolder.toFixed(0)} vs ${without.toFixed(0)})`);
+  assert.ok(withForks > without * 1.4, `forking should lift coverage well above forkless (${withForks.toFixed(0)} vs ${without.toFixed(0)})`);
 });
 
 test('aggression is a difficulty dial: higher aggression wins less', () => {

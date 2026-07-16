@@ -35,23 +35,27 @@ function ampFor(shapes) {
 // The Tier-1 card pool (research/lsystem-growth.md §10 turtle-type roster). Each
 // card is a bundled beam + identity. shape ∈ beam SHAPES keys; grammar ⊆ F/L/R/K;
 // connector ∈ CONNECTORS. Constants are un-tuned starting points (§10).
+// Coverage is EARNED by the strands' branching skeleton — fork (`K`) density is the
+// area lever (research/lsystem-growth.md §6). Runners (no forks) stay thin and weak;
+// forkers bush out and fill. Pace is the tempo/power knob (2 = fast/strong, 3–4 =
+// slow/weak). These are a first tuning pass (§10 roster still open).
 export const CARDS = {
-  'SCRIPT.COM': { id: 'SCRIPT.COM', name: 'SCRIPT.COM', shape: 'linear', grammar: 'FFFFF',    pace: 4, seeds: 8,  connector: 'SCATTER', desc: 'the starter warez — a slow straight runner that barely rakes the block' },
-  'FORK.COM':   { id: 'FORK.COM',   name: 'FORK.COM',   shape: 'linear', grammar: 'FFK',      pace: 3, seeds: 8,  connector: 'BRANCH',  desc: 'forks as it climbs; branches the next card off its trapped tips' },
-  'SCRIPT.SYS': { id: 'SCRIPT.SYS', name: 'SCRIPT.SYS', shape: 'linear', grammar: 'RRFFFF',   pace: 3, seeds: 8,  connector: 'SCATTER', desc: 'the mirror — a prefix of turns aims it east, then it runs' },
-  'BUFFER.OVR': { id: 'BUFFER.OVR', name: 'BUFFER.OVR', shape: 'linear', grammar: 'FLFFRF',   pace: 2, seeds: 16, connector: 'SCATTER', desc: 'overflow — a fast wide zig-zag worm; the curtain workhorse' },
-  'WORM':       { id: 'WORM',       name: 'WORM',       shape: 'sine',   grammar: 'FFKFFK',   pace: 2, seeds: 10, connector: 'SPROUT',  desc: 'the Morris spread — forks hard and sprouts the chain onward' },
-  'HARMONIC':   { id: 'HARMONIC',   name: 'HARMONIC',   shape: 'sine2',  grammar: 'FFRFFL',   pace: 2, seeds: 12, connector: 'OVERLAY', desc: 'octave up — a coiler that overlays the next card on its seeds' },
-  'PHREAK':     { id: 'PHREAK',     name: 'PHREAK',     shape: 'sine3',  grammar: 'FFRF',     pace: 3, seeds: 8,  connector: 'SCATTER', desc: '3rd harmonic — a tight coiler that curls into the gaps' },
-  'BLUEBOX':    { id: 'BLUEBOX',    name: 'BLUEBOX',    shape: 'rect',   grammar: 'FFFFFFF',  pace: 2, seeds: 10, connector: 'SCATTER', desc: 'fast vertical jets straight up toward the top objectives' },
-  'LOGICBOMB':  { id: 'LOGICBOMB',  name: 'LOGICBOMB',  shape: 'saw',    grammar: 'RRRRFFFF', pace: 3, seeds: 8,  connector: 'SCATTER', desc: 'turns to face down, then drills toward the core' },
-  'XOR':        { id: 'XOR',        name: 'XOR',        shape: 'linear', grammar: 'RFLFRFLF', pace: 3, seeds: 8,  connector: 'SCATTER', desc: 'crossing diagonals — a wanderer that fills the gaps a curtain leaves' },
-  'DAEMON':     { id: 'DAEMON',     name: 'DAEMON',     shape: 'linear', grammar: 'FFFFK',    pace: 4, seeds: 6,  connector: 'SPROUT',  desc: 'a slow, sparse background spawner that keeps sprouting where it traps' },
-  'NOP.SLED':   { id: 'NOP.SLED',   name: 'NOP.SLED',   shape: 'linear', grammar: 'F',        pace: 3, seeds: 12, connector: 'SPROUT',  desc: 'a plain sled — weak alone, but the next card rides its trapped tips' },
-  'TANGENT':    { id: 'TANGENT',    name: 'TANGENT',    shape: 'tan',    grammar: 'FFFFFFFFF', pace: 2, seeds: 4,  connector: 'SCATTER', desc: 'a few fast blowout runners — usually fizzles, sometimes paints half a block' },
-  'ROOTKIT':    { id: 'ROOTKIT',    name: 'ROOTKIT',    shape: 'linear', grammar: 'FFKFRF',   pace: 2, seeds: 16, connector: 'BRANCH',  desc: 'premium seed count — branches hard off every trapped tip' },
-  'PAYLOAD':    { id: 'PAYLOAD',    name: 'PAYLOAD',    shape: 'sine',   grammar: 'FFKFFK',   pace: 2, seeds: 14, connector: 'SPROUT',  desc: 'the rare workhorse — dense forks that sprout the chain onward' },
-  '0DAY':       { id: '0DAY',       name: '0DAY',       shape: 'sine',   grammar: 'FFKFRFLK', pace: 2, seeds: 18, connector: 'BRANCH',  desc: 'the legendary grail — dense, fast, forking, and it bushes the chain' },
+  'SCRIPT.COM': { id: 'SCRIPT.COM', name: 'SCRIPT.COM', shape: 'linear', grammar: 'FFFFF',     pace: 3, seeds: 8,  connector: 'SCATTER', desc: 'the starter warez — a thin forkless runner; barely rakes the block alone' },
+  'FORK.COM':   { id: 'FORK.COM',   name: 'FORK.COM',   shape: 'linear', grammar: 'FFKFK',     pace: 2, seeds: 10, connector: 'BRANCH',  desc: 'a fast forker — bushes out and branches the next card off its tips' },
+  'SCRIPT.SYS': { id: 'SCRIPT.SYS', name: 'SCRIPT.SYS', shape: 'linear', grammar: 'RRFFFK',    pace: 3, seeds: 8,  connector: 'SCATTER', desc: 'the mirror — a turn-prefix aims it east, then it runs and forks once' },
+  'BUFFER.OVR': { id: 'BUFFER.OVR', name: 'BUFFER.OVR', shape: 'linear', grammar: 'FLFKFRFK',  pace: 2, seeds: 16, connector: 'SCATTER', desc: 'overflow — a fast wide forking zig-zag; the curtain workhorse' },
+  'WORM':       { id: 'WORM',       name: 'WORM',       shape: 'sine',   grammar: 'FFKFFK',    pace: 2, seeds: 10, connector: 'SPROUT',  desc: 'the Morris spread — forks hard and sprouts the chain onward' },
+  'HARMONIC':   { id: 'HARMONIC',   name: 'HARMONIC',   shape: 'sine2',  grammar: 'FFKFRK',    pace: 2, seeds: 12, connector: 'OVERLAY', desc: 'octave up — a forking coiler that overlays the next card on its seeds' },
+  'PHREAK':     { id: 'PHREAK',     name: 'PHREAK',     shape: 'sine3',  grammar: 'FFRFK',     pace: 3, seeds: 8,  connector: 'SCATTER', desc: '3rd harmonic — a tight coiler that curls and forks into the gaps' },
+  'BLUEBOX':    { id: 'BLUEBOX',    name: 'BLUEBOX',    shape: 'rect',   grammar: 'FFFFFFK',   pace: 2, seeds: 10, connector: 'SCATTER', desc: 'fast vertical jets that fork late — climbs toward the top objectives' },
+  'LOGICBOMB':  { id: 'LOGICBOMB',  name: 'LOGICBOMB',  shape: 'saw',    grammar: 'RRRRFFFK',  pace: 3, seeds: 8,  connector: 'SCATTER', desc: 'turns to face down, then drills and forks toward the core' },
+  'XOR':        { id: 'XOR',        name: 'XOR',        shape: 'linear', grammar: 'RFLFK',     pace: 3, seeds: 8,  connector: 'SCATTER', desc: 'crossing diagonals — a forking wanderer that fills a curtain’s gaps' },
+  'DAEMON':     { id: 'DAEMON',     name: 'DAEMON',     shape: 'linear', grammar: 'FFKFK',     pace: 4, seeds: 6,  connector: 'SPROUT',  desc: 'a slow, sparse but heavily forking spawner that keeps sprouting where it traps' },
+  'NOP.SLED':   { id: 'NOP.SLED',   name: 'NOP.SLED',   shape: 'linear', grammar: 'F',         pace: 3, seeds: 12, connector: 'SPROUT',  desc: 'a plain forkless sled — weak alone, but the next card rides its trapped tips' },
+  'TANGENT':    { id: 'TANGENT',    name: 'TANGENT',    shape: 'tan',    grammar: 'FFFFFFFFF', pace: 2, seeds: 4,  connector: 'SCATTER', desc: 'a few fast forkless blowout runners — usually fizzles, sometimes paints half a block' },
+  'ROOTKIT':    { id: 'ROOTKIT',    name: 'ROOTKIT',    shape: 'linear', grammar: 'FFKFKFK',   pace: 2, seeds: 16, connector: 'BRANCH',  desc: 'premium seed count — forks and branches hard off every trapped tip' },
+  'PAYLOAD':    { id: 'PAYLOAD',    name: 'PAYLOAD',    shape: 'sine',   grammar: 'FFKFKFK',   pace: 2, seeds: 14, connector: 'SPROUT',  desc: 'the rare workhorse — dense forks that sprout the chain onward' },
+  '0DAY':       { id: '0DAY',       name: '0DAY',       shape: 'sine',   grammar: 'FKFKFKFK',  pace: 2, seeds: 18, connector: 'BRANCH',  desc: 'the legendary grail — fast, dense, maximal forks, and it bushes the chain' },
 };
 
 // Build the merged beam a chain of cards produces (research/lsystem-growth.md §7).

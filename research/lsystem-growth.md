@@ -9,16 +9,17 @@ spine, probability→seed count, terrain cost, trace scan, WIN_COVERAGE 50% — 
 (direction is no longer a separate aspect; it folds into the grammar, §2). Status:
 **shipped to `src/` 2026-07-16** (turtle VM in `src/beam.js`, connector chain in
 `src/cards.js`, tuned via `preview/beam-balance.js`); constants are a first pass —
-the §10 knobs (pace band, smolder strength, roster, connector semantics) are still
-open. The real-board tuning diverged from the prototype's open-field numbers: the
-knife-edge pace landed near 2 (not 4) and coverage on the walled 62×28 block leans
-on a longer-delayed, generation-limited **smolder** to fill the pockets the strands
-reach. Terrain cost folds into the pace clock (HARD slows a strand, BUS speeds it),
-and a small deterministic **seed fan** radiates a card's strands off the spine to
-stop them self-trapping in one column.*
+the §10 knobs (pace band, roster, connector semantics) are still open. The real-board
+tuning diverged from the prototype's open-field numbers: the knife-edge pace landed
+near 2 (not 4), and **smolder was cut** — area is earned by grammar fork density
+instead (§6), so a runner is thin and loses while a forker bushes out and fills.
+Terrain cost folds into the pace clock (HARD slows a strand, BUS speeds it), and a
+small deterministic **seed fan** radiates a card's strands off the spine to stop them
+self-trapping in one column.*
 
-Terminology: a growing ember is a **turtle**; its trail is the **skeleton**; the
-fill behind it is **smolder**.
+Terminology: a growing ember is a **turtle**; its branching trail is the
+**skeleton** — and that skeleton (via fork density) *is* the area; there is no
+separate fill (smolder was cut, §6).
 
 ---
 
@@ -122,14 +123,26 @@ grammar `FFFFFFK`, run ends at scan-bottom):
 
 ---
 
-## 6. Smolder (turning filaments into area)
+## 6. Area comes from forking, not smolder (cut 2026-07-16)
 
-Turtles are thin; a win needs area. A skeleton cell that reaches age
-`smolderDelay` blooms **once** into one neighbour (biased toward the low, safe side
-away from the scan). The advancing tip stays a bright searching filament; the body
-thickens into rivers behind it; the scan eats the trailing body, so you must keep
-pushing frontier. Worth roughly +7–11 coverage points and cleanly tunable —
-strength/rules to be set from testing.
+Turtles *look* thin, so the prototype proposed a **smolder** pass: an aged skeleton
+cell blooms into a neighbour, thickening filaments into rivers. Building it revealed
+smolder to be a **blind subsidy** — a delayed flood that fills reachable area roughly
+regardless of what the deck did, which is precisely the flat-diamond failure (§0) in
+a new coat. Ablation was decisive: stripping smolder collapsed only the *weak/sparse*
+decks (the one-card starter's peak fell 45%→8%) while the real decks were untouched
+(a forking curtain 61%→59%, a harmonic 66%→67%). Smolder was propping up structure-
+less decks and homogenising everyone toward "reachable area."
+
+So smolder is **cut**, and **fork density is the area engine** — which is the design's
+actual north star (§0: DLA / Lichtenberg branching from a dumb local rule). Coverage
+scales cleanly and monotonically with the `K`-density of the grammar (headless, real
+62×28 blocks, scan 0.30): `FFFFF` 21% → `FFFFFK` 56% → `FFKFK` 64%. A runner is thin
+and loses; a forker bushes out and fills; the area is **earned by the grammar you
+draft and build for**, not gifted. Stripping every `K` from a strong deck cuts its
+coverage ~1.7× (the `forking is load-bearing` test). The roster is tuned so runners
+(no `K`) are weak, forkers (`K`-density ≈ 0.2–0.5) carry — pace (2 = fast/strong,
+3–4 = slow/weak) is the secondary tempo knob.
 
 ---
 
@@ -206,8 +219,9 @@ that replaced budget: diverse *paces* in one swarm, and the *order* of the chain
   becomes an ordered connector chain over the slotted cards.
 - `src/beam.js` — replace the reproduce block in `stepEmbers` with the turtle VM
   (symbols, looped `pc`, searching reroute, fork); per-strand pace clock; the
-  connector handoff (tip → next segment) on trap; add the smolder pass; end the run
-  at scan-bottom and track peak coverage.
+  connector handoff (tip → next segment) on trap; end the run at scan-bottom and
+  track peak coverage. (Area comes from fork density in the skeleton — no smolder
+  pass; §6.)
 - `src/battle.js` — gutter readout shows the chain (grammar / pace / connector per
   card) and seed total; wire scan speed to `aggression`.
 - `src/juice.js` — a beat for the advancing frontier; see [`juice-model.md`](juice-model.md).
@@ -218,9 +232,10 @@ that replaced budget: diverse *paces* in one swarm, and the *order* of the chain
 
 ## 10. Open / to-tune
 
-- **Pace band** — where the knife-edge sits on the real 80×40 board at the shipped
-  scan speed; the p≈4 figure is prototype-relative.
-- **Smolder** strength & bias — tune to land 50% at "barely winnable."
+- **Pace band** — where the knife-edge sits on the real 62×28 block at the shipped
+  scan speed; the p≈4 figure was prototype-relative and landed near p2 in practice.
+- **Fork-density curve** — where each card should sit on the `K`-density → coverage
+  curve (§6) so the roster spreads from thin runners to bushing grails.
 - **Turtle-type roster** — validate a starter set (runner / forker / coiler /
   wanderer) feels distinct; pace and connector per card.
 - **Connector semantics** — pin down `SPROUT`/`BRANCH`/`OVERLAY` handoff rules and

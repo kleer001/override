@@ -9,11 +9,11 @@
 //   node preview/beam-balance.js            # default sweep
 //   node preview/beam-balance.js 24         # seeds 1..24
 //
-// The point: tune the SHARED scan/smolder constants (TUNE below) to the §10 target —
-// a strong deck wins most, the weak one-card starter ~never, terrain still gates.
-// Env overrides for sweeps/ablations, e.g.:
-//   SCANSPEED=0.30 SMOLDERGEN=8 node preview/beam-balance.js
-//   SMOLDERGEN=0 node preview/beam-balance.js        # smolder ablation
+// The point: tune the SHARED scan constants (TUNE below) to the §10 target — a
+// strong deck wins most, the weak one-card starter ~never, terrain still gates.
+// Area comes from the strands' branching skeleton (fork density), not a smolder
+// flood. Env overrides for sweeps, e.g.:
+//   SCANSPEED=0.30 SEEDFAN=2 node preview/beam-balance.js
 
 import { createSim, stepSim, coverage, SECTORS } from '../src/beam.js';
 import { generateMachine } from '../src/terrain.js';
@@ -32,16 +32,13 @@ const DECKS = {
   SOLO0DAY: ['0DAY'],                                        // the grail on its own
 };
 
-// --- shared scan/smolder constants under calibration (the tuning surface) ---
+// --- shared scan constants under calibration (the tuning surface) ---
 const envN = (k, d) => (process.env[k] !== undefined ? +process.env[k] : d);
 const TUNE = {
   scanSpeed: envN('SCANSPEED', 0.30),     // scan rows/tick (aggression 0.75 ≈ 0.30)
   reclaim: envN('RECLAIM', 6),            // reclaimed cells per scanned row
   breachHold: envN('BREACHHOLD', 15),     // ticks held ≥win to breach
   winCoverage: envN('WINCOV', 50),        // % of claimable cells to breach
-  smolderDelay: envN('SMOLDERDELAY', 8),  // ticks before a burned cell blooms (§6)
-  smolderBloom: envN('SMOLDERBLOOM', 2),  // neighbours a bloom fills
-  smolderGen: envN('SMOLDERGEN', 8),      // generations a skeleton cell thickens (0 = ablate)
   seedFan: envN('SEEDFAN', 2),            // launch-heading fan half-width (§8)
 };
 

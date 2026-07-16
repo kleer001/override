@@ -90,7 +90,6 @@ PACE_SURCHARGE[BUS] = -1;    // accelerant
 PACE_SURCHARGE[HONEY] = 0;
 
 const HEAT_NEW = 18;         // a fresh turtle burn is brightest (the searching tip)
-const HEAT_SMOLDER = 10;     // a smolder bloom is dimmer than the tip
 const HEAT_DECAY = 2;        // heat cools each tick → frontier bright, body cool
 const MAX_TURTLES = 3000;    // compute guard against a runaway fork/branch process
 
@@ -102,10 +101,7 @@ export function defaultParams() {
     shapes: { linear: true, sine: false, sine2: false, sine3: false, rect: false, tan: false, saw: false },
     amp: 6,                                     // shape amplitude (cells)
     freq: 2,                                     // shape base frequency
-    chain: [{ grammar: 'FFFFF', pace: 2, seeds: 12, connector: 'SCATTER' }],
-    smolderDelay: 8,                             // ticks before a burned cell blooms (§6)
-    smolderBloom: 2,                             // neighbours a bloom fills (biased safe-side)
-    smolderGen: 8,                               // generations a skeleton cell thickens — fills the pockets its strands reach
+    chain: [{ grammar: 'FFKFK', pace: 2, seeds: 12, connector: 'SCATTER' }],
     seedFan: 2,                                  // launch-heading fan half-width — radiates a card's strands off the spine (anti-crowding, §8)
     scanSpeed: 0.40,                             // scan rows advanced per tick
     reclaim: 6,                                   // reclaimed cells per scanned row
@@ -133,7 +129,6 @@ export function createSimOn(machine, sectorIndex, params, rng) {
     reclaimed: new Set(),                            // cells reclaimed on the last tick (flash)
     turtles: [],                                      // live strands (turtle VM)
     segStart: [],                                     // per-segment start seed points (OVERLAY reference)
-    smolderQ: [], smolderHead: 0,                     // pending smolder blooms (§6)
     scanRow: 0, scanAcc: 0,                            // trace scan position
     honeyBurned: 0, honeySpike: 0,                    // honeypots burned (trace spike)
     breachLeft: -1,                                    // breach countdown (ticks)
@@ -153,24 +148,20 @@ export function createSim(seed, sectorIndex, params) {
   return createSimOn(machine, sectorIndex, params, rng);
 }
 
-// Burn a cell. `fromF` marks a turtle-advance burn (the re-tread invariant guard);
-// `skeleton` cells (turtle trail + seeds) are the bright searching tip and start at
-// smolder generation 0. Every newly burned cell within the generation limit
-// schedules a one-time smolder bloom (§6): the trail thickens into rivers behind the
-// frontier, up to `smolderGen` generations deep, so coverage scales with how many
-// strands drew (not a fixed flood that washes out the deck).
-function burn(sim, x, y, { fromF = false, skeleton = false, gen = 0 } = {}) {
+// Burn a cell. `fromF` marks a turtle-advance/fork burn (the re-tread invariant
+// guard — those land only on verified-unburned cells, so it must stay 0; seed
+// placements may legitimately overlap and are not counted). Area comes entirely from
+// the strands' own branching skeleton (fork density) — no smolder fill — so coverage
+// is earned by the deck's grammar, not a blind flood.
+function burn(sim, x, y, fromF = false) {
   const c = idx(x, y);
   const was = sim.machine.burned[c];
   if (!was && sim.machine.t[c] === HONEY) sim.honeyBurned++;   // tripped bait
   sim.machine.burned[c] = 1;
-  sim.heat[c] = skeleton ? HEAT_NEW : HEAT_SMOLDER;
+  sim.heat[c] = HEAT_NEW;
   if (fromF) {
     if (sim.turtleBurned[c]) sim.reTread++;
     sim.turtleBurned[c] = 1;
-  }
-  if (!was && gen < sim.params.smolderGen) {
-    sim.smolderQ.push({ c, x, y, gen, due: sim.tick + sim.params.smolderDelay });
   }
 }
 
@@ -201,10 +192,10 @@ function pickEven(valid, n, phase) {
   return out;
 }
 
-function spawnTurtle(sim, x, y, heading, seg, { skeleton = true } = {}) {
+function spawnTurtle(sim, x, y, heading, seg) {
   if (sim.turtles.length >= MAX_TURTLES) return;
   sim.turtles.push({ x, y, heading: heading & 7, pc: 0, seg, clock: 0 });
-  if (skeleton) burn(sim, x, y, { skeleton: true });   // the launch/tip cell
+  burn(sim, x, y);   // the launch/tip cell (seed — overlaps allowed, not re-tread)
 }
 
 // A symmetric fan of heading offsets around the canonical launch (0, ±1, ±2, …),
@@ -257,7 +248,7 @@ function advance(sim, t) {
     const c = idx(nx, ny);
     if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;   // firebreak / trail
     t.x = nx; t.y = ny; t.heading = h;
-    burn(sim, nx, ny, { fromF: true, skeleton: true });
+    burn(sim, nx, ny, true);
     return true;
   }
   return false;
@@ -278,7 +269,7 @@ function fork(sim, t, spawned) {
     const c = idx(nx, ny);
     if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;
     spawned.push({ x: nx, y: ny, heading: h, pc: 0, seg: t.seg, clock: 0 });
-    burn(sim, nx, ny, { fromF: true, skeleton: true });
+    burn(sim, nx, ny, true);
     break;
   }
   t.heading = (t.heading + 7) & 7;   // parent −1
@@ -318,30 +309,6 @@ function stepTurtles(sim) {
   sim.turtles = next.concat(spawned);
 }
 
-// --- smolder (§6): a burned cell blooms ONCE at age smolderDelay into up to
-// `smolderBloom` neighbours, biased toward the low/safe side (away from the top-down
-// scan). Blooms carry a generation and re-bloom up to `smolderGen` deep, so the thin
-// filaments thicken into rivers that fill the pockets the strands reached — the delay
-// lets the searching tip move on first, so smolder fills BEHIND it, never chokes it.
-const SMOLDER_NEIGH = [[0, 1], [-1, 1], [1, 1], [-1, 0], [1, 0], [-1, -1], [1, -1], [0, -1]];
-function stepSmolder(sim) {
-  const q = sim.smolderQ, want = sim.params.smolderBloom;
-  while (sim.smolderHead < q.length && q[sim.smolderHead].due <= sim.tick) {
-    const s = q[sim.smolderHead++];
-    if (!sim.machine.burned[s.c]) continue;                 // source reclaimed — no bloom
-    let filled = 0;
-    for (const [dx, dy] of SMOLDER_NEIGH) {
-      if (filled >= want) break;
-      const nx = s.x + dx, ny = s.y + dy;
-      if (nx < 0 || nx >= FIELD_W || ny < 0 || ny >= FIELD_H) continue;
-      const c = idx(nx, ny);
-      if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;
-      burn(sim, nx, ny, { skeleton: false, gen: s.gen + 1 });   // next generation blooms if within smolderGen
-      filled++;
-    }
-  }
-}
-
 // The trace scan (§5): descend at scanSpeed; on each crossed row reclaim up to
 // `reclaim` burned cells back to neutral. Honeypots tripped since the last tick
 // nudge the scan faster.
@@ -361,8 +328,8 @@ function advanceScan(sim) {
   }
 }
 
-// Cool every burned cell a notch so the advancing tip stays brightest and the body
-// fades to rivers behind it (a cheap full-field pass on a 62×28 block).
+// Cool every burned cell a notch so the advancing tip stays brightest and the
+// branches behind it fade (a cheap full-field pass on a 62×28 block).
 function decayHeat(sim) {
   const h = sim.heat;
   for (let i = 0; i < h.length; i++) if (h[i] > 0) h[i] = Math.max(0, h[i] - HEAT_DECAY);
@@ -377,9 +344,9 @@ export function coverage(sim) {
   return sim.claim ? (b / sim.claim) * 100 : 0;
 }
 
-// One tick of the watch: step strands → smolder → scan → resolve win/traced. The
-// run ends when the scan bottoms out; win by holding ≥winCoverage through the
-// breach timer before it lands (§5). Returns a small readout snapshot.
+// One tick of the watch: step strands → scan → resolve win/traced. The run ends
+// when the scan bottoms out; win by holding ≥winCoverage through the breach timer
+// before it lands (§5). Returns a small readout snapshot.
 export function stepSim(sim) {
   if (sim.outcome) return snapshot(sim);
   sim.tick++;
@@ -387,7 +354,6 @@ export function stepSim(sim) {
   const honeyBefore = sim.honeyBurned;
   decayHeat(sim);
   stepTurtles(sim);
-  stepSmolder(sim);
   if (sim.honeyBurned > honeyBefore) sim.honeySpike += (sim.honeyBurned - honeyBefore);
   advanceScan(sim);
 
