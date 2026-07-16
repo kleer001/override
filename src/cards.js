@@ -30,7 +30,7 @@ export const CONNECTORS = ['SCATTER', 'SPROUT', 'BRANCH', 'OVERLAY'];
 // slow/weak). These are a first tuning pass (§10 roster still open).
 export const CARDS = {
   'SCRIPT.COM': { id: 'SCRIPT.COM', name: 'SCRIPT.COM', grammar: 'FFFFF',     pace: 3, connector: 'SCATTER', desc: 'the starter warez — a thin forkless runner; barely rakes the block alone' },
-  'FORK.COM':   { id: 'FORK.COM',   name: 'FORK.COM',   grammar: 'FFKFK',     pace: 2, connector: 'BRANCH',  desc: 'a fast forker — bushes out and branches the next card off its tips' },
+  'FORK.COM':   { id: 'FORK.COM',   name: 'FORK.COM',   grammar: 'FFFFKF',    pace: 2, connector: 'BRANCH',  desc: 'a fast runner that forks once a loop — and branches the next card off its tips' },
   'SCRIPT.SYS': { id: 'SCRIPT.SYS', name: 'SCRIPT.SYS', grammar: 'RRFFFK',    pace: 3, connector: 'SCATTER', desc: 'the mirror — a turn-prefix aims it east, then it runs and forks once' },
   'BUFFER.OVR': { id: 'BUFFER.OVR', name: 'BUFFER.OVR', grammar: 'FLFKFRFK',  pace: 2, connector: 'SCATTER', desc: 'overflow — a fast wide forking zig-zag; the curtain workhorse' },
   'WORM':       { id: 'WORM',       name: 'WORM',       grammar: 'FFKFFK',    pace: 2, connector: 'SPROUT',  desc: 'the Morris spread — forks hard and sprouts the chain onward' },
