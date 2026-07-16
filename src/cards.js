@@ -75,8 +75,9 @@ export function buildChain(cards) {
 }
 
 // Keep only valid turtle symbols; an empty program falls back to a lone 'F' so a
-// seed at least burns forward rather than sitting inert.
-function sanitizeGrammar(g) {
+// seed at least burns forward rather than sitting inert. Exported so the preview
+// sandbox validates typed grammars through the same rule the game uses.
+export function sanitizeGrammar(g) {
   const clean = String(g || '').split('').filter((ch) => SYMBOLS.includes(ch)).join('');
   return clean || 'F';
 }
@@ -89,6 +90,9 @@ export function chainSeedTotal(chain) {
 
 const SHAPE_ABBR = { linear: 'Lin', sine: 'Sin', sine2: 'Sin2', sine3: 'Sin3', rect: 'Rect', tan: 'Tan', saw: 'Saw' };
 const CONN_ABBR = { SCATTER: 'SCT', SPROUT: 'SPR', BRANCH: 'BRN', OVERLAY: 'OVL' };
+
+// The '+'-joined shape abbreviations of a merged chain (the Fourier stack), or '—'.
+const shapesAbbr = (merged) => Object.keys(merged.shapes).filter((k) => merged.shapes[k]).map((k) => SHAPE_ABBR[k]).join('+') || '—';
 
 // A compact aspect line for a single card — fits the wider shop row.
 export function cardLabel(card) {
@@ -104,17 +108,13 @@ export function cardLines(card) {
 // A short one-line readout of a merged chain for the assemble UI (first segment +
 // chain length), sized generously.
 export function beamLabel(merged) {
-  const sh = Object.keys(merged.shapes).filter((k) => merged.shapes[k]).map((k) => SHAPE_ABBR[k]).join('+') || '—';
-  const total = chainSeedTotal(merged.chain);
-  return `${sh} · ${merged.chain.length} card · x${total} seeds`;
+  return `${shapesAbbr(merged)} · ${merged.chain.length} card · x${chainSeedTotal(merged.chain)} seeds`;
 }
 
 // Two short lines describing a merged chain, sized for the ~13-col status gutter:
 // line 1 = shapes + card count, line 2 = seed total.
 export function beamGutterLines(merged) {
-  const sh = Object.keys(merged.shapes).filter((k) => merged.shapes[k]).map((k) => SHAPE_ABBR[k]).join('+') || '—';
-  const total = chainSeedTotal(merged.chain);
-  return [`${sh} ${merged.chain.length}c`, `x${total} seeds`];
+  return [`${shapesAbbr(merged)} ${merged.chain.length}c`, `x${chainSeedTotal(merged.chain)} seeds`];
 }
 
 // Tier-1 starting deck — the SCRIPT.COM + FORK.COM pair. Merged they seed a runner

@@ -13,7 +13,7 @@
 import { mulberry32 } from './rng.js';
 import {
   generateMachine, reclaimRow,
-  FIELD_W, FIELD_H, idx, WALL, HONEY, OPEN, HARD, BUS, SECTORS,
+  FIELD_W, FIELD_H, COST, idx, WALL, HONEY, SECTORS,
 } from './terrain.js';
 
 export { FIELD_W, FIELD_H, SECTORS, WALL, idx };
@@ -78,19 +78,17 @@ export function aimColAt(now) {
   return Math.round(c + c * Math.sin((2 * Math.PI * now) / AIM_PERIOD));
 }
 
-// Terrain folds into the PACE clock (§0 "terrain cost stands"): a turtle sitting on
-// slow ground takes longer before its next step, fast ground (BUS) accelerates it,
-// WALL is unreachable (the reroute never enters it). This keeps the five terrain
-// types load-bearing in a race where there is no budget to spend cost against.
-const PACE_SURCHARGE = [];
-PACE_SURCHARGE[OPEN] = 0;
-PACE_SURCHARGE[HARD] = 3;    // sticky ground — the scan catches you on it
-PACE_SURCHARGE[WALL] = 0;    // never stood on (firebreak)
-PACE_SURCHARGE[BUS] = -1;    // accelerant
-PACE_SURCHARGE[HONEY] = 0;
+// Terrain folds into the PACE clock (§0 "terrain cost stands"), DERIVED from the one
+// COST table so the graded difficulty (terrain.js) and the felt difficulty can't
+// drift apart: a turtle on slow ground (HARD) waits longer before its next step, a
+// bus line speeds it up. Clamped so no single tile stalls or rushes a strand too hard
+// (WALL is never stood on — the reroute never enters it). COST−1: OPEN 0, HARD +3,
+// BUS −1, HONEY 0.
+const PACE_MIN = -1, PACE_MAX = 3;
+const paceSurcharge = (terr) => Math.max(PACE_MIN, Math.min(PACE_MAX, COST[terr] - 1));
 
 const HEAT_NEW = 18;         // a fresh turtle burn is brightest (the searching tip)
-const HEAT_DECAY = 2;        // heat cools each tick → frontier bright, body cool
+const HEAT_DECAY = 2;        // burn brightness cools each tick → frontier bright, body cool
 const MAX_TURTLES = 3000;    // compute guard against a runaway fork/branch process
 
 // Default parameter block (preview sandbox). DOM mutates a live copy so sliders
@@ -124,11 +122,9 @@ export function createSimOn(machine, sectorIndex, params, rng) {
     machine, sector, claim,
     params,
     rng,
-    heat: new Float32Array(FIELD_W * FIELD_H),      // per-cell burn strength (render ramp)
-    turtleBurned: new Uint8Array(FIELD_W * FIELD_H), // cells an F advance burned (re-tread invariant)
+    heat: new Float32Array(FIELD_W * FIELD_H),      // per-cell burn TICK (render ramp derives brightness lazily)
     reclaimed: new Set(),                            // cells reclaimed on the last tick (flash)
     turtles: [],                                      // live strands (turtle VM)
-    segStart: [],                                     // per-segment start seed points (OVERLAY reference)
     scanRow: 0, scanAcc: 0,                            // trace scan position
     honeyBurned: 0, honeySpike: 0,                    // honeypots burned (trace spike)
     breachLeft: -1,                                    // breach countdown (ticks)
@@ -148,21 +144,19 @@ export function createSim(seed, sectorIndex, params) {
   return createSimOn(machine, sectorIndex, params, rng);
 }
 
-// Burn a cell. `fromF` marks a turtle-advance/fork burn (the re-tread invariant
-// guard — those land only on verified-unburned cells, so it must stay 0; seed
-// placements may legitimately overlap and are not counted). Area comes entirely from
-// the strands' own branching skeleton (fork density) — no smolder fill — so coverage
-// is earned by the deck's grammar, not a blind flood.
+// Burn a cell, stamping the tick so the render ramp can derive brightness lazily.
+// `fromF` marks a turtle-advance/fork burn: those land only on cells the VM already
+// checked were unburned, so burning an already-burned cell from an F is a re-tread —
+// the tripwire that must stay 0 (seed placements may legitimately overlap, so they
+// pass fromF=false). Area comes entirely from the strands' own branching skeleton
+// (fork density) — no smolder fill — so coverage is earned by the grammar.
 function burn(sim, x, y, fromF = false) {
   const c = idx(x, y);
   const was = sim.machine.burned[c];
   if (!was && sim.machine.t[c] === HONEY) sim.honeyBurned++;   // tripped bait
+  if (fromF && was) sim.reTread++;                             // F landed on burned ground → re-tread
   sim.machine.burned[c] = 1;
-  sim.heat[c] = HEAT_NEW;
-  if (fromF) {
-    if (sim.turtleBurned[c]) sim.reTread++;
-    sim.turtleBurned[c] = 1;
-  }
+  sim.heat[c] = sim.tick;
 }
 
 // --- seeding (§7 connector chain) --------------------------------------------
@@ -210,7 +204,7 @@ function fanOffsets(half) {
 function seedSwarm(sim) {
   const p = sim.params, valid = validSpineCells(sim);
   const fan = fanOffsets(Math.max(0, p.seedFan | 0));
-  sim.segStart = [];
+  const segStart = [];   // where each segment's launch turtles started (OVERLAY reference)
   for (let i = 0; i < p.chain.length; i++) {
     const seg = p.chain[i];
     let points;
@@ -219,11 +213,11 @@ function seedSwarm(sim) {
       const conn = p.chain[i - 1].connector;
       if (conn === 'SCATTER') points = pickEven(valid, seg.seeds, i);
       else if (conn === 'OVERLAY') {
-        const prev = sim.segStart[i - 1];
+        const prev = segStart[i - 1];   // reuse the predecessor's seed points; falls back to spine if it deferred
         points = prev && prev.length ? prev.slice(0, seg.seeds || prev.length) : pickEven(valid, seg.seeds, i);
       } else points = null;   // SPROUT / BRANCH → seeded on trap, not at launch
     }
-    sim.segStart[i] = points || [];
+    segStart[i] = points || [];
     if (points) points.forEach((pt, k) => spawnTurtle(sim, pt.x, pt.y, SEED_HEADING + fan[k % fan.length], i));
   }
 }
@@ -233,7 +227,7 @@ function seedSwarm(sim) {
 // cell it sits on (min 1). Slow ground stalls it into the scan; a bus line speeds it.
 function paceOf(sim, t) {
   const base = sim.params.chain[t.seg].pace;
-  return Math.max(1, base + PACE_SURCHARGE[sim.machine.t[idx(t.x, t.y)]]);
+  return Math.max(1, base + paceSurcharge(sim.machine.t[idx(t.x, t.y)]));
 }
 
 // Searching reroute: probe headings PROBE-order, take the first on-board, non-wall,
@@ -306,7 +300,8 @@ function stepTurtles(sim) {
     else if (advance(sim, t)) next.push(t);      // 'F'
     else handoff(sim, t, spawned);               // self-trapped → connector handoff, strand dies
   }
-  sim.turtles = next.concat(spawned);
+  for (const s of spawned) next.push(s);         // append this tick's forks/handoffs
+  sim.turtles = next;
 }
 
 // The trace scan (§5): descend at scanSpeed; on each crossed row reclaim up to
@@ -314,7 +309,7 @@ function stepTurtles(sim) {
 // nudge the scan faster.
 function advanceScan(sim) {
   const p = sim.params;
-  sim.reclaimed = new Set();
+  sim.reclaimed.clear();
   sim.scanAcc += p.scanSpeed + sim.honeySpike;
   sim.honeySpike = 0;
   while (sim.scanAcc >= 1 && sim.scanRow < FIELD_H) {
@@ -322,17 +317,18 @@ function advanceScan(sim) {
     for (let x = sim.sector.x0; x <= sim.sector.x1; x++)
       if (sim.machine.burned[idx(x, y)]) before.push(idx(x, y));
     reclaimRow(sim.machine, sim.sector, y, p.reclaim, sim.rng);
-    for (const c of before) if (!sim.machine.burned[c]) { sim.reclaimed.add(c); sim.heat[c] = 0; sim.turtleBurned[c] = 0; }
+    for (const c of before) if (!sim.machine.burned[c]) sim.reclaimed.add(c);
     sim.scanRow++;
     sim.scanAcc -= 1;
   }
 }
 
-// Cool every burned cell a notch so the advancing tip stays brightest and the
-// branches behind it fade (a cheap full-field pass on a 62×28 block).
-function decayHeat(sim) {
-  const h = sim.heat;
-  for (let i = 0; i < h.length; i++) if (h[i] > 0) h[i] = Math.max(0, h[i] - HEAT_DECAY);
+// Render brightness of a burned cell, derived lazily from the tick it burned: newest
+// burns are brightest (the searching tip), cooling by HEAT_DECAY each tick after, so
+// the frontier reads bright and the branches behind it fade — with no per-tick pass
+// over the field (only queried at render time, for burned cells).
+export function heatAt(sim, c) {
+  return Math.max(0, HEAT_NEW - (sim.tick - sim.heat[c]) * HEAT_DECAY);
 }
 
 export function coverage(sim) {
@@ -352,7 +348,6 @@ export function stepSim(sim) {
   sim.tick++;
 
   const honeyBefore = sim.honeyBurned;
-  decayHeat(sim);
   stepTurtles(sim);
   if (sim.honeyBurned > honeyBefore) sim.honeySpike += (sim.honeyBurned - honeyBefore);
   advanceScan(sim);

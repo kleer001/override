@@ -15,7 +15,7 @@
 // flood. Env overrides for sweeps, e.g.:
 //   SCANSPEED=0.30 SEEDFAN=2 node preview/beam-balance.js
 
-import { createSim, stepSim, coverage, SECTORS } from '../src/beam.js';
+import { createSim, stepSim, SECTORS } from '../src/beam.js';
 import { generateMachine } from '../src/terrain.js';
 import { CARDS, buildChain, chainSeedTotal, beamLabel } from '../src/cards.js';
 
@@ -51,9 +51,8 @@ function runBattle(seed, sectorIndex, merged) {
   const sim = createSim(seed, sectorIndex, paramsFor(merged, sectorIndex));
   let peak = 0;
   for (let t = 0; t < 800 && !sim.outcome; t++) {
-    stepSim(sim);
-    const c = coverage(sim);
-    if (c > peak) peak = c;
+    const snap = stepSim(sim);   // stepSim already caches coverage — don't rescan
+    if (snap.coverage > peak) peak = snap.coverage;
   }
   return { outcome: sim.outcome ?? 'traced', peak, reTread: sim.reTread };
 }

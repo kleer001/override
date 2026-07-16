@@ -3,7 +3,7 @@
 // controls), TRAY (cards). See src/layout.js for the geometry.
 
 import { FIELD_W, FIELD_H, WALL, idx, WIN_COVERAGE } from './terrain.js';
-import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, SLOTS, spineX, aimColAt } from './battle.js';
+import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, SLOTS, spineX, aimColAt, heatAt } from './battle.js';
 import { buildChain, beamGutterLines, cardLines, cardLabel, CARDS } from './cards.js';
 import {
   COLS, ROWS, FIELD, GUTTER, TRAY, FIELD_OX, FIELD_OY,
@@ -71,7 +71,7 @@ function drawBlockCells(g, machine, sim) {
       let ch;
       if (sim && y === sim.scanRow && sim.scanRow < FIELD_H) ch = '#';                 // scan line
       else if (sim && sim.reclaimed && sim.reclaimed.has(c)) ch = 'X';                 // reclaim flash
-      else if (machine.burned[c]) ch = sim ? rampGlyph(sim.heat[c]) : '#';
+      else if (machine.burned[c]) ch = sim ? rampGlyph(heatAt(sim, c)) : '#';
       else ch = TERRAIN_G[machine.t[c]];
       g[FIELD_OY + y][FIELD_OX + x] = ch;
     }

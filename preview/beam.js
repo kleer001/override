@@ -4,11 +4,11 @@
 //   ?seed=1&sector=0   seed = uint, sector index (single-block build ⇒ 0)
 
 import {
-  createSim, stepSim, coverage, spineX, shapeOffset, defaultParams,
+  createSim, stepSim, coverage, spineX, shapeOffset, defaultParams, heatAt,
   FIELD_W, FIELD_H, SECTORS, WALL, idx, SHAPE_KEYS,
 } from '../src/beam.js';
 import { OPEN, HARD, BUS, HONEY } from '../src/terrain.js';
-import { CARDS, buildChain } from '../src/cards.js';
+import { CARDS, buildChain, sanitizeGrammar } from '../src/cards.js';
 
 const q = new URLSearchParams(location.search);
 let seed = (parseInt(q.get('seed'), 10) || 1) >>> 0;
@@ -47,10 +47,11 @@ function applyPreset(name) {
 }
 
 // Manual controls edit a SINGLE-segment chain; presets load multi-card chains.
+// Grammar is validated through the game's own sanitizeGrammar so the sandbox and the
+// shipping card path can't drift.
 function singleChain() {
-  return [{ grammar: sanitize($('grammar').value), pace: +$('pace').value, seeds: +$('seeds').value, connector: $('connector').value }];
+  return [{ grammar: sanitizeGrammar($('grammar').value), pace: +$('pace').value, seeds: +$('seeds').value, connector: $('connector').value }];
 }
-function sanitize(g) { const c = String(g || '').split('').filter((ch) => 'FLRK'.includes(ch)).join(''); return c || 'F'; }
 
 // --- build / reset ---
 function build() {
@@ -84,7 +85,7 @@ function render() {
       let ch;
       if (y === sim.scanRow && sim.scanRow < FIELD_H) ch = '#';           // scan line
       else if (sim.reclaimed.has(c)) ch = 'X';                            // reclaim flash
-      else if (sim.machine.burned[c]) ch = rampGlyph(sim.heat[c]);        // burned strength
+      else if (sim.machine.burned[c]) ch = rampGlyph(heatAt(sim, c));     // burned brightness
       else ch = TERR_GLYPH[sim.machine.t[c]] ?? ' ';                      // terrain
       line += ch;
     }
@@ -125,7 +126,9 @@ function renderWave() {
 // changing its length mid-run would orphan the turtles' segment indices, so chain
 // edits rebuild a fresh sim instead.
 const RANGE_KEYS = ['p', 'amp', 'freq', 'pace', 'seeds', 'seedFan', 'rate', 'scanSpeed', 'reclaim', 'breachHold', 'winCoverage'];
-const SCALAR_KEYS = ['p', 'amp', 'freq', 'seedFan', 'rate', 'scanSpeed', 'reclaim', 'breachHold', 'winCoverage'];
+// pace/seeds reshape the chain (rebuild); everything else is a live-safe scalar.
+const CHAIN_RANGE = ['pace', 'seeds'];
+const SCALAR_KEYS = RANGE_KEYS.filter((k) => !CHAIN_RANGE.includes(k));
 
 function readScalarsIntoP() {
   P.p = clampCol(+$('p').value);
@@ -164,7 +167,7 @@ function wireControls() {
     $(k).addEventListener('input', () => { readScalarsIntoP(); updateOutputs(); if (k === 'rate') restartTimer(); render(); });
   }
   // chain-shaping controls rebuild a fresh sim (chain length must not change live)
-  for (const k of ['pace', 'seeds']) $(k).addEventListener('input', () => { updateOutputs(); applyChainAndBuild(); });
+  for (const k of CHAIN_RANGE) $(k).addEventListener('input', () => { updateOutputs(); applyChainAndBuild(); });
   $('grammar').addEventListener('input', applyChainAndBuild);
   $('connector').addEventListener('change', applyChainAndBuild);
   for (const k of SHAPE_KEYS) $('sh_' + k).addEventListener('change', () => { readScalarsIntoP(); render(); });
