@@ -1,38 +1,45 @@
-// Beam-Card Model — the game's canonical pure simulation (research/ember-model.md
-// §2–§9). This is the reference implementation the whole game runs on: src/battle.js
-// layers run/aggression/CODE concerns on top, and preview/beam.html + beam-balance.js
-// consume it directly for calibration.
+// Beam-Card Model — the game's canonical pure simulation
+// (research/lsystem-growth.md). The turret fires a packet that draws a beam spine;
+// strands are raked off the spine and grow as DETERMINISTIC L-SYSTEM TURTLES —
+// there is no reproduce%, no reach budget. A turtle runs an F/L/R/K grammar on a
+// loop at a per-strand PACE, hugging walls via a fixed searching reroute, and the
+// descending trace scan is the clock. Coverage is the race: paint before the scan
+// sweeps down through you.
 //
-// NO DOM in this file. All randomness flows through a seeded mulberry32 rng so a
-// (seed, params) pair replays identically. Terrain generation + reclaimRow are
-// reused from src/terrain.js.
+// NO DOM in this file. The TURTLE VM is RNG-FREE (§1): same grammar + same field ⇒
+// byte-for-byte identical growth. The only rng left is the trace scan's reclaim and
+// terrain generation, both seeded (a (seed, params) pair replays identically).
 
-import { mulberry32, randInt } from './rng.js';
+import { mulberry32 } from './rng.js';
 import {
   generateMachine, reclaimRow,
-  FIELD_W, FIELD_H, COST, idx, WALL, HONEY, SECTORS,
+  FIELD_W, FIELD_H, idx, WALL, HONEY, OPEN, HARD, BUS, SECTORS,
 } from './terrain.js';
 
 export { FIELD_W, FIELD_H, SECTORS, WALL, idx };
 
-// --- direction vocabulary (ember-model.md §3): the 8 compass headings ---
-export const DIRVEC = {
-  '←': [-1, 0],  // ←
-  '→': [1, 0],   // →
-  '↑': [0, -1],  // ↑
-  '↓': [0, 1],   // ↓
-  '↖': [-1, -1], // ↖
-  '↗': [1, -1],  // ↗
-  '↘': [1, 1],   // ↘
-  '↙': [-1, 1],  // ↙
-};
-export const DIR_KEYS = Object.keys(DIRVEC);
+// --- the 8 compass headings, indexed 0..7 CLOCKWISE from up (§2). A turtle's
+// canonical launch heading is UP (0), away from the turret at the bottom edge;
+// `L`/`R` step −1/+1 around the ring, so a grammar's turn-prefix is its launch aim.
+export const HEADINGS = [
+  [0, -1],  // 0 up
+  [1, -1],  // 1 up-right
+  [1, 0],   // 2 right
+  [1, 1],   // 3 down-right
+  [0, 1],   // 4 down
+  [-1, 1],  // 5 down-left
+  [-1, 0],  // 6 left
+  [-1, -1], // 7 up-left
+];
+const SEED_HEADING = 0;   // up, away from the turret
 
-// --- shape vocabulary (ember-model.md §3, shape aspect) ---
+// Searching reroute probe order (§3): straight ahead first, then gentle turns
+// out, reverse last. The turtle takes the FIRST on-board, non-wall, UNBURNED cell —
+// so it hugs walls and threads gaps with zero pathfinding and never re-treads.
+const PROBE = [0, 1, -1, 2, -2, 3, -3, 4];
+
+// --- shape vocabulary (spine curve; Fourier superposition when merged) ---
 // Each returns a horizontal spine offset for normalised row t in [0,1].
-// Multiple selected shapes SUM (Fourier superposition). `a` = amplitude (cells),
-// `f` = base frequency (cycles up the field). Harmonics are baked in
-// (sine2 = octave, sine3 = 3rd harmonic) so summing them squares the wave.
 export const SHAPES = {
   linear: () => 0,                                            // pencil (straight)
   sine:  (t, a, f) => a * Math.sin(2 * Math.PI * f * t),
@@ -44,8 +51,8 @@ export const SHAPES = {
 };
 export const SHAPE_KEYS = Object.keys(SHAPES);
 
-// Summed offset of all selected shapes at row y (deterministic — no rng, so the
-// waveform preview matches the drawn spine exactly).
+// Summed offset of all selected shapes at row y (deterministic — the waveform
+// preview matches the drawn spine exactly).
 export function shapeOffset(params, y) {
   const t = FIELD_H > 1 ? y / (FIELD_H - 1) : 0;
   let off = 0;
@@ -71,62 +78,72 @@ export function aimColAt(now) {
   return Math.round(c + c * Math.sin((2 * Math.PI * now) / AIM_PERIOD));
 }
 
-const clampBudgetCost = (terr, jit) => {
-  const base = COST[terr];
-  if (base === Infinity) return Infinity;                     // WALL stays a firebreak
-  return base + jit;                                          // ±1 terrain jitter
-};
+// Terrain folds into the PACE clock (§0 "terrain cost stands"): a turtle sitting on
+// slow ground takes longer before its next step, fast ground (BUS) accelerates it,
+// WALL is unreachable (the reroute never enters it). This keeps the five terrain
+// types load-bearing in a race where there is no budget to spend cost against.
+const PACE_SURCHARGE = [];
+PACE_SURCHARGE[OPEN] = 0;
+PACE_SURCHARGE[HARD] = 3;    // sticky ground — the scan catches you on it
+PACE_SURCHARGE[WALL] = 0;    // never stood on (firebreak)
+PACE_SURCHARGE[BUS] = -1;    // accelerant
+PACE_SURCHARGE[HONEY] = 0;
 
-// Default parameter block. DOM mutates a live copy so sliders take effect on the
-// running sim; spine params are re-read every emitted row.
+const HEAT_NEW = 18;         // a fresh turtle burn is brightest (the searching tip)
+const HEAT_SMOLDER = 10;     // a smolder bloom is dimmer than the tip
+const HEAT_DECAY = 2;        // heat cools each tick → frontier bright, body cool
+const MAX_TURTLES = 3000;    // compute guard against a runaway fork/branch process
+
+// Default parameter block (preview sandbox). DOM mutates a live copy so sliders
+// take effect on the running sim.
 export function defaultParams() {
   return {
-    p: 13,                                     // trigger column
+    p: 30,                                     // trigger column
     shapes: { linear: true, sine: false, sine2: false, sine3: false, rect: false, tan: false, saw: false },
-    amp: 4,                                     // shape amplitude (cells)
+    amp: 6,                                     // shape amplitude (cells)
     freq: 2,                                     // shape base frequency
-    dirs: new Set(['←', '→']),           // emission direction union (mild curtain by default)
-    probMode: 'prob',                            // 'prob' (additive %) | 'mask' (every-Nth)
-    prob: 60,                                     // merged emission probability %
-    maskN: 5,                                     // every-Nth deterministic mask
-    pool: 1000,                                    // REACH pool for the whole packet (§4; calibrated on the 62×28 block)
-    reachCap: 20,                                  // max REACH any one ember may hold
-    spreadReach: 6,                                // GROWTH: reach of a child spawned when an ember reproduces
-    reproduce: 0.15,                               // GROWTH: per-step chance a burning ember spawns a spreading child
-    scanSpeed: 0.40,                               // scan rows advanced per tick
-    reclaim: 6,                                     // reclaimed cells per scanned row
-    breachHold: 15,                                 // ticks held ≥win to breach
-    winCoverage: 50,                                // % of claimable cells to breach
+    chain: [{ grammar: 'FFFFF', pace: 2, seeds: 12, connector: 'SCATTER' }],
+    smolderDelay: 8,                             // ticks before a burned cell blooms (§6)
+    smolderBloom: 2,                             // neighbours a bloom fills (biased safe-side)
+    smolderGen: 8,                               // generations a skeleton cell thickens — fills the pockets its strands reach
+    seedFan: 2,                                  // launch-heading fan half-width — radiates a card's strands off the spine (anti-crowding, §8)
+    scanSpeed: 0.40,                             // scan rows advanced per tick
+    reclaim: 6,                                   // reclaimed cells per scanned row
+    breachHold: 15,                               // ticks held ≥win to breach
+    winCoverage: 50,                              // % of claimable cells to breach
   };
 }
 
 // Build a sim over an EXISTING machine (the game's persistent board). sectorIndex
-// 0..2; rng is a seeded mulberry32 (distinct from the terrain-gen rng). The battle
-// layer uses this so conquered sectors persist across a run on one shared machine.
+// 0..2; rng is a seeded mulberry32 (distinct from the terrain-gen rng). The strand
+// swarm is seeded immediately (fire == createSim); stepSim then races it the scan.
 export function createSimOn(machine, sectorIndex, params, rng) {
   const sector = machine.sectors[sectorIndex % machine.sectors.length];
-  // claimable = every non-WALL cell in the sector (coverage denominator).
   let claim = 0;
   for (let y = 0; y < FIELD_H; y++)
     for (let x = sector.x0; x <= sector.x1; x++)
       if (machine.t[idx(x, y)] !== WALL) claim++;
 
-  return {
+  const sim = {
     machine, sector, claim,
     params,
     rng,
     heat: new Float32Array(FIELD_W * FIELD_H),      // per-cell burn strength (render ramp)
+    turtleBurned: new Uint8Array(FIELD_W * FIELD_H), // cells an F advance burned (re-tread invariant)
     reclaimed: new Set(),                            // cells reclaimed on the last tick (flash)
-    embers: [],                                       // live embers
-    spineRow: FIELD_H - 1,                             // next spine row to emit (bottom→top)
-    maskIdx: 0,                                          // deterministic mask counter
-    scanRow: 0, scanAcc: 0,                               // trace scan position
-    honeyBurned: 0,                                        // honeypots burned so far (trace spike)
-    breachLeft: -1,                                        // breach countdown (ticks)
-    cov: 0,                                                 // cached coverage %, refreshed each tick
-    outcome: null,                                          // null | 'win' | 'traced'
+    turtles: [],                                      // live strands (turtle VM)
+    segStart: [],                                     // per-segment start seed points (OVERLAY reference)
+    smolderQ: [], smolderHead: 0,                     // pending smolder blooms (§6)
+    scanRow: 0, scanAcc: 0,                            // trace scan position
+    honeyBurned: 0, honeySpike: 0,                    // honeypots burned (trace spike)
+    breachLeft: -1,                                    // breach countdown (ticks)
+    cov: 0,                                             // cached coverage %, refreshed each tick
+    reTread: 0,                                          // count of F-onto-already-F-burned (must stay 0)
+    outcome: null,                                       // null | 'win' | 'traced'
     tick: 0,
   };
+  seedSwarm(sim);
+  return sim;
 }
 
 // Convenience: fresh machine + sim (sandbox / balance harness / tests).
@@ -136,111 +153,219 @@ export function createSim(seed, sectorIndex, params) {
   return createSimOn(machine, sectorIndex, params, rng);
 }
 
-function burn(sim, x, y, strength) {
+// Burn a cell. `fromF` marks a turtle-advance burn (the re-tread invariant guard);
+// `skeleton` cells (turtle trail + seeds) are the bright searching tip and start at
+// smolder generation 0. Every newly burned cell within the generation limit
+// schedules a one-time smolder bloom (§6): the trail thickens into rivers behind the
+// frontier, up to `smolderGen` generations deep, so coverage scales with how many
+// strands drew (not a fixed flood that washes out the deck).
+function burn(sim, x, y, { fromF = false, skeleton = false, gen = 0 } = {}) {
   const c = idx(x, y);
-  if (!sim.machine.burned[c] && sim.machine.t[c] === HONEY) sim.honeyBurned++;  // tripped bait
+  const was = sim.machine.burned[c];
+  if (!was && sim.machine.t[c] === HONEY) sim.honeyBurned++;   // tripped bait
   sim.machine.burned[c] = 1;
-  if (strength > sim.heat[c]) sim.heat[c] = strength;         // hottest wins (near-spine glow)
-}
-
-// Shared REACH pool split across the packet's EXPECTED ember count (§4): many
-// embers (wide / high-prob / many directions) → each shallow; few embers (a
-// lance) → each deep, up to reachCap. Uses the expected count rather than a
-// pre-rolled plan so live slider tweaks take effect on the running sim.
-function emberShare(sim) {
-  const p = sim.params;
-  let rows = 0;
-  for (let y = 0; y < FIELD_H; y++)
-    if (sim.machine.t[idx(spineX(p, y), y)] !== WALL) rows++;
-  const hitRate = p.probMode === 'mask'
-    ? 1 / Math.max(1, p.maskN)
-    : Math.min(100, p.prob) / 100;
-  const expected = Math.max(1, rows * hitRate * Math.max(1, p.dirs.size));
-  return Math.min(p.reachCap, p.pool / expected);
-}
-
-// Emit one spine row: roll merged probability, and on a hit spawn one ember per
-// unioned direction (§3–§4), each with its share of the packet REACH pool. Burns
-// the spine contact cell itself.
-function emitSpineRow(sim, y) {
-  const p = sim.params;
-  const sx = spineX(p, y);
-  if (sim.machine.t[idx(sx, y)] === WALL) return;             // spine grounded on a firewall — no seed
-
-  let hit;
-  if (p.probMode === 'mask') {
-    hit = (sim.maskIdx % Math.max(1, p.maskN)) === 0;
-    sim.maskIdx++;
-  } else {
-    hit = sim.rng() < Math.min(100, p.prob) / 100;
+  sim.heat[c] = skeleton ? HEAT_NEW : HEAT_SMOLDER;
+  if (fromF) {
+    if (sim.turtleBurned[c]) sim.reTread++;
+    sim.turtleBurned[c] = 1;
   }
-  if (!hit) return;
-
-  const share = emberShare(sim);
-  burn(sim, sx, y, share);                                    // spine contact cell
-  for (const dir of p.dirs) {
-    const [dx, dy] = DIRVEC[dir];
-    sim.embers.push({ x: sx, y, dx, dy, budget: share, alive: true });
+  if (!was && gen < sim.params.smolderGen) {
+    sim.smolderQ.push({ c, x, y, gen, due: sim.tick + sim.params.smolderDelay });
   }
 }
 
-const ORTHO = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-const MAX_EMBERS = 3000;   // compute guard against a runaway branching process
+// --- seeding (§7 connector chain) --------------------------------------------
+// The deck is read top-to-bottom. Segment 0 always seeds fresh off the spine; a
+// later segment's coupling is set by the PRECEDING segment's connector:
+//   SCATTER → the next card seeds fresh off the spine (order-blind swarm)
+//   OVERLAY → the next card seeds the SAME points, concurrently
+//   SPROUT/BRANCH → deferred: seeded from the previous card's tips when they trap
+function validSpineCells(sim) {
+  const p = sim.params, out = [];
+  for (let y = 0; y < FIELD_H; y++) {
+    const x = spineX(p, y);
+    if (sim.machine.t[idx(x, y)] !== WALL) out.push({ x, y });
+  }
+  return out;
+}
 
-// Advance every live ember one cell in its heading, spending REACH against the
-// COST table with ±1 jitter; BUS refunds, WALL / off-board / budget≤0 kills it.
-// GROWTH (the 4th aspect): as it burns, an ember may REPRODUCE — spawn a child
-// that spreads to a random unburned orthogonal neighbour with a fresh spreadReach
-// budget — so the fire keeps burning and filling 2D instead of dying at pool's end.
-function stepEmbers(sim) {
-  const p = sim.params, alive = [];
-  for (const e of sim.embers) {
-    const nx = e.x + e.dx, ny = e.y + e.dy;
-    if (nx < 0 || nx >= FIELD_W || ny < 0 || ny >= FIELD_H) continue;   // off-board → spent
-    const terr = sim.machine.t[idx(nx, ny)];
-    if (terr === WALL) continue;                                          // firebreak → spent
-    const cost = clampBudgetCost(terr, randInt(sim.rng, -1, 1));
-    e.budget -= cost;                                                     // BUS (-1) refunds
-    e.x = nx; e.y = ny;
-    burn(sim, nx, ny, Math.max(0, e.budget));
+// n points evenly spaced over the valid spine, phase-shifted per segment so
+// independent SCATTER segments decorrelate instead of stacking on the same cells.
+function pickEven(valid, n, phase) {
+  const m = valid.length, out = [];
+  if (m === 0 || n <= 0) return out;
+  for (let k = 0; k < n; k++) {
+    const i = (Math.floor(((k + 0.5) / n) * m) + phase) % m;
+    out.push(valid[(i + m) % m]);
+  }
+  return out;
+}
 
-    // reproduce into a fresh unburned neighbour (keeps the fire alive)
-    if (p.reproduce > 0 && sim.embers.length + alive.length < MAX_EMBERS && sim.rng() < p.reproduce) {
-      const o = randInt(sim.rng, 0, 3);
-      for (let k = 0; k < 4; k++) {
-        const [cdx, cdy] = ORTHO[(o + k) & 3];
-        const cx = e.x + cdx, cy = e.y + cdy;
-        if (cx < 0 || cx >= FIELD_W || cy < 0 || cy >= FIELD_H) continue;
-        const c = idx(cx, cy);
-        if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;
-        alive.push({ x: e.x, y: e.y, dx: cdx, dy: cdy, budget: p.spreadReach });
-        break;
-      }
+function spawnTurtle(sim, x, y, heading, seg, { skeleton = true } = {}) {
+  if (sim.turtles.length >= MAX_TURTLES) return;
+  sim.turtles.push({ x, y, heading: heading & 7, pc: 0, seg, clock: 0 });
+  if (skeleton) burn(sim, x, y, { skeleton: true });   // the launch/tip cell
+}
+
+// A symmetric fan of heading offsets around the canonical launch (0, ±1, ±2, …),
+// so a card's strands RADIATE off the spine instead of stacking into one column and
+// self-trapping. Deterministic — the offset is purely the strand's index.
+function fanOffsets(half) {
+  const out = [0];
+  for (let k = 1; k <= half; k++) out.push(-k, k);
+  return out;
+}
+
+function seedSwarm(sim) {
+  const p = sim.params, valid = validSpineCells(sim);
+  const fan = fanOffsets(Math.max(0, p.seedFan | 0));
+  sim.segStart = [];
+  for (let i = 0; i < p.chain.length; i++) {
+    const seg = p.chain[i];
+    let points;
+    if (i === 0) points = pickEven(valid, seg.seeds, i);
+    else {
+      const conn = p.chain[i - 1].connector;
+      if (conn === 'SCATTER') points = pickEven(valid, seg.seeds, i);
+      else if (conn === 'OVERLAY') {
+        const prev = sim.segStart[i - 1];
+        points = prev && prev.length ? prev.slice(0, seg.seeds || prev.length) : pickEven(valid, seg.seeds, i);
+      } else points = null;   // SPROUT / BRANCH → seeded on trap, not at launch
     }
-    if (e.budget > 0) alive.push(e);
+    sim.segStart[i] = points || [];
+    if (points) points.forEach((pt, k) => spawnTurtle(sim, pt.x, pt.y, SEED_HEADING + fan[k % fan.length], i));
   }
-  sim.embers = alive;
 }
 
-// The trace scan (§9): descend at scanSpeed; on each crossed row reclaim up to
-// `reclaim` burned cells back to neutral. Reuses the real reclaimRow, snapshotting
-// the row first so freshly-reclaimed cells can flash (render ramp `X`). Honeypots
-// tripped since the last tick nudge the scan faster (§9 trace spike).
+// --- the turtle VM (§3) ------------------------------------------------------
+// Effective pace for a strand: its segment's pace plus the terrain surcharge of the
+// cell it sits on (min 1). Slow ground stalls it into the scan; a bus line speeds it.
+function paceOf(sim, t) {
+  const base = sim.params.chain[t.seg].pace;
+  return Math.max(1, base + PACE_SURCHARGE[sim.machine.t[idx(t.x, t.y)]]);
+}
+
+// Searching reroute: probe headings PROBE-order, take the first on-board, non-wall,
+// UNBURNED cell; commit the heading and burn it. Returns false if the turtle is
+// trapped (all eight blocked) — the caller then runs the connector handoff.
+function advance(sim, t) {
+  for (const off of PROBE) {
+    const h = (t.heading + off + 8) & 7;
+    const [dx, dy] = HEADINGS[h];
+    const nx = t.x + dx, ny = t.y + dy;
+    if (nx < 0 || nx >= FIELD_W || ny < 0 || ny >= FIELD_H) continue;   // off-board
+    const c = idx(nx, ny);
+    if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;   // firebreak / trail
+    t.x = nx; t.y = ny; t.heading = h;
+    burn(sim, nx, ny, { fromF: true, skeleton: true });
+    return true;
+  }
+  return false;
+}
+
+// `K`: fork a child heading turned +2 (parent −1); the child shares nothing and
+// reads the grammar fresh (pc 0). It launches one cell FORWARD into the first open
+// cell along a short probe so it starts on live ground instead of the burned parent
+// cell (which would trap it instantly). Bounded by MAX_TURTLES.
+function fork(sim, t, spawned) {
+  if (sim.turtles.length + spawned.length >= MAX_TURTLES) return;
+  const ch = (t.heading + 2) & 7;
+  for (const off of [0, 1, -1, 2, -2]) {
+    const h = (ch + off + 8) & 7;
+    const [dx, dy] = HEADINGS[h];
+    const nx = t.x + dx, ny = t.y + dy;
+    if (nx < 0 || nx >= FIELD_W || ny < 0 || ny >= FIELD_H) continue;
+    const c = idx(nx, ny);
+    if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;
+    spawned.push({ x: nx, y: ny, heading: h, pc: 0, seg: t.seg, clock: 0 });
+    burn(sim, nx, ny, { fromF: true, skeleton: true });
+    break;
+  }
+  t.heading = (t.heading + 7) & 7;   // parent −1
+}
+
+// Connector handoff on self-trap (§7): the trapping strand's segment connector
+// governs how the NEXT segment couples off this tip. SPROUT continues the heading;
+// BRANCH fans two children out (±2). SCATTER/OVERLAY already seeded at launch, so
+// they hand off nothing here — the trapped strand simply dies.
+function handoff(sim, t, spawned) {
+  const chain = sim.params.chain, next = t.seg + 1;
+  if (next >= chain.length) return;
+  const conn = chain[t.seg].connector;
+  const add = (heading) => { if (sim.turtles.length + spawned.length < MAX_TURTLES) spawned.push({ x: t.x, y: t.y, heading: heading & 7, pc: 0, seg: next, clock: 0 }); };
+  if (conn === 'SPROUT') add(t.heading);
+  else if (conn === 'BRANCH') { add(t.heading + 2); add(t.heading + 6); }
+}
+
+// Advance every live strand one grammar step when its pace clock is due. Deferred
+// forks/handoffs are collected and appended after the pass (never mutate mid-loop).
+function stepTurtles(sim) {
+  const chain = sim.params.chain;
+  const next = [], spawned = [];
+  for (const t of sim.turtles) {
+    t.clock++;
+    if (t.clock < paceOf(sim, t)) { next.push(t); continue; }
+    t.clock = 0;
+    const g = chain[t.seg].grammar;
+    const sym = g[t.pc % g.length];
+    t.pc++;
+    if (sym === 'L') { t.heading = (t.heading + 7) & 7; next.push(t); }
+    else if (sym === 'R') { t.heading = (t.heading + 1) & 7; next.push(t); }
+    else if (sym === 'K') { fork(sim, t, spawned); next.push(t); }
+    else if (advance(sim, t)) next.push(t);      // 'F'
+    else handoff(sim, t, spawned);               // self-trapped → connector handoff, strand dies
+  }
+  sim.turtles = next.concat(spawned);
+}
+
+// --- smolder (§6): a burned cell blooms ONCE at age smolderDelay into up to
+// `smolderBloom` neighbours, biased toward the low/safe side (away from the top-down
+// scan). Blooms carry a generation and re-bloom up to `smolderGen` deep, so the thin
+// filaments thicken into rivers that fill the pockets the strands reached — the delay
+// lets the searching tip move on first, so smolder fills BEHIND it, never chokes it.
+const SMOLDER_NEIGH = [[0, 1], [-1, 1], [1, 1], [-1, 0], [1, 0], [-1, -1], [1, -1], [0, -1]];
+function stepSmolder(sim) {
+  const q = sim.smolderQ, want = sim.params.smolderBloom;
+  while (sim.smolderHead < q.length && q[sim.smolderHead].due <= sim.tick) {
+    const s = q[sim.smolderHead++];
+    if (!sim.machine.burned[s.c]) continue;                 // source reclaimed — no bloom
+    let filled = 0;
+    for (const [dx, dy] of SMOLDER_NEIGH) {
+      if (filled >= want) break;
+      const nx = s.x + dx, ny = s.y + dy;
+      if (nx < 0 || nx >= FIELD_W || ny < 0 || ny >= FIELD_H) continue;
+      const c = idx(nx, ny);
+      if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;
+      burn(sim, nx, ny, { skeleton: false, gen: s.gen + 1 });   // next generation blooms if within smolderGen
+      filled++;
+    }
+  }
+}
+
+// The trace scan (§5): descend at scanSpeed; on each crossed row reclaim up to
+// `reclaim` burned cells back to neutral. Honeypots tripped since the last tick
+// nudge the scan faster.
 function advanceScan(sim) {
   const p = sim.params;
   sim.reclaimed = new Set();
-  sim.scanAcc += p.scanSpeed + (sim.honeySpike || 0);
+  sim.scanAcc += p.scanSpeed + sim.honeySpike;
   sim.honeySpike = 0;
   while (sim.scanAcc >= 1 && sim.scanRow < FIELD_H) {
-    const y = sim.scanRow;
-    const before = [];
+    const y = sim.scanRow, before = [];
     for (let x = sim.sector.x0; x <= sim.sector.x1; x++)
       if (sim.machine.burned[idx(x, y)]) before.push(idx(x, y));
     reclaimRow(sim.machine, sim.sector, y, p.reclaim, sim.rng);
-    for (const c of before) if (!sim.machine.burned[c]) { sim.reclaimed.add(c); sim.heat[c] = 0; }
+    for (const c of before) if (!sim.machine.burned[c]) { sim.reclaimed.add(c); sim.heat[c] = 0; sim.turtleBurned[c] = 0; }
     sim.scanRow++;
     sim.scanAcc -= 1;
   }
+}
+
+// Cool every burned cell a notch so the advancing tip stays brightest and the body
+// fades to rivers behind it (a cheap full-field pass on a 62×28 block).
+function decayHeat(sim) {
+  const h = sim.heat;
+  for (let i = 0; i < h.length; i++) if (h[i] > 0) h[i] = Math.max(0, h[i] - HEAT_DECAY);
 }
 
 export function coverage(sim) {
@@ -252,16 +377,18 @@ export function coverage(sim) {
   return sim.claim ? (b / sim.claim) * 100 : 0;
 }
 
-// One tick of the watch: emit next spine row, step embers, advance scan, resolve
-// win/traced. Returns a small readout snapshot.
+// One tick of the watch: step strands → smolder → scan → resolve win/traced. The
+// run ends when the scan bottoms out; win by holding ≥winCoverage through the
+// breach timer before it lands (§5). Returns a small readout snapshot.
 export function stepSim(sim) {
   if (sim.outcome) return snapshot(sim);
   sim.tick++;
 
   const honeyBefore = sim.honeyBurned;
-  if (sim.spineRow >= 0) { emitSpineRow(sim, sim.spineRow); sim.spineRow--; }
-  stepEmbers(sim);
-  if (sim.honeyBurned > honeyBefore) sim.honeySpike = (sim.honeySpike || 0) + (sim.honeyBurned - honeyBefore);
+  decayHeat(sim);
+  stepTurtles(sim);
+  stepSmolder(sim);
+  if (sim.honeyBurned > honeyBefore) sim.honeySpike += (sim.honeyBurned - honeyBefore);
   advanceScan(sim);
 
   const cov = sim.cov = coverage(sim);
@@ -282,10 +409,9 @@ export function snapshot(sim) {
   return {
     tick: sim.tick,
     coverage: sim.cov,
-    embers: sim.embers.length,
+    strands: sim.turtles.length,
     scanRow: sim.scanRow,
     breachLeft: sim.breachLeft,
     outcome: sim.outcome,
-    spineDone: sim.spineRow < 0,
   };
 }

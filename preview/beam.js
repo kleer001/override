@@ -1,59 +1,56 @@
-// Beam-Card Model calibration sandbox — DOM wiring (research/ember-model.md §13).
-// Pure sim lives in beam-sim.js; this file only reads controls, drives ticks off
-// the emission-rate timer, and renders the 80×33 grid. URL params:
-//   ?seed=1&sector=0   seed = uint, sector = 0..2 (KERNEL / IO.SYS / SWAP)
+// L-system growth calibration sandbox — DOM wiring (research/lsystem-growth.md).
+// Pure sim lives in src/beam.js; this file only reads controls, drives ticks off
+// the rate timer, and renders the field. URL params:
+//   ?seed=1&sector=0   seed = uint, sector index (single-block build ⇒ 0)
 
 import {
   createSim, stepSim, coverage, spineX, shapeOffset, defaultParams,
-  FIELD_W, FIELD_H, SECTORS, WALL, idx, DIR_KEYS, SHAPE_KEYS,
+  FIELD_W, FIELD_H, SECTORS, WALL, idx, SHAPE_KEYS,
 } from '../src/beam.js';
 import { OPEN, HARD, BUS, HONEY } from '../src/terrain.js';
+import { CARDS, buildChain } from '../src/cards.js';
 
 const q = new URLSearchParams(location.search);
 let seed = (parseInt(q.get('seed'), 10) || 1) >>> 0;
-let sectorIndex = Math.max(0, Math.min(2, parseInt(q.get('sector'), 10) || 0));
+let sectorIndex = Math.max(0, Math.min(SECTORS.length - 1, parseInt(q.get('sector'), 10) || 0));
 
-// terrain glyphs + burned-strength density ramp (task spec / juice-model)
+// terrain glyphs + burned-strength density ramp (juice-model)
 const TERR_GLYPH = { [OPEN]: ' ', [HARD]: '▒', [WALL]: '█', [BUS]: '═', [HONEY]: '!' };
 const RAMP = ['·', ':', '=', '+', '*', '@', '%'];   // cold → hot burn
-const rampGlyph = (heat) => {
-  if (heat <= 0) return RAMP[0];
-  const i = Math.min(RAMP.length - 1, 1 + Math.floor(heat / 2));
-  return RAMP[i];
-};
+const rampGlyph = (heat) => (heat <= 0 ? RAMP[0] : RAMP[Math.min(RAMP.length - 1, 1 + Math.floor(heat / 3))]);
 
 const $ = (id) => document.getElementById(id);
 let P = defaultParams();
 let sim, running = false, timer = null;
 
-// --- presets: the five escalation stacks, end-states (ember-model.md §6) ---
-// These mirror the merged card-decks validated headless in beam-balance.js: one
-// SHARED REACH pool + per-ember cap (pool is a terminal meta-stat, §4), and each
-// stack's growth (reproduce / spreadReach) comes from its cards' GROWTH aspect
-// (§3). The depth/width trade falls out of ember count (dirs × prob): CURTAIN
-// spreads the shared pool thin over many embers, LANCE concentrates it deep.
-// Calibrated (16 seeds × 3 sectors): CURTAIN/HARMONIC ~80% (strong ~5/6), the
-// weak starter 0%, growth-off ablation caps ~56% — growth is load-bearing.
-const POOL = 800, REACHCAP = 20;   // shared terminal REACH stat for all stacks
+// --- presets: the roster archetypes, built from real cards through buildChain, so
+// tuned numbers port straight to the game. Each is an ordered connector chain (§7).
 const PRESETS = {
-  CURTAIN: { shapes: ['linear'], amp: 0, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 100, pool: POOL, reachCap: REACHCAP, reproduce: 0.60, spreadReach: 6 },
-  LANCE:   { shapes: ['linear'], amp: 0, freq: 2, dirs: ['→'], probMode: 'prob', prob: 50, pool: POOL, reachCap: REACHCAP, reproduce: 0.20, spreadReach: 4 },
-  HARMONIC:{ shapes: ['sine', 'sine2', 'sine3'], amp: 6, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 100, pool: POOL, reachCap: REACHCAP, reproduce: 0.60, spreadReach: 8 },
-  FENCE:   { shapes: ['rect', 'saw'], amp: 5, freq: 3, dirs: ['↑', '↓'], probMode: 'prob', prob: 100, pool: POOL, reachCap: REACHCAP, reproduce: 0.40, spreadReach: 6 },
-  GLITCH:  { shapes: ['tan', 'sine'], amp: 5, freq: 2, dirs: ['←', '→'], probMode: 'prob', prob: 45, pool: POOL, reachCap: REACHCAP, reproduce: 0.40, spreadReach: 8 },
+  STARTER:  ['SCRIPT.COM', 'FORK.COM'],
+  CURTAIN:  ['BUFFER.OVR', 'ROOTKIT', 'WORM'],
+  HARMONIC: ['WORM', 'HARMONIC', 'PAYLOAD'],
+  FENCE:    ['BLUEBOX', 'BLUEBOX', 'LOGICBOMB'],
+  GLITCH:   ['TANGENT', 'TANGENT', 'WORM'],
+  '0DAY':   ['0DAY'],
 };
 
 function applyPreset(name) {
-  const pr = PRESETS[name];
-  for (const k of SHAPE_KEYS) P.shapes[k] = pr.shapes.includes(k);
-  P.amp = pr.amp; P.freq = pr.freq;
-  P.dirs = new Set(pr.dirs);
-  P.probMode = pr.probMode; P.prob = pr.prob;
-  P.pool = pr.pool; P.reachCap = pr.reachCap;
-  P.reproduce = pr.reproduce; P.spreadReach = pr.spreadReach;
+  const merged = buildChain(PRESETS[name].map((n) => CARDS[n]));
+  for (const k of SHAPE_KEYS) P.shapes[k] = !!merged.shapes[k];
+  P.amp = merged.amp; P.freq = merged.freq;
+  P.chain = merged.chain.map((s) => ({ ...s }));
+  // reflect the first segment's growth on the manual controls
+  const s0 = P.chain[0];
+  P.grammar = s0.grammar; P.pace = s0.pace; P.seeds = s0.seeds; P.connector = s0.connector;
   syncControlsFromP();
   build();
 }
+
+// Manual controls edit a SINGLE-segment chain; presets load multi-card chains.
+function singleChain() {
+  return [{ grammar: sanitize($('grammar').value), pace: +$('pace').value, seeds: +$('seeds').value, connector: $('connector').value }];
+}
+function sanitize(g) { const c = String(g || '').split('').filter((ch) => 'FLRK'.includes(ch)).join(''); return c || 'F'; }
 
 // --- build / reset ---
 function build() {
@@ -63,11 +60,12 @@ function build() {
   $('secid').textContent = sim.sector.id;
   $('diff').textContent = sim.sector.difficulty;
   $('seedval').textContent = seed;
+  $('chainlen').textContent = P.chain.length;
   render();
 }
 function clampCol(x) { return Math.max(0, Math.min(FIELD_W - 1, x | 0)); }
 
-// --- timer driven by emission rate (ms) ---
+// --- timer driven by the display rate (ms) ---
 function start() {
   if (timer) return;
   running = true;
@@ -76,11 +74,10 @@ function start() {
 function stop() { running = false; if (timer) { clearInterval(timer); timer = null; } }
 function restartTimer() { if (running) { stop(); start(); } }
 
-// --- render the 80×33 grid ---
+// --- render the field ---
 function render() {
   const rows = [];
   for (let y = 0; y < FIELD_H; y++) {
-    const pendSpine = y <= sim.spineRow ? spineX(P, y) : -1;   // not-yet-emitted beam column
     let line = '';
     for (let x = 0; x < FIELD_W; x++) {
       const c = idx(x, y);
@@ -88,7 +85,6 @@ function render() {
       if (y === sim.scanRow && sim.scanRow < FIELD_H) ch = '#';           // scan line
       else if (sim.reclaimed.has(c)) ch = 'X';                            // reclaim flash
       else if (sim.machine.burned[c]) ch = rampGlyph(sim.heat[c]);        // burned strength
-      else if (x === pendSpine) ch = '|';                                 // pending spine
       else ch = TERR_GLYPH[sim.machine.t[c]] ?? ' ';                      // terrain
       line += ch;
     }
@@ -96,13 +92,13 @@ function render() {
   }
   $('screen').textContent = rows.join('\n');
 
-  const cov = coverage(sim);
-  $('cov').textContent = cov.toFixed(1);
+  $('cov').textContent = coverage(sim).toFixed(1);
   $('covneed').textContent = `/ ${P.winCoverage}%`;
-  $('embers').textContent = sim.embers.length;
+  $('strands').textContent = sim.turtles.length;
   $('scanrow').textContent = `${sim.scanRow} / ${FIELD_H}`;
   $('breach').textContent = sim.breachLeft < 0 ? '—' : `${sim.breachLeft} ticks`;
   $('tickval').textContent = sim.tick;
+  $('retread').textContent = sim.reTread;
   const st = $('status');
   st.className = 'stat big' + (sim.outcome === 'win' ? ' win' : sim.outcome === 'traced' ? ' lose' : '');
   st.textContent = sim.outcome === 'win' ? '>> BREACHED.' :
@@ -110,52 +106,47 @@ function render() {
   renderWave();
 }
 
-// --- live ASCII preview of the summed waveform (Fourier sum) ---
+// --- live ASCII preview of the summed waveform (Fourier sum of the spine) ---
 function renderWave() {
   const W = 21, mid = W >> 1, rows = [];
   for (let y = 0; y < FIELD_H; y++) {
-    let col = Math.round(shapeOffset(P, y));
+    const col = Math.round(shapeOffset(P, y));
     const cl = Math.max(-mid, Math.min(mid, col));
     const line = Array(W).fill(' ');
-    line[mid] = '·';                                     // centre (trigger column)
-    line[mid + cl] = Math.abs(col) > mid ? '!' : '*';    // '!' = clipped off-board
+    line[mid] = '·';
+    line[mid + cl] = Math.abs(col) > mid ? '!' : '*';
     rows.push(line.join(''));
   }
   $('wave').textContent = rows.join('\n');
 }
 
 // --- control wiring ---
-const RANGE_KEYS = ['p', 'amp', 'freq', 'prob', 'maskN', 'pool', 'reachCap', 'spreadReach', 'reproduce', 'rate', 'scanSpeed', 'reclaim', 'breachHold', 'winCoverage'];
+const RANGE_KEYS = ['p', 'amp', 'freq', 'pace', 'seeds', 'smolderDelay', 'smolderBloom', 'smolderGen', 'seedFan', 'rate', 'scanSpeed', 'reclaim', 'breachHold', 'winCoverage'];
 
 function readControlsIntoP() {
   P.p = clampCol(+$('p').value);
-  P.amp = +$('amp').value;
-  P.freq = +$('freq').value;
-  P.prob = +$('prob').value;
-  P.maskN = +$('maskN').value;
-  P.pool = +$('pool').value;
-  P.reachCap = +$('reachCap').value;
-  P.spreadReach = +$('spreadReach').value;
-  P.reproduce = +$('reproduce').value;
-  P.scanSpeed = +$('scanSpeed').value;
-  P.reclaim = +$('reclaim').value;
-  P.breachHold = +$('breachHold').value;
-  P.winCoverage = +$('winCoverage').value;
-  P.probMode = $('probMode').value;
+  P.amp = +$('amp').value; P.freq = +$('freq').value;
+  P.smolderDelay = +$('smolderDelay').value;
+  P.smolderBloom = +$('smolderBloom').value;
+  P.smolderGen = +$('smolderGen').value;
+  P.seedFan = +$('seedFan').value;
+  P.scanSpeed = +$('scanSpeed').value; P.reclaim = +$('reclaim').value;
+  P.breachHold = +$('breachHold').value; P.winCoverage = +$('winCoverage').value;
   for (const k of SHAPE_KEYS) P.shapes[k] = $('sh_' + k).checked;
-  P.dirs = new Set(DIR_KEYS.filter((d) => $('dir_' + DIR_KEYS.indexOf(d)).checked));
+  P.chain = singleChain();
+  $('chainlen').textContent = P.chain.length;
 }
 
 function syncControlsFromP() {
   $('p').value = P.p; $('amp').value = P.amp; $('freq').value = P.freq;
-  $('prob').value = P.prob; $('maskN').value = P.maskN;
-  $('pool').value = P.pool; $('reachCap').value = P.reachCap;
-  $('spreadReach').value = P.spreadReach; $('reproduce').value = P.reproduce;
+  $('grammar').value = P.grammar || 'FFFFF';
+  $('pace').value = P.pace || 3; $('seeds').value = P.seeds || 10;
+  $('connector').value = P.connector || 'SCATTER';
+  $('smolderDelay').value = P.smolderDelay; $('smolderBloom').value = P.smolderBloom;
+  $('smolderGen').value = P.smolderGen; $('seedFan').value = P.seedFan;
   $('scanSpeed').value = P.scanSpeed; $('reclaim').value = P.reclaim;
   $('breachHold').value = P.breachHold; $('winCoverage').value = P.winCoverage;
-  $('probMode').value = P.probMode;
   for (const k of SHAPE_KEYS) $('sh_' + k).checked = P.shapes[k];
-  DIR_KEYS.forEach((d, i) => { $('dir_' + i).checked = P.dirs.has(d); });
   updateOutputs();
 }
 
@@ -167,9 +158,9 @@ function wireControls() {
   for (const k of RANGE_KEYS) {
     $(k).addEventListener('input', () => { readControlsIntoP(); updateOutputs(); if (k === 'rate') restartTimer(); render(); });
   }
-  $('probMode').addEventListener('change', () => { readControlsIntoP(); render(); });
+  $('grammar').addEventListener('input', () => { readControlsIntoP(); render(); });
+  $('connector').addEventListener('change', () => { readControlsIntoP(); render(); });
   for (const k of SHAPE_KEYS) $('sh_' + k).addEventListener('change', () => { readControlsIntoP(); render(); });
-  DIR_KEYS.forEach((d, i) => $('dir_' + i).addEventListener('change', () => { readControlsIntoP(); render(); }));
 
   $('play').onclick = () => { readControlsIntoP(); if (sim.outcome) build(); start(); render(); };
   $('pause').onclick = () => { stop(); render(); };
@@ -182,20 +173,16 @@ function wireControls() {
 
 // --- boot: build the dynamic control fragments then wire ---
 function boot() {
-  // shape checkboxes
   const SHAPE_LABEL = { linear: 'Linear', sine: 'Sine', sine2: 'Sine2', sine3: 'Sine3', rect: 'Rect-sin', tan: 'Tan', saw: 'Saw' };
   $('shapes').innerHTML = SHAPE_KEYS.map((k) =>
     `<label class="cb"><input type="checkbox" id="sh_${k}"> ${SHAPE_LABEL[k]}</label>`).join('');
-  // direction checkboxes
-  $('dirs').innerHTML = DIR_KEYS.map((d, i) =>
-    `<label class="cb"><input type="checkbox" id="dir_${i}"> ${d}</label>`).join('');
-  // sector picker
   $('sector').innerHTML = SECTORS.map((s, i) => `<option value="${i}">${s.id}</option>`).join('');
   $('sector').value = sectorIndex;
-  // presets
   $('presets').innerHTML = Object.keys(PRESETS).map((n) => `<button id="pre_${n}">${n}</button>`).join('');
 
   P.p = (SECTORS[sectorIndex].x0 + SECTORS[sectorIndex].x1) >> 1;
+  const s0 = P.chain[0];
+  P.grammar = s0.grammar; P.pace = s0.pace; P.seeds = s0.seeds; P.connector = s0.connector;
   syncControlsFromP();
   wireControls();
   build();

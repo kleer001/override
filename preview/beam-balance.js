@@ -1,82 +1,70 @@
-// Headless balance harness for the Beam-Card model (research/ember-model.md §13).
+// Headless balance harness for the L-system growth model
+// (research/lsystem-growth.md §5, §10).
 //
-// Runs the §6 escalation-stack decks (built from real §5 cards through the actual
-// merge rules) across many seeds × all three sectors, on the same pure sim the
-// browser sandbox uses (beam-sim.js) over the real terrain generator. Prints a
-// win-rate + peak-coverage table per deck and the terrain difficulty gate.
+// Builds the roster decks from real cards through the actual buildChain, then races
+// each on the same pure sim the browser sandbox uses (src/beam.js) over the real
+// terrain generator. Prints a win-rate + peak-coverage table per deck and the
+// terrain difficulty gate.
 //
 //   node preview/beam-balance.js            # default sweep
 //   node preview/beam-balance.js 24         # seeds 1..24
 //
-// The point: tune the SHARED terminal/scan constants (TUNE below) + the GROWTH
-// level→(reproduce, spreadReach) mapping to the §13 target — a strong deck wins
-// ~5/6, a weak deck 0/6, terrain still gates (~1/8 BRUTAL). Deck shapes come from
-// cards; pool/reachCap/scan are terminal meta-stats shared by every deck.
+// The point: tune the SHARED scan/smolder constants (TUNE below) to the §10 target —
+// a strong deck wins most, the weak one-card starter ~never, terrain still gates.
+// Env overrides for sweeps/ablations, e.g.:
+//   SCANSPEED=0.30 SMOLDERGEN=8 node preview/beam-balance.js
+//   SMOLDERGEN=0 node preview/beam-balance.js        # smolder ablation
 
 import { createSim, stepSim, coverage, SECTORS } from '../src/beam.js';
 import { generateMachine } from '../src/terrain.js';
-import { CARDS, mergeBeam, GROWTH, GROWTH_CAP } from '../src/cards.js';
+import { CARDS, buildChain, chainSeedTotal, beamLabel } from '../src/cards.js';
 
-// Merge a deck of card NAMES into one beam through the SHIPPING merge rules — this
-// harness validates the real cards + real merge, not a parallel copy. mergeBeam
-// returns shapes as a {key:bool} object; the sim reads that shape directly.
-const mergeDeck = (names) => mergeBeam(names.map((n) => CARDS[n]));
+const mergeDeck = (names) => buildChain(names.map((n) => CARDS[n]));
 
-// The §6 escalation stacks as end-state card lists (+ a deliberately weak starter).
+// The §5/§10 archetypes as card lists (+ the deliberately weak one-card starter).
 const DECKS = {
-  WEAK:     ['SCRIPT.COM'],                                              // a lone card (lin·←·50·Med) — soft-locks ~0%
-  STARTER:  ['SCRIPT.COM', 'FORK.COM'],                                  // the shipping starter → lin·←→·100·gr.30 (~half-win on EASY)
-  CURTAIN:  ['SCRIPT.COM', 'SCRIPT.COM', 'SCRIPT.SYS', 'BUFFER.OVR', 'ROOTKIT'],
-  LANCE:    ['SCRIPT.SYS', 'SCRIPT.SYS'],                                // thin, deep, low-growth
-  HARMONIC: ['WORM', 'HARMONIC', 'PHREAK', 'PAYLOAD'],
-  FENCE:    ['BLUEBOX', 'BLUEBOX', 'LOGICBOMB'],
-  GLITCH:   ['TANGENT', 'TANGENT', 'WORM'],
+  WEAK:     ['SCRIPT.COM'],                                  // one slow runner — soft-locks under 50%
+  STARTER:  ['SCRIPT.COM', 'FORK.COM'],                      // the shipping starter — barely cracks EASY
+  CURTAIN:  ['BUFFER.OVR', 'ROOTKIT', 'WORM'],               // wide fast worm + branch + sprout
+  HARMONIC: ['WORM', 'HARMONIC', 'PAYLOAD'],                 // coilers that overlay + sprout
+  FENCE:    ['BLUEBOX', 'BLUEBOX', 'LOGICBOMB'],             // vertical jets + downward drill
+  GLITCH:   ['TANGENT', 'TANGENT', 'WORM'],                  // few fast blowout runners + spread
+  SOLO0DAY: ['0DAY'],                                        // the grail on its own
 };
 
-// --- SHARED terminal/scan constants under calibration (the tuning surface) ---
-// Every value is env-overridable for quick sweeps, e.g.  POOL=1000 RECLAIM=5 node …
+// --- shared scan/smolder constants under calibration (the tuning surface) ---
 const envN = (k, d) => (process.env[k] !== undefined ? +process.env[k] : d);
 const TUNE = {
-  pool: envN('POOL', 1000),             // REACH pool (terminal meta-stat, shared by every deck)
-  reachCap: envN('REACHCAP', 20),       // max REACH any one ember may hold
-  scanSpeed: envN('SCANSPEED', 0.40),   // scan rows advanced per tick
-  reclaim: envN('RECLAIM', 6),          // reclaimed cells per scanned row
-  breachHold: envN('BREACHHOLD', 15),   // ticks held ≥win to breach
-  winCoverage: envN('WINCOV', 50),      // % of claimable cells to breach
+  scanSpeed: envN('SCANSPEED', 0.30),     // scan rows/tick (aggression 0.75 ≈ 0.30)
+  reclaim: envN('RECLAIM', 6),            // reclaimed cells per scanned row
+  breachHold: envN('BREACHHOLD', 15),     // ticks held ≥win to breach
+  winCoverage: envN('WINCOV', 50),        // % of claimable cells to breach
+  smolderDelay: envN('SMOLDERDELAY', 8),  // ticks before a burned cell blooms (§6)
+  smolderBloom: envN('SMOLDERBLOOM', 2),  // neighbours a bloom fills
+  smolderGen: envN('SMOLDERGEN', 8),      // generations a skeleton cell thickens (0 = ablate)
+  seedFan: envN('SEEDFAN', 2),            // launch-heading fan half-width (§8)
 };
-// GROWTH_SCALE multiplies every deck's merged reproduce (ablation: 0 = no growth).
-const GROWTH_SCALE = envN('GROWTH_SCALE', 1);
 
-// Build a full params block for a merged deck on one sector. mergeBeam already
-// supplies shapes/amp/freq/dirs/probMode/prob/maskN/reproduce/spreadReach.
 function paramsFor(merged, sectorIndex) {
   const sec = SECTORS[sectorIndex];
-  return {
-    ...merged,
-    p: (sec.x0 + sec.x1) >> 1,
-    dirs: new Set(merged.dirs),
-    reproduce: Math.min(GROWTH_CAP, merged.reproduce * GROWTH_SCALE),
-    ...TUNE,
-  };
+  return { ...merged, p: (sec.x0 + sec.x1) >> 1, chain: merged.chain, ...TUNE };
 }
 
-// Run one battle to its outcome; return { outcome, peak } (peak coverage %).
 function runBattle(seed, sectorIndex, merged) {
   const sim = createSim(seed, sectorIndex, paramsFor(merged, sectorIndex));
   let peak = 0;
-  for (let t = 0; t < 600 && !sim.outcome; t++) {
+  for (let t = 0; t < 800 && !sim.outcome; t++) {
     stepSim(sim);
     const c = coverage(sim);
     if (c > peak) peak = c;
   }
-  return { outcome: sim.outcome ?? 'traced', peak };
+  return { outcome: sim.outcome ?? 'traced', peak, reTread: sim.reTread };
 }
 
 // --- sweep ---
 const SEEDS = Math.max(1, parseInt(process.argv[2], 10) || 8);
 const seedList = Array.from({ length: SEEDS }, (_, i) => i + 1);
 
-// terrain difficulty gate (independent of any deck)
 const diffCount = { EASY: 0, MED: 0, HARD: 0, BRUTAL: 0 };
 let sectorsTotal = 0;
 for (const seed of seedList) {
@@ -84,37 +72,38 @@ for (const seed of seedList) {
   for (const s of m.sectors) { diffCount[s.difficulty]++; sectorsTotal++; }
 }
 
-console.log(`\nBEAM-CARD BALANCE — ${SEEDS} seeds × ${SECTORS.length} sectors = ${sectorsTotal} battles/deck`);
-console.log(`TUNE ${JSON.stringify(TUNE)}`);
-console.log(`GROWTH None/Low/Med/High reproduce = 0/${GROWTH.Low.r}/${GROWTH.Med.r}/${GROWTH.High.r} (cap ${GROWTH_CAP})\n`);
-
+console.log(`\nL-SYSTEM BALANCE — ${SEEDS} seeds × ${SECTORS.length} sector = ${sectorsTotal} battles/deck`);
+console.log(`TUNE ${JSON.stringify(TUNE)}\n`);
 console.log('terrain gate:',
   Object.entries(diffCount).map(([k, v]) => `${k} ${v} (${(100 * v / sectorsTotal).toFixed(0)}%)`).join('  '));
 console.log('');
 
 const pct = (n, d) => `${(100 * n / d).toFixed(0)}%`;
 const pad = (s, n) => String(s).padEnd(n);
-console.log(pad('deck', 10), pad('merged beam', 30), pad('win', 10), pad('peak cov  (min/med/max)', 26));
-console.log('-'.repeat(78));
+console.log(pad('deck', 10), pad('chain', 26), pad('win', 11), pad('peak (min/med/max)', 20), 'reTread');
+console.log('-'.repeat(82));
 
+let reTreadTotal = 0;
 for (const [name, cards] of Object.entries(DECKS)) {
   const merged = mergeDeck(cards);
-  let wins = 0, total = 0;
+  let wins = 0, total = 0, rt = 0;
   const peaks = [];
   for (const seed of seedList) for (let si = 0; si < SECTORS.length; si++) {
-    const { outcome, peak } = runBattle(seed, si, merged);
+    const { outcome, peak, reTread } = runBattle(seed, si, merged);
     total++; if (outcome === 'win') wins++;
-    peaks.push(peak);
+    peaks.push(peak); rt += reTread;
   }
+  reTreadTotal += rt;
   peaks.sort((a, b) => a - b);
   const med = peaks[peaks.length >> 1];
-  const shapeList = Object.keys(merged.shapes).filter((k) => merged.shapes[k]).join('+');
-  const beam = `${shapeList}·${[...merged.dirs].join('') || '—'}·${merged.prob}%·gr${merged.reproduce.toFixed(2)}`;
+  const label = `${beamLabel(merged).replace(/ · /g, '·')} x${chainSeedTotal(merged.chain)}`;
   console.log(
     pad(name, 10),
-    pad(beam, 30),
-    pad(`${wins}/${total} ${pct(wins, total)}`, 10),
-    `${peaks[0].toFixed(0)} / ${med.toFixed(0)} / ${peaks[peaks.length - 1].toFixed(0)}`.padEnd(26),
+    pad(label.slice(0, 25), 26),
+    pad(`${wins}/${total} ${pct(wins, total)}`, 11),
+    pad(`${peaks[0].toFixed(0)} / ${med.toFixed(0)} / ${peaks[peaks.length - 1].toFixed(0)}`, 20),
+    rt,
   );
 }
-console.log('');
+console.log('-'.repeat(82));
+console.log(`re-tread invariant (must be 0): ${reTreadTotal}`);

@@ -7,8 +7,15 @@ isotropic `reproduce%`-into-a-random-neighbour ember with a `spreadReach`. It is
 scan. No budget, no reproduce level. Everything else in ember-model — turret, beam
 spine, probability→seed count, terrain cost, trace scan, WIN_COVERAGE 50% — stands
 (direction is no longer a separate aspect; it folds into the grammar, §2). Status:
-prototype-validated 2026-07-16 (`scratchpad/pace*.mjs`, `order2.mjs`); constants
-un-tuned; not yet in `src/`.*
+**shipped to `src/` 2026-07-16** (turtle VM in `src/beam.js`, connector chain in
+`src/cards.js`, tuned via `preview/beam-balance.js`); constants are a first pass —
+the §10 knobs (pace band, smolder strength, roster, connector semantics) are still
+open. The real-board tuning diverged from the prototype's open-field numbers: the
+knife-edge pace landed near 2 (not 4) and coverage on the walled 62×28 block leans
+on a longer-delayed, generation-limited **smolder** to fill the pockets the strands
+reach. Terrain cost folds into the pace clock (HARD slows a strand, BUS speeds it),
+and a small deterministic **seed fan** radiates a card's strands off the spine to
+stop them self-trapping in one column.*
 
 Terminology: a growing ember is a **turtle**; its trail is the **skeleton**; the
 fill behind it is **smolder**.

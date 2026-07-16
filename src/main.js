@@ -1,9 +1,9 @@
-// OVERRIDE — Tier-1 vertical slice (Beam-Card model, research/ember-model.md).
+// OVERRIDE — Tier-1 vertical slice (Beam-Card model, research/lsystem-growth.md).
 // A run = ONE intrusion on ONE memory block. You pick a jack-in, draw a blind
-// loadout, slot cards into a merged beam, aim the turret at a column, fire a single
-// packet, and WATCH it spread + reproduce against the descending trace. Win or get
-// traced; either way you bank meta, draft/shop, and jack in again. The deck grows
-// between runs.
+// loadout, slot cards into an ordered connector chain, aim the turret at a column,
+// fire a single packet, and WATCH the L-system strands grow against the descending
+// trace. Win or get traced; either way you bank meta, draft/shop, and jack in
+// again. The deck grows between runs.
 
 import { mulberry32, shuffle } from './rng.js';
 import { startingDeck, DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
@@ -119,14 +119,14 @@ function startRun() {
     tier: 1, root: loadRoot(), deck: loadDeck(),
     machine,
     aggression: baseAggro, baseAggro, pendingDrafts: 0, plays, wins,
-    overclockPool: overclock ? 300 : 0, retry: loadRetry(),
+    overclockSeeds: overclock ? 3 : 0, retry: loadRetry(),
   };
   savePlays(plays + 1);
   trauma.reset();
   game.node = null;
   game.bannerLines = [];
   newAssemble();                                   // straight into the loadout — no character picker
-  if (overclock) { game.message = 'OVERCLOCK: bigger REACH, faster trace.'; draw(); }
+  if (overclock) { game.message = 'OVERCLOCK: more strands, faster trace.'; draw(); }
 }
 
 // The boot / title screen. CONTINUE resumes saved progress; NEW wipes it.
@@ -226,7 +226,7 @@ function fireAt(blockCol) {
   const r = game.run;
   const triggerCol = Math.max(0, Math.min(FIELD_W - 1, blockCol | 0));
   game.node = createNode(r.machine, 0, r.aggression, r.baseAggro, game.program.slice(),
-    { triggerCol, poolBonus: r.overclockPool });
+    { triggerCol, seedBonus: r.overclockSeeds });
   game.phase = 'exec';
   startExec();
 }
@@ -235,7 +235,7 @@ async function startExec() {
   resumeAudio();
   sfx.exec();
   const node = game.node;
-  game.message = 'WATCH — the beam spreads; hold coverage through the breach.';
+  game.message = 'WATCH — the strands grow; hold coverage through the breach.';
   await sleep(200);
   fire(node);
   kick(0.35);
