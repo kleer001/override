@@ -38,10 +38,14 @@ export const BTN_FIRE = { x: 72, y: 31, w: 7, h: 8, label: 'LAUNCH' };
 const DRAFT_X0 = Math.floor((COLS - (3 * 15 + 2 * 2)) / 2);
 export const DRAFT_CARDS = Array.from({ length: 3 }, (_, i) => ({ x: DRAFT_X0 + i * 17, y: 31, w: 15, h: 8 }));
 
-// gutter control stack — REDRAW/UNDO in assemble, aggression in aim
+// gutter control stack — REDRAW/TEST in assemble (low, so the slotted card's
+// text above has room), RESET/PLAY on the test bench, aggression in aim.
+// (Unloading a slotted card is done by tapping the card again — no button.)
 const GBTN = (row) => ({ x: 65, y: row, w: 14, h: 3 });
-export const BTN_REDRAW = { ...GBTN(20), label: `REDRAW -${REDRAW_COST}` };
-export const BTN_UNDO = { ...GBTN(23), label: 'UNDO' };
+export const BTN_REDRAW = { ...GBTN(23), label: `REDRAW -${REDRAW_COST}` };
+export const BTN_TEST = { ...GBTN(26), label: 'TEST' };
+export const BTN_TEST_RESET = { ...GBTN(23), label: 'RESET' };
+export const BTN_TEST_PLAY = { ...GBTN(26), label: 'PLAY ▶' };
 export const BTN_AGGRO_DOWN = { ...GBTN(20), label: '◀ SAFER' };
 export const BTN_AGGRO_UP = { ...GBTN(23), label: 'HARDER ▶' };
 

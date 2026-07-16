@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { buildScreen } from '../src/render.js';
-import { generateMachine, createNode, fire, stepBattle } from '../src/battle.js';
+import { generateMachine, createNode, fire, stepBattle, createTestSim, stepSim } from '../src/battle.js';
 import { CARDS } from '../src/cards.js';
 import { mulberry32, shuffle } from '../src/rng.js';
 
@@ -42,6 +42,13 @@ function execGame() {
   g.message = 'WATCH — the beam spreads.';
   return g;
 }
+function testGame() {
+  const g = assembleGame();
+  g.phase = 'test';
+  g.testSim = createTestSim(g.program);
+  for (let i = 0; i < 25; i++) stepSim(g.testSim);
+  return g;
+}
 
 test('font embed: grid-font.css declares GridMono and styles.css uses it as the primary grid font', () => {
   const font = readFileSync(new URL('../grid-font.css', import.meta.url), 'utf8');
@@ -54,7 +61,7 @@ test('font embed: grid-font.css declares GridMono and styles.css uses it as the 
 
 test('closed glyph alphabet: the renderer only emits glyphs the embedded font covers', () => {
   const titleGame = { phase: 'title', titleWins: 3, run: null, node: null };
-  for (const [name, game] of [['title', titleGame], ['assemble', assembleGame()], ['target', { ...assembleGame(), phase: 'target' }], ['exec', execGame()]]) {
+  for (const [name, game] of [['title', titleGame], ['assemble', assembleGame()], ['target', { ...assembleGame(), phase: 'target' }], ['exec', execGame()], ['test', testGame()]]) {
     const bad = offenders(buildScreen(game, 1000));
     assert.deepEqual(bad, [], `phase ${name} emitted glyphs outside GridMono: ${bad.map((c) => 'U+' + c.codePointAt(0).toString(16)).join(' ')}`);
   }

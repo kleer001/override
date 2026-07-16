@@ -9,12 +9,14 @@ import { mulberry32, shuffle } from './rng.js';
 import { startingDeck, DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
 import { SHOP_ITEMS, DECK_CARD, CARD_UNLOCK } from './shop.js';
 import { createNode, fire, stepBattle, coverage, aimColAt, REDRAW_COST, SLOTS,
+  blankMachine, createTestSim, stepSim,
   rewardMult, draftPicks, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
 import { buildScreen } from './render.js';
 import { composeBoard, detonate, setReducedMotion } from './juice.js';
 import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
-import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE,
+import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_TEST, BTN_TEST_RESET, BTN_TEST_PLAY,
+  BTN_START, BTN_FIRE,
   BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, BTN_TITLE_CONTINUE, BTN_TITLE_NEW, inRect } from './layout.js';
 import { generateMachineUpTo, FIELD_W, WIN_COVERAGE } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
@@ -49,6 +51,7 @@ if (localStorage.getItem(DECK_VERSION_KEY) !== DECK_VERSION) {
 const game = {
   phase: 'assemble', run: null, node: null,
   program: new Array(SLOTS).fill(null), selection: [], hand: [], draft: [],
+  testSim: null, testMachine: null,
   message: '', bannerLines: [], seed: 0, redrawCount: 0,
 };
 
@@ -70,7 +73,6 @@ const draw = () => paint(clock());
 // --- ROOT shop persistence ---
 const CARDS_KEY = 'override.cards';
 const RETRY_KEY = 'override.retry';
-const OC_KEY = 'override.overclock';
 const loadJSON = (k, d) => { const r = localStorage.getItem(k); return r ? JSON.parse(r) : d; };
 const unlockedCards = () => loadJSON(CARDS_KEY, []);
 const loadRetry = () => parseInt(localStorage.getItem(RETRY_KEY) || '0', 10) || 0;
@@ -112,21 +114,18 @@ function startRun() {
   const plays = loadPlays(), wins = loadWins();
   const machine = generateMachineUpTo((Date.now() ^ 0x9e3779b9) >>> 0, difficultyCeil(wins));
   game.seed = machine.seed;                          // adopt the chosen block's seed for hand/draft RNG
-  let baseAggro = loadAggro();                        // adaptive baseline (DDA), tuned by past outcomes
-  const overclock = localStorage.getItem(OC_KEY) === '1';
-  if (overclock) { localStorage.removeItem(OC_KEY); baseAggro = Math.min(AGGRO_MAX, +(baseAggro + 0.25).toFixed(2)); }
+  const baseAggro = loadAggro();                      // adaptive baseline (DDA), tuned by past outcomes
   game.run = {
     tier: 1, root: loadRoot(), deck: loadDeck(),
     machine,
     aggression: baseAggro, baseAggro, pendingDrafts: 0, plays, wins,
-    overclockSeeds: overclock ? 3 : 0, retry: loadRetry(),
+    retry: loadRetry(),
   };
   savePlays(plays + 1);
   trauma.reset();
   game.node = null;
   game.bannerLines = [];
   newAssemble();                                   // straight into the loadout — no character picker
-  if (overclock) { game.message = 'OVERCLOCK: more strands, faster trace.'; draw(); }
 }
 
 // The boot / title screen. CONTINUE resumes saved progress; NEW wipes it.
@@ -140,7 +139,7 @@ function showTitle() {
 // starter, ROOT to 120, wins/plays to 0). Keep the deck-version stamp current so
 // the fresh starter isn't re-wiped by the migration guard on the next load.
 function resetSave() {
-  for (const k of [ROOT_KEY, DECK_KEY, PLAYS_KEY, WINS_KEY, AGGRO_KEY, CARDS_KEY, RETRY_KEY, OC_KEY]) localStorage.removeItem(k);
+  for (const k of [ROOT_KEY, DECK_KEY, PLAYS_KEY, WINS_KEY, AGGRO_KEY, CARDS_KEY, RETRY_KEY]) localStorage.removeItem(k);
   localStorage.setItem(DECK_VERSION_KEY, DECK_VERSION);
 }
 
@@ -174,22 +173,66 @@ function redraw() {
   draw();
 }
 
-function loadSlot(i) {
+// Tap an unused hand card to slot it; tap a slotted card again to unload it
+// (later slots compact up to keep the chain contiguous).
+function toggleSlot(i) {
   if (game.phase !== 'assemble') return;
   const h = game.hand[i];
-  if (!h || h.used || game.selection.length >= SLOTS) return;
-  h.used = true;
-  game.program[game.selection.length] = h.card;
-  game.selection.push(i);
-  sfx.load();
+  if (!h) return;
+  if (h.used) {
+    const k = game.selection.indexOf(i);
+    if (k < 0) return;
+    game.selection.splice(k, 1);
+    h.used = false;
+    game.program = new Array(SLOTS).fill(null);
+    game.selection.forEach((hi, j) => { game.program[j] = game.hand[hi].card; });
+    sfx.undo();
+  } else {
+    if (game.selection.length >= SLOTS) return;
+    game.program[game.selection.length] = h.card;
+    game.selection.push(i);
+    h.used = true;
+    sfx.load();
+  }
   draw();
 }
-function undoSlot() {
-  if (game.phase !== 'assemble' || !game.selection.length) return;
-  const i = game.selection.pop();
-  game.hand[i].used = false;
-  game.program[game.selection.length] = null;
-  sfx.undo();
+
+// --- TEST bench: preview the slotted chain on a blank block (no scan) ---
+async function startTest() {
+  if (game.phase !== 'assemble' || !game.program.some(Boolean)) return;
+  game.phase = 'test';
+  game.testMachine = blankMachine();     // shown blank while the packet charges
+  game.testSim = null;
+  game.message = '';
+  sfx.ui();
+  draw();
+  await sleep(500);
+  if (game.phase !== 'test') return;     // player backed out during the charge
+  fireTest();
+}
+function fireTest() {
+  game.testSim = createTestSim(game.program);
+  sfx.exec();
+  testLoop(game.testSim);
+}
+async function testLoop(sim) {
+  while (game.phase === 'test' && game.testSim === sim) {
+    stepSim(sim);
+    draw();
+    if (!sim.turtles.length) break;      // every strand trapped — hold the picture
+    await sleep(TICK_MS);
+  }
+}
+function resetTest() {
+  if (game.phase !== 'test' || !game.testSim) return;
+  fireTest();                            // fresh blank block, no charge wait
+}
+function exitTest() {
+  if (game.phase !== 'test') return;
+  game.testSim = null;
+  game.testMachine = null;
+  game.phase = 'assemble';
+  sfx.ui();
   draw();
 }
 
@@ -225,8 +268,7 @@ function lowerAggro() {
 function fireAt(blockCol) {
   const r = game.run;
   const triggerCol = Math.max(0, Math.min(FIELD_W - 1, blockCol | 0));
-  game.node = createNode(r.machine, 0, r.aggression, r.baseAggro, game.program.slice(),
-    { triggerCol, seedBonus: r.overclockSeeds });
+  game.node = createNode(r.machine, 0, r.aggression, r.baseAggro, game.program.slice(), { triggerCol });
   game.phase = 'exec';
   startExec();
 }
@@ -298,7 +340,7 @@ function advance() {
 function refreshShop() {
   if (game.run) game.run.root = loadRoot();
   game.shopData = {
-    root: loadRoot(), retry: loadRetry(), overclock: localStorage.getItem(OC_KEY) === '1',
+    root: loadRoot(), retry: loadRetry(),
     items: SHOP_ITEMS.map((it) => ({ id: it.id, name: it.name, desc: it.desc, cost: it.cost, kind: it.kind, owned: shopOwned(it) })),
   };
 }
@@ -320,7 +362,6 @@ function buyShop(id) {
   if (item.kind === 'deckcard') { game.run.deck.push({ ...CARDS[DECK_CARD[item.id]] }); saveDeck(game.run.deck); }
   else if (item.kind === 'card') { const u = unlockedCards(); u.push(CARD_UNLOCK[item.id]); localStorage.setItem(CARDS_KEY, JSON.stringify(u)); }
   else if (item.kind === 'retry') { saveRetry(loadRetry() + 1); }
-  else if (item.kind === 'curse') { localStorage.setItem(OC_KEY, '1'); }
   sfx.lock();
   game.message = `bought ${item.name}.`;
   refreshShop();
@@ -352,10 +393,13 @@ function onTapCell(col, row) {
     if (inRect(col, row, BTN_TITLE_CONTINUE)) return startRun();
     if (inRect(col, row, BTN_TITLE_NEW)) { resetSave(); return startRun(); }
   } else if (game.phase === 'assemble') {
-    for (let i = 0; i < HAND_CARDS.length; i++) if (inRect(col, row, HAND_CARDS[i])) return loadSlot(i);
+    for (let i = 0; i < HAND_CARDS.length; i++) if (inRect(col, row, HAND_CARDS[i])) return toggleSlot(i);
     if (inRect(col, row, BTN_REDRAW)) return redraw();
-    if (inRect(col, row, BTN_UNDO)) return undoSlot();
+    if (inRect(col, row, BTN_TEST)) return startTest();
     if (inRect(col, row, BTN_START)) return gotoTarget();
+  } else if (game.phase === 'test') {
+    if (inRect(col, row, BTN_TEST_RESET)) return resetTest();
+    if (inRect(col, row, BTN_TEST_PLAY)) return exitTest();
   } else if (game.phase === 'target') {
     if (inRect(col, row, BTN_AGGRO_DOWN)) return lowerAggro();
     if (inRect(col, row, BTN_AGGRO_UP)) return raiseAggro();
@@ -379,10 +423,13 @@ window.addEventListener('keydown', (e) => {
     if (k === 'Enter') startRun();
     else if (k === 'n' || k === 'N') { resetSave(); startRun(); }
   } else if (game.phase === 'assemble') {
-    if (k >= '1' && k <= '5') loadSlot(+k - 1);
+    if (k >= '1' && k <= '5') toggleSlot(+k - 1);          // press again to unload
     else if (k === 'r' || k === 'R') redraw();
-    else if (k === 'Backspace') { e.preventDefault(); undoSlot(); }
+    else if (k === 't' || k === 'T') startTest();
     else if (k === 'Enter') gotoTarget();
+  } else if (game.phase === 'test') {
+    if (k === 'r' || k === 'R') resetTest();
+    else if (k === 'Enter') exitTest();
   } else if (game.phase === 'target') {
     if (k === 'Enter' || k === ' ') launch();          // LAUNCH at the swinging turret
     else if (k === '+' || k === '=') raiseAggro();
@@ -399,7 +446,7 @@ window.addEventListener('keydown', (e) => {
 
 // pulse loop: repaint while the field is live so captures breathe; shake every frame.
 // repaint continuously during AIM (the turret pulses) and the live watch
-const needsAnim = () => game.phase === 'target' || (game.node && (game.phase === 'exec' || game.phase === 'result'));
+const needsAnim = () => game.phase === 'target' || game.phase === 'test' || (game.node && (game.phase === 'exec' || game.phase === 'result'));
 let lastPaint = 0, lastFrame = 0, shaking = false;
 function applyShake(dt) {
   trauma.decay(dt);

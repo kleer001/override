@@ -11,8 +11,8 @@
 // dial and a battle log.
 
 import { mulberry32 } from './rng.js';
-import { generateMachine, sectorStats, FIELD_H, WIN_COVERAGE } from './terrain.js';
-import { createSimOn, stepSim, coverage, spineX, aimColAt, heatAt } from './beam.js';
+import { generateMachine, sectorStats, FIELD_W, FIELD_H, WIN_COVERAGE } from './terrain.js';
+import { createSimOn, stepSim, coverage, aimColAt, heatAt } from './beam.js';
 import { buildChain, beamGutterLines } from './cards.js';
 
 export { generateMachine };
@@ -21,7 +21,6 @@ export const SLOTS = 3;             // beam slots in assemble (Tier 1)
 
 // --- Tier-1 shared terminal/scan constants (un-tuned, research/lsystem-growth.md
 // §10; the pace-vs-scan knife-edge is where balance lives). ---
-export const SEED_FAN = 2;          // launch-heading fan half-width (anti-crowding, §8)
 export const SCAN_SPEED = 0.40;     // scan rows/tick at aggression 1
 export const RECLAIM = 6;           // reclaimed cells/row at aggression 1
 export const BREACH_HOLD = 15;      // ticks held ≥WIN_COVERAGE to breach
@@ -51,9 +50,7 @@ function beamParams(machine, secIdx, merged, aggro, extra) {
     p: extra.triggerCol != null
       ? Math.max(sector.x0, Math.min(sector.x1, extra.triggerCol | 0))
       : (sector.x0 + sector.x1) >> 1,            // default: fire from sector centre
-    shapes: merged.shapes, amp: merged.amp, freq: merged.freq,
-    chain: extra.seedBonus ? boostSeeds(merged.chain, extra.seedBonus) : merged.chain,
-    seedFan: SEED_FAN,
+    chain: merged.chain,
     scanSpeed: SCAN_SPEED * aggro,               // aggression = scan speed…
     reclaim: Math.max(1, Math.round(RECLAIM * aggro)),   // …and bite
     breachHold: BREACH_HOLD,
@@ -61,10 +58,29 @@ function beamParams(machine, secIdx, merged, aggro, extra) {
   };
 }
 
-// OVERCLOCK (and future REACH-style boosts) rakes extra strands off the spine —
-// more seeds on every segment. Returns a fresh chain, leaving the card data intact.
-function boostSeeds(chain, bonus) {
-  return chain.map((seg) => ({ ...seg, seeds: seg.seeds + bonus }));
+// --- TEST bench: a featureless block for previewing what a chain draws ---
+// Every cell OPEN — no firewalls, no terrain — one sector spanning the field.
+export function blankMachine() {
+  return {
+    seed: 0,
+    t: new Uint8Array(FIELD_W * FIELD_H),          // all OPEN
+    sectors: [{ id: 'TEST BENCH', x0: 0, x1: FIELD_W - 1 }],
+    burned: new Uint8Array(FIELD_W * FIELD_H),
+  };
+}
+
+// Fire the chain at the centre of a blank block with the trace scan disabled —
+// the pattern draws until every strand self-traps. Nothing ends or wins the
+// bench run; the caller stops stepping when the strands are gone.
+export function createTestSim(program) {
+  const merged = buildChain(program.filter(Boolean));
+  const params = {
+    p: (FIELD_W - 1) >> 1,
+    chain: merged.chain,
+    scanSpeed: 0, reclaim: 0,               // no scan — nothing erases the drawing
+    breachHold: 0, winCoverage: 101,        // unreachable — the bench never resolves
+  };
+  return createSimOn(blankMachine(), 0, params, mulberry32(1));
 }
 
 // Create a node: a beam battle over the run's shared machine. Does not fire yet —
@@ -130,8 +146,9 @@ export function runBattlePeak(node) {
 // Whole battle in one call (headless / tests) — the outcome-only variant.
 export function runBattle(node) { return runBattlePeak(node).node; }
 
-// Re-expose sim helpers the UI needs (spine preview, oscillating aim, burn brightness).
-export { spineX, coverage, aimColAt, heatAt };
+// Re-expose sim helpers the UI needs (oscillating aim, burn brightness, and
+// stepping the raw TEST-bench sim, which has no node wrapper).
+export { coverage, aimColAt, heatAt, stepSim };
 
 function push(node, line) {
   node.log.push(line);

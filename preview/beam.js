@@ -4,8 +4,8 @@
 //   ?seed=1&sector=0   seed = uint, sector index (single-block build ⇒ 0)
 
 import {
-  createSim, stepSim, coverage, spineX, shapeOffset, defaultParams, heatAt,
-  FIELD_W, FIELD_H, SECTORS, WALL, idx, SHAPE_KEYS,
+  createSim, stepSim, coverage, defaultParams, heatAt,
+  FIELD_W, FIELD_H, SECTORS, WALL, idx,
 } from '../src/beam.js';
 import { OPEN, HARD, BUS, HONEY } from '../src/terrain.js';
 import { CARDS, buildChain, sanitizeGrammar } from '../src/cards.js';
@@ -36,12 +36,10 @@ const PRESETS = {
 
 function applyPreset(name) {
   const merged = buildChain(PRESETS[name].map((n) => CARDS[n]));
-  for (const k of SHAPE_KEYS) P.shapes[k] = !!merged.shapes[k];
-  P.amp = merged.amp; P.freq = merged.freq;
   P.chain = merged.chain.map((s) => ({ ...s }));
   // reflect the first segment's growth on the manual controls
   const s0 = P.chain[0];
-  P.grammar = s0.grammar; P.pace = s0.pace; P.seeds = s0.seeds; P.connector = s0.connector;
+  P.grammar = s0.grammar; P.pace = s0.pace; P.connector = s0.connector;
   syncControlsFromP();
   build();
 }
@@ -50,7 +48,7 @@ function applyPreset(name) {
 // Grammar is validated through the game's own sanitizeGrammar so the sandbox and the
 // shipping card path can't drift.
 function singleChain() {
-  return [{ grammar: sanitizeGrammar($('grammar').value), pace: +$('pace').value, seeds: +$('seeds').value, connector: $('connector').value }];
+  return [{ grammar: sanitizeGrammar($('grammar').value), pace: +$('pace').value, connector: $('connector').value }];
 }
 
 // --- build / reset ---
@@ -104,39 +102,21 @@ function render() {
   st.className = 'stat big' + (sim.outcome === 'win' ? ' win' : sim.outcome === 'traced' ? ' lose' : '');
   st.textContent = sim.outcome === 'win' ? '>> BREACHED.' :
     sim.outcome === 'traced' ? '>> TRACED. run ends.' : running ? 'running…' : 'paused.';
-  renderWave();
-}
-
-// --- live ASCII preview of the summed waveform (Fourier sum of the spine) ---
-function renderWave() {
-  const W = 21, mid = W >> 1, rows = [];
-  for (let y = 0; y < FIELD_H; y++) {
-    const col = Math.round(shapeOffset(P, y));
-    const cl = Math.max(-mid, Math.min(mid, col));
-    const line = Array(W).fill(' ');
-    line[mid] = '·';
-    line[mid + cl] = Math.abs(col) > mid ? '!' : '*';
-    rows.push(line.join(''));
-  }
-  $('wave').textContent = rows.join('\n');
 }
 
 // --- control wiring ---
 // Scalars are safe to mutate on the LIVE sim (sim.params === P); the CHAIN is not —
 // changing its length mid-run would orphan the turtles' segment indices, so chain
 // edits rebuild a fresh sim instead.
-const RANGE_KEYS = ['p', 'amp', 'freq', 'pace', 'seeds', 'seedFan', 'rate', 'scanSpeed', 'reclaim', 'breachHold', 'winCoverage'];
-// pace/seeds reshape the chain (rebuild); everything else is a live-safe scalar.
-const CHAIN_RANGE = ['pace', 'seeds'];
+const RANGE_KEYS = ['p', 'pace', 'rate', 'scanSpeed', 'reclaim', 'breachHold', 'winCoverage'];
+// pace reshapes the chain (rebuild); everything else is a live-safe scalar.
+const CHAIN_RANGE = ['pace'];
 const SCALAR_KEYS = RANGE_KEYS.filter((k) => !CHAIN_RANGE.includes(k));
 
 function readScalarsIntoP() {
   P.p = clampCol(+$('p').value);
-  P.amp = +$('amp').value; P.freq = +$('freq').value;
-  P.seedFan = +$('seedFan').value;
   P.scanSpeed = +$('scanSpeed').value; P.reclaim = +$('reclaim').value;
   P.breachHold = +$('breachHold').value; P.winCoverage = +$('winCoverage').value;
-  for (const k of SHAPE_KEYS) P.shapes[k] = $('sh_' + k).checked;
 }
 // Manual chain edits replace the (possibly multi-segment preset) chain with the
 // single segment the controls describe, then rebuild.
@@ -147,14 +127,12 @@ function applyChainAndBuild() {
 }
 
 function syncControlsFromP() {
-  $('p').value = P.p; $('amp').value = P.amp; $('freq').value = P.freq;
+  $('p').value = P.p;
   $('grammar').value = P.grammar || 'FFFFF';
-  $('pace').value = P.pace || 3; $('seeds').value = P.seeds || 10;
+  $('pace').value = P.pace || 3;
   $('connector').value = P.connector || 'SCATTER';
-  $('seedFan').value = P.seedFan;
   $('scanSpeed').value = P.scanSpeed; $('reclaim').value = P.reclaim;
   $('breachHold').value = P.breachHold; $('winCoverage').value = P.winCoverage;
-  for (const k of SHAPE_KEYS) $('sh_' + k).checked = P.shapes[k];
   updateOutputs();
 }
 
@@ -170,7 +148,6 @@ function wireControls() {
   for (const k of CHAIN_RANGE) $(k).addEventListener('input', () => { updateOutputs(); applyChainAndBuild(); });
   $('grammar').addEventListener('input', applyChainAndBuild);
   $('connector').addEventListener('change', applyChainAndBuild);
-  for (const k of SHAPE_KEYS) $('sh_' + k).addEventListener('change', () => { readScalarsIntoP(); render(); });
 
   $('play').onclick = () => { readScalarsIntoP(); if (sim.outcome) build(); start(); render(); };
   $('pause').onclick = () => { stop(); render(); };
@@ -183,16 +160,13 @@ function wireControls() {
 
 // --- boot: build the dynamic control fragments then wire ---
 function boot() {
-  const SHAPE_LABEL = { linear: 'Linear', sine: 'Sine', sine2: 'Sine2', sine3: 'Sine3', rect: 'Rect-sin', tan: 'Tan', saw: 'Saw' };
-  $('shapes').innerHTML = SHAPE_KEYS.map((k) =>
-    `<label class="cb"><input type="checkbox" id="sh_${k}"> ${SHAPE_LABEL[k]}</label>`).join('');
   $('sector').innerHTML = SECTORS.map((s, i) => `<option value="${i}">${s.id}</option>`).join('');
   $('sector').value = sectorIndex;
   $('presets').innerHTML = Object.keys(PRESETS).map((n) => `<button id="pre_${n}">${n}</button>`).join('');
 
   P.p = (SECTORS[sectorIndex].x0 + SECTORS[sectorIndex].x1) >> 1;
   const s0 = P.chain[0];
-  P.grammar = s0.grammar; P.pace = s0.pace; P.seeds = s0.seeds; P.connector = s0.connector;
+  P.grammar = s0.grammar; P.pace = s0.pace; P.connector = s0.connector;
   syncControlsFromP();
   wireControls();
   build();

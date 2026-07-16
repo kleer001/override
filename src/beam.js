@@ -1,6 +1,7 @@
 // Beam-Card Model — the game's canonical pure simulation
 // (research/lsystem-growth.md). The turret fires a packet that draws a beam spine;
-// strands are raked off the spine and grow as DETERMINISTIC L-SYSTEM TURTLES —
+// each launching card anchors ONE strand on the spine (bottom / top / centre of the
+// open line) and it grows as a DETERMINISTIC L-SYSTEM TURTLE —
 // there is no reproduce%, no reach budget. A turtle runs an F/L/R/K grammar on a
 // loop at a per-strand PACE, hugging walls via a fixed searching reroute, and the
 // descending trace scan is the clock. Coverage is the race: paint before the scan
@@ -38,36 +39,6 @@ const SEED_HEADING = 0;   // up, away from the turret
 // so it hugs walls and threads gaps with zero pathfinding and never re-treads.
 const PROBE = [0, 1, -1, 2, -2, 3, -3, 4];
 
-// --- shape vocabulary (spine curve; Fourier superposition when merged) ---
-// Each returns a horizontal spine offset for normalised row t in [0,1].
-export const SHAPES = {
-  linear: () => 0,                                            // pencil (straight)
-  sine:  (t, a, f) => a * Math.sin(2 * Math.PI * f * t),
-  sine2: (t, a, f) => a * Math.sin(2 * Math.PI * (2 * f) * t),
-  sine3: (t, a, f) => a * Math.sin(2 * Math.PI * (3 * f) * t),
-  rect:  (t, a, f) => a * (2 * Math.abs(Math.sin(2 * Math.PI * f * t)) - 1),
-  tan:   (t, a, f) => a * Math.tan(2 * Math.PI * f * t),      // asymptote blowout
-  saw:   (t, a, f) => a * (2 * (((f * t) % 1) + 1) % 1 - 1),
-};
-export const SHAPE_KEYS = Object.keys(SHAPES);
-
-// Summed offset of all selected shapes at row y (deterministic — the waveform
-// preview matches the drawn spine exactly).
-export function shapeOffset(params, y) {
-  const t = FIELD_H > 1 ? y / (FIELD_H - 1) : 0;
-  let off = 0;
-  for (const k of SHAPE_KEYS) {
-    if (params.shapes[k]) off += SHAPES[k](t, params.amp, params.freq);
-  }
-  return off;
-}
-
-// Spine x at row y: x(y) = round(p + Σ shape(y)), clamped on-board (§2).
-export function spineX(params, y) {
-  const x = Math.round(params.p + shapeOffset(params, y));
-  return x < 0 ? 0 : x > FIELD_W - 1 ? FIELD_W - 1 : x;
-}
-
 // The AIM turret oscillates across the block on a fixed period (pendulum/sine).
 // The UI derives the current column from wall-clock `now`; the renderer and the
 // launch handler both call this so they fire from exactly where it's drawn. Pure —
@@ -96,11 +67,7 @@ const MAX_TURTLES = 3000;    // compute guard against a runaway fork/branch proc
 export function defaultParams() {
   return {
     p: 30,                                     // trigger column
-    shapes: { linear: true, sine: false, sine2: false, sine3: false, rect: false, tan: false, saw: false },
-    amp: 6,                                     // shape amplitude (cells)
-    freq: 2,                                     // shape base frequency
-    chain: [{ grammar: 'FFKFK', pace: 2, seeds: 12, connector: 'SCATTER' }],
-    seedFan: 2,                                  // launch-heading fan half-width — radiates a card's strands off the spine (anti-crowding, §8)
+    chain: [{ grammar: 'FFKFK', pace: 2, connector: 'SCATTER' }],
     scanSpeed: 0.40,                             // scan rows advanced per tick
     reclaim: 6,                                   // reclaimed cells per scanned row
     breachHold: 15,                               // ticks held ≥win to breach
@@ -160,30 +127,26 @@ function burn(sim, x, y, fromF = false) {
 }
 
 // --- seeding (§7 connector chain) --------------------------------------------
-// The deck is read top-to-bottom. Segment 0 always seeds fresh off the spine; a
-// later segment's coupling is set by the PRECEDING segment's connector:
-//   SCATTER → the next card seeds fresh off the spine (order-blind swarm)
-//   OVERLAY → the next card seeds the SAME points, concurrently
+// ONE turtle per launching card — coverage is earned by grammar fork density and
+// pace alone. The deck is read top-to-bottom. Segment 0 always launches off the
+// spine; a later segment's coupling is set by the PRECEDING segment's connector:
+//   SCATTER → the next card launches fresh off the spine (own anchor)
+//   OVERLAY → the next card launches from the SAME anchor, concurrently
 //   SPROUT/BRANCH → deferred: seeded from the previous card's tips when they trap
 function validSpineCells(sim) {
-  const p = sim.params, out = [];
-  for (let y = 0; y < FIELD_H; y++) {
-    const x = spineX(p, y);
-    if (sim.machine.t[idx(x, y)] !== WALL) out.push({ x, y });
-  }
+  const x = Math.max(0, Math.min(FIELD_W - 1, sim.params.p | 0));   // spine = straight column at the trigger
+  const out = [];
+  for (let y = 0; y < FIELD_H; y++) if (sim.machine.t[idx(x, y)] !== WALL) out.push({ x, y });
   return out;
 }
 
-// n points evenly spaced over the valid spine, phase-shifted per segment so
-// independent SCATTER segments decorrelate instead of stacking on the same cells.
-function pickEven(valid, n, phase) {
-  const m = valid.length, out = [];
-  if (m === 0 || n <= 0) return out;
-  for (let k = 0; k < n; k++) {
-    const i = (Math.floor(((k + 0.5) / n) * m) + phase) % m;
-    out.push(valid[(i + m) % m]);
-  }
-  return out;
+// Launch anchors, spread across whatever open spine the walls leave: the 1st
+// launching card takes the first open cell off the turret (bottom), the 2nd the
+// far end of the line (top), the 3rd the most central open cell — a full chain
+// brackets the block even when firewall eats most of the column. (valid[] is
+// ordered top-to-bottom, y=0 first.)
+function anchorPoints(valid) {
+  return [valid[valid.length - 1], valid[0], valid[valid.length >> 1]];
 }
 
 function spawnTurtle(sim, x, y, heading, seg) {
@@ -192,33 +155,20 @@ function spawnTurtle(sim, x, y, heading, seg) {
   burn(sim, x, y);   // the launch/tip cell (seed — overlaps allowed, not re-tread)
 }
 
-// A symmetric fan of heading offsets around the canonical launch (0, ±1, ±2, …),
-// so a card's strands RADIATE off the spine instead of stacking into one column and
-// self-trapping. Deterministic — the offset is purely the strand's index.
-function fanOffsets(half) {
-  const out = [0];
-  for (let k = 1; k <= half; k++) out.push(-k, k);
-  return out;
-}
-
 function seedSwarm(sim) {
   const p = sim.params, valid = validSpineCells(sim);
-  const fan = fanOffsets(Math.max(0, p.seedFan | 0));
-  const segStart = [];   // where each segment's launch turtles started (OVERLAY reference)
+  if (!valid.length) return;
+  const anchors = anchorPoints(valid);
+  const segStart = [];   // where each segment launched (OVERLAY reference)
+  let launches = 0;      // how many anchors have been claimed so far
   for (let i = 0; i < p.chain.length; i++) {
-    const seg = p.chain[i];
-    let points;
-    if (i === 0) points = pickEven(valid, seg.seeds, i);
-    else {
-      const conn = p.chain[i - 1].connector;
-      if (conn === 'SCATTER') points = pickEven(valid, seg.seeds, i);
-      else if (conn === 'OVERLAY') {
-        const prev = segStart[i - 1];   // reuse the predecessor's seed points; falls back to spine if it deferred
-        points = prev && prev.length ? prev.slice(0, seg.seeds || prev.length) : pickEven(valid, seg.seeds, i);
-      } else points = null;   // SPROUT / BRANCH → seeded on trap, not at launch
-    }
-    segStart[i] = points || [];
-    if (points) points.forEach((pt, k) => spawnTurtle(sim, pt.x, pt.y, SEED_HEADING + fan[k % fan.length], i));
+    const conn = i === 0 ? 'SCATTER' : p.chain[i - 1].connector;
+    let point = null;
+    if (conn === 'SCATTER') point = anchors[launches++ % anchors.length];
+    else if (conn === 'OVERLAY') point = segStart[i - 1] ?? anchors[launches++ % anchors.length];
+    // SPROUT / BRANCH → seeded on trap, not at launch
+    segStart[i] = point;
+    if (point) spawnTurtle(sim, point.x, point.y, SEED_HEADING, i);
   }
 }
 

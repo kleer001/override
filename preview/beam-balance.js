@@ -13,11 +13,11 @@
 // strong deck wins most, the weak one-card starter ~never, terrain still gates.
 // Area comes from the strands' branching skeleton (fork density), not a smolder
 // flood. Env overrides for sweeps, e.g.:
-//   SCANSPEED=0.30 SEEDFAN=2 node preview/beam-balance.js
+//   SCANSPEED=0.30 RECLAIM=8 node preview/beam-balance.js
 
 import { createSim, stepSim, SECTORS } from '../src/beam.js';
 import { generateMachine } from '../src/terrain.js';
-import { CARDS, buildChain, chainSeedTotal, beamLabel } from '../src/cards.js';
+import { CARDS, buildChain } from '../src/cards.js';
 
 const mergeDeck = (names) => buildChain(names.map((n) => CARDS[n]));
 
@@ -39,7 +39,6 @@ const TUNE = {
   reclaim: envN('RECLAIM', 6),            // reclaimed cells per scanned row
   breachHold: envN('BREACHHOLD', 15),     // ticks held ≥win to breach
   winCoverage: envN('WINCOV', 50),        // % of claimable cells to breach
-  seedFan: envN('SEEDFAN', 2),            // launch-heading fan half-width (§8)
 };
 
 function paramsFor(merged, sectorIndex) {
@@ -92,7 +91,7 @@ for (const [name, cards] of Object.entries(DECKS)) {
   reTreadTotal += rt;
   peaks.sort((a, b) => a - b);
   const med = peaks[peaks.length >> 1];
-  const label = `${beamLabel(merged).replace(/ · /g, '·')} x${chainSeedTotal(merged.chain)}`;
+  const label = merged.chain.map((s) => s.grammar).join('·');
   console.log(
     pad(name, 10),
     pad(label.slice(0, 25), 26),

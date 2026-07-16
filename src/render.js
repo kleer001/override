@@ -3,11 +3,12 @@
 // controls), TRAY (cards). See src/layout.js for the geometry.
 
 import { FIELD_W, FIELD_H, WALL, idx, WIN_COVERAGE } from './terrain.js';
-import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, SLOTS, spineX, aimColAt, heatAt } from './battle.js';
+import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, aimColAt, heatAt } from './battle.js';
 import { buildChain, beamGutterLines, cardLines, cardLabel, CARDS } from './cards.js';
 import {
   COLS, ROWS, FIELD, GUTTER, TRAY, FIELD_OX, FIELD_OY,
-  HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_UNDO, BTN_START, BTN_FIRE, BTN_CONTINUE,
+  HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_TEST, BTN_TEST_RESET, BTN_TEST_PLAY,
+  BTN_START, BTN_FIRE, BTN_CONTINUE,
   BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, BTN_TITLE_CONTINUE, BTN_TITLE_NEW,
 } from './layout.js';
 export { COLS, ROWS };
@@ -52,8 +53,8 @@ function drawButton(g, r, dim) {
   stamp(g, r.x + Math.max(1, Math.floor((r.w - t.length) / 2)), r.y + Math.floor(h / 2), t);   // vertically centred
 }
 
-// a card panel (default 15 wide): name + its aspect stats on two lines (stats
-// only, no flavor — grammar, then pace · seeds · connector via cardLines).
+// a card panel (default 15 wide): name + its aspect stats (stats only, no
+// flavor — grammar, then pace, then connector via cardLines).
 function drawCard(g, x, y, key, card, spent, w = 15) {
   frame(g, x, y, w, 8);
   stamp(g, x, y, '┌' + `[${key}]` + '─'.repeat(w - 2 - (key.length + 2)) + '┐');   // key in the top edge
@@ -69,7 +70,7 @@ function drawBlockCells(g, machine, sim) {
     for (let x = 0; x < FIELD_W; x++) {
       const c = idx(x, y);
       let ch;
-      if (sim && y === sim.scanRow && sim.scanRow < FIELD_H) ch = '#';                 // scan line
+      if (sim && sim.params.scanSpeed > 0 && y === sim.scanRow && sim.scanRow < FIELD_H) ch = '#';   // scan line (none on the scanless test bench)
       else if (sim && sim.reclaimed && sim.reclaimed.has(c)) ch = 'X';                 // reclaim flash
       else if (machine.burned[c]) ch = sim ? rampGlyph(heatAt(sim, c)) : '#';
       else ch = TERRAIN_G[machine.t[c]];
@@ -79,14 +80,14 @@ function drawBlockCells(g, machine, sim) {
   if (sim) g[FIELD_OY + FIELD_H - 1][FIELD_OX + params.p] = '▲';                        // turret
 }
 
-const SHOP_TYPE = { deckcard: 'DECK', card: 'UNLOCK', retry: '1-USE', curse: 'CURSE' };
+const SHOP_TYPE = { deckcard: 'DECK', card: 'UNLOCK', retry: '1-USE' };
 
 function drawShop(g, game) {
-  const d = game.shopData || { root: 0, retry: 0, overclock: false, items: [] };
+  const d = game.shopData || { root: 0, retry: 0, items: [] };
   // balance plate — the "how much have I got" anchor, boxed so it reads first
   frame(g, 3, 1, 24, 3);
   stamp(g, 5, 2, `ROOT BALANCE  ${d.root}`);
-  stamp(g, 30, 2, `retry:${d.retry}   overclock:${d.overclock ? 'ARMED' : 'off'}`);
+  stamp(g, 30, 2, `retry:${d.retry}`);
   stamp(g, 3, 5, '═'.repeat(57));
   // column captions, aligned to the item rows below
   stamp(g, 3, 6, 'BUY  ITEM'); stamp(g, 34, 6, 'TYPE'); stamp(g, 52, 6, 'COST');
@@ -100,7 +101,7 @@ function drawShop(g, game) {
     const price = it.owned ? 'OWNED' : `${it.cost} ROOT`;
     const tag = (locked ? '* ' : '') + price;                 // '*' flags can't-afford
     stamp(g, 60 - tag.length, r.y, tag);
-    // card items lead with their beam aspect line (grammar·pace·seeds·connector);
+    // card items lead with their beam aspect line (grammar·pace·connector);
     // the prose sits in parens to set it apart from the stats.
     const card = CARDS[it.name];
     const dot = card ? `${cardLabel(card)}  ` : '';
@@ -113,25 +114,24 @@ function drawShop(g, game) {
 }
 
 // AIM overlay: the turret oscillates across the base of the block (aimColAt drives
-// its column from wall-clock `now`) and a dotted preview spine sweeps with it,
-// showing where the packet will draw. The player times LAUNCH to this sweep.
-function drawAim(g, game, now) {
-  const merged = buildChain(game.program.filter(Boolean));
+// its column from wall-clock `now`) and a straight dotted preview column sweeps
+// with it, showing the trigger column. The player times LAUNCH to this sweep.
+function drawAim(g, now) {
   const col = aimColAt(now);
-  const preview = { p: col, shapes: merged.shapes, amp: merged.amp, freq: merged.freq };
-  for (let y = 0; y < FIELD_H; y++) {
-    const sx = spineX(preview, y);
-    if (y % 2 === 0) g[FIELD_OY + y][FIELD_OX + sx] = '¦';        // dotted preview spine
-  }
+  for (let y = 0; y < FIELD_H; y += 2) g[FIELD_OY + y][FIELD_OX + col] = '¦';   // dotted preview column
   g[FIELD_OY + FIELD_H - 1][FIELD_OX + col] = '▲';               // the sweeping turret
 }
 
 function drawField(g, game, now) {
   const { phase, run, node } = game;
   if (phase === 'shop') { drawShop(g, game); return; }
+  if (phase === 'test') {   // the bench: blank block while charging, then the live burn
+    drawBlockCells(g, game.testSim ? game.testSim.machine : game.testMachine, game.testSim);
+    return;
+  }
   const sim = node && node.sim;
   drawBlockCells(g, run.machine, sim);
-  if (phase === 'target') drawAim(g, game, now);
+  if (phase === 'target') drawAim(g, now);
   // result banner over the block
   if (phase === 'result') {
     const msg = (game.bannerLines || []);
@@ -142,6 +142,15 @@ function drawField(g, game, now) {
     }
     drawButton(g, BTN_CONTINUE, false);
   }
+}
+
+// The grammar key, shown while the player reads card programs (assemble). Each
+// line fits the ~13-col gutter.
+function legend(L) {
+  L('GRAMMAR KEY');
+  L('F step+burn');
+  L('L/R turn 45');
+  L('K fork child');
 }
 
 // --- GUTTER: run state + phase controls. Lines FLOW from a cursor rather than
@@ -161,21 +170,36 @@ function drawGutter(g, game) {
     L('COVERAGE'); L(bar(cp, 10)); L(`${cp.toFixed(0)}% /${WIN_COVERAGE}%`);
     L(sim.breachLeft > 0 ? `HOLD ${sim.breachLeft}` : sim.breachLeft === 0 ? 'BREACH!' : ''); gap();
     L(`STRANDS ${sim.turtles.length}`); gap();
-    const [bl1, bl2] = node.beamLines;                          // cached at fire — no per-frame merge
-    L('BEAM'); L(bl1); L(bl2); gap();
+    L('BEAM'); node.beamLines.forEach(L);                       // cached at fire — no per-frame merge
+    gap();
     L(`AGGRO x${node.aggro.toFixed(2)}`);
+  } else if (phase === 'test') {
+    const sim = game.testSim;
+    L('TEST BENCH'); gap();
+    if (sim) {
+      L('COVERAGE'); L(bar(sim.cov, 10)); L(`${sim.cov.toFixed(0)}%`); gap();
+      L(`STRANDS ${sim.turtles.length}`);
+      L(`TICK ${sim.tick}`);
+    } else L('charging...');
+    drawButton(g, BTN_TEST_RESET, !sim);
+    drawButton(g, BTN_TEST_PLAY, false);
   } else if (phase === 'assemble') {
     L('BEAM');
-    if (game.program.some(Boolean)) { const [l1, l2] = beamGutterLines(buildChain(game.program.filter(Boolean))); L(l1); L(l2); }
+    if (game.program.some(Boolean)) beamGutterLines(buildChain(game.program.filter(Boolean))).forEach(L);
     else L('(slot cards)');
-    gap(); L(`SLOTS ${game.program.filter(Boolean).length}/${SLOTS}`);
+    gap();
+    // the just-slotted card explains itself here — name + flavor text, wrapped;
+    // before anything is slotted, the grammar key primes the card-reading instead
+    const last = game.selection.length ? game.program[game.selection.length - 1] : null;
+    if (last) { L(last.name); wrap(last.desc, GUTTER.w - 3).forEach(L); }
+    else legend(L);
     drawButton(g, BTN_REDRAW, run.root < REDRAW_COST);
-    drawButton(g, BTN_UNDO, !game.selection.length);
+    drawButton(g, BTN_TEST, !game.program.some(Boolean));
     // START lives in the tray next to the cards (drawn by drawTray)
   } else if (phase === 'target') {
     const a = run.aggression, base = run.baseAggro;
-    const [l1, l2] = beamGutterLines(buildChain(game.program.filter(Boolean)));
-    L('BEAM'); L(l1); L(l2); gap();
+    L('BEAM'); beamGutterLines(buildChain(game.program.filter(Boolean))).forEach(L);
+    gap();
     L(`AGGRO x${a.toFixed(2)}`); L(`reward x${rewardMult(a, base).toFixed(2)}`); L(`${draftPicks(a, base)} draft`);
     if (base < AGGRO_BASE) L('TRAINING');
     drawButton(g, BTN_AGGRO_DOWN, run.root < AGGRO_REDUCE_COST);
@@ -210,8 +234,11 @@ function titles(phase) {
   const tray = phase === 'draft' ? 'DRAFT — bank a card into your deck'
     : phase === 'assemble' ? 'LOADOUT — slot cards, then ▶ START'
       : phase === 'target' ? 'AIM — the turret sweeps · time your LAUNCH'
-        : 'LOADOUT — the beam you fired';
-  const field = phase === 'shop' ? 'ROOT SHOP' : 'THE MACHINE — one memory block';
+        : phase === 'test' ? 'LOADOUT — the beam under test'
+          : 'LOADOUT — the beam you fired';
+  const field = phase === 'shop' ? 'ROOT SHOP'
+    : phase === 'test' ? 'TEST BENCH — a blank block'
+      : 'THE MACHINE — one memory block';
   return { field, tray };
 }
 

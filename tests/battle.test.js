@@ -1,8 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CARDS, buildChain, chainSeedTotal, CONNECTORS } from '../src/cards.js';
-import { generateMachine, createNode, runBattle, runBattlePeak, rewardMult, draftPicks } from '../src/battle.js';
+import { CARDS, buildChain, CONNECTORS } from '../src/cards.js';
+import { generateMachine, createNode, runBattle, runBattlePeak, rewardMult, draftPicks,
+  createTestSim, stepSim } from '../src/battle.js';
 import { WIN_COVERAGE, idx, FIELD_H, energyTo, COST, OPEN, generateMachineUpTo, tierRank } from '../src/terrain.js';
 
 // A strong chain (dense, fast, forking) and the deliberately weak one-card starter.
@@ -28,19 +29,17 @@ function nodeFor(machine, si, program, override) {
 
 // --- the chain build (research/lsystem-growth.md §7) -------------------------
 
-test('buildChain: shape SUMS (Fourier) while the growth programs stay an ordered chain', () => {
-  const m = buildChain([CARDS['WORM'], CARDS['HARMONIC']]);   // sine + sine2
-  assert.ok(m.shapes.sine && m.shapes.sine2, 'both harmonics present (summed)');
+test('buildChain: the growth programs stay an ordered chain', () => {
+  const m = buildChain([CARDS['WORM'], CARDS['HARMONIC']]);
   assert.equal(m.chain.length, 2);
   assert.equal(m.chain[0].grammar, CARDS['WORM'].grammar);      // deck order preserved
   assert.equal(m.chain[1].grammar, CARDS['HARMONIC'].grammar);
 });
 
-test('buildChain: each segment carries grammar/pace/seeds/connector', () => {
+test('buildChain: each segment carries grammar/pace/connector', () => {
   const seg = buildChain([CARDS['ROOTKIT']]).chain[0];
   assert.equal(seg.grammar, CARDS['ROOTKIT'].grammar);
   assert.equal(seg.pace, CARDS['ROOTKIT'].pace);
-  assert.equal(seg.seeds, CARDS['ROOTKIT'].seeds);
   assert.ok(CONNECTORS.includes(seg.connector));
 });
 
@@ -50,10 +49,9 @@ test('buildChain: the chain is ORDER-DEPENDENT (unlike the old commutative merge
   assert.notDeepEqual(a, b, 'reordering the deck reorders the connector chain');
 });
 
-test('buildChain: an invalid/empty grammar is sanitised to a lone F, seed total sums seeds', () => {
-  const seg = buildChain([{ shape: 'linear', grammar: 'xyz', pace: 3, seeds: 5, connector: 'SCATTER' }]).chain[0];
+test('buildChain: an invalid/empty grammar is sanitised to a lone F', () => {
+  const seg = buildChain([{ grammar: 'xyz', pace: 3, connector: 'SCATTER' }]).chain[0];
   assert.equal(seg.grammar, 'F', 'unknown symbols dropped → falls back to F');
-  assert.equal(chainSeedTotal(buildChain(STRONG).chain), STRONG.reduce((n, c) => n + c.seeds, 0));
 });
 
 test('COST table: OPEN cheap, HARD dear, WALL unaffordable, BUS refunds', () => {
@@ -94,7 +92,19 @@ test('searching reroute never re-treads: no F ever burns an already-burned cell 
 test('coverage regression: a fixed deck on a fixed board holds its expected band', () => {
   // Guards against silent VM/smolder regressions (research/lsystem-growth.md §9).
   const { peak } = runBattlePeak(nodeFor(generateMachine(7), 0, STRONG));
-  assert.ok(peak > 55 && peak < 82, `seed 7 STRONG peaked ${peak.toFixed(1)}% — outside [55,82]`);
+  assert.ok(peak > 35 && peak < 58, `seed 7 STRONG peaked ${peak.toFixed(1)}% — outside [35,58]`);
+});
+
+test('TEST bench: blank block, no scan — the pattern draws until every strand traps', () => {
+  const sim = createTestSim(STRONG);
+  for (const cell of sim.machine.t) assert.equal(cell, 0, 'bench terrain must be all OPEN');
+  let guard = 0;
+  while (sim.turtles.length && guard++ < 5000) stepSim(sim);
+  assert.ok(guard < 5000, 'bench run must reach quiescence');
+  assert.equal(sim.outcome, null, 'nothing ends or wins a bench run');
+  assert.equal(sim.scanRow, 0, 'the scan never moves on the bench');
+  assert.ok(sim.cov > 10, `the chain should paint the open block (got ${sim.cov.toFixed(1)}%)`);
+  assert.equal(sim.reTread, 0);
 });
 
 // --- balance (research/lsystem-growth.md §5, §10) ---------------------------

@@ -18,8 +18,6 @@
     .row label { width: 96px; }
     .row output { width: 44px; text-align: right; color: #ffd27a; }
     input[type=range] { flex: 1; accent-color: var(--amber); }
-    .cbwrap { display: flex; flex-wrap: wrap; gap: 2px 10px; }
-    label.cb { width: auto; display: inline-flex; align-items: center; gap: 3px; }
     select { background: #2a1c00; color: var(--amber); border: 1px solid var(--amber-dim); font: inherit; padding: 3px; }
     button { background: #2a1c00; color: var(--amber); border: 1px solid var(--amber-dim);
              padding: 5px 9px; font: inherit; cursor: pointer; margin: 2px 3px 2px 0; }
@@ -29,8 +27,6 @@
     .win { color: #6cff6c; text-shadow: 0 0 6px #6cff6c88; }
     .lose { color: #ff5c5c; text-shadow: 0 0 6px #ff5c5c88; }
     .hint { color: var(--amber-dim); font-size: 11px; margin-top: 10px; }
-    #wave { color: #ffd27a; white-space: pre; font: 11px/1.0 "SFMono-Regular", Menlo, monospace;
-            border: 1px solid var(--amber-dim); padding: 4px; display: inline-block; margin: 2px 0; }
     code { color: #ffd27a; }
   </style>
 </head>
@@ -52,23 +48,15 @@
 
       <h2>SPINE</h2>
       <div class="row"><label>trigger col p</label><input id="p" type="range" min="0" max="61" value="30"><output id="p_o"></output></div>
-      <div class="row"><label>amplitude</label><input id="amp" type="range" min="0" max="20" step="1" value="6"><output id="amp_o"></output></div>
-      <div class="row"><label>frequency</label><input id="freq" type="range" min="1" max="8" step="1" value="2"><output id="freq_o"></output></div>
-      <div>shapes (SUM):</div>
-      <div class="cbwrap" id="shapes"></div>
-      <div>waveform Σ:</div>
-      <pre id="wave"></pre>
 
       <h2>GROWTH (turtle, single segment)</h2>
       <div class="row"><label>grammar F/L/R/K</label><input id="grammar" type="text" value="FFFFF" style="flex:1;background:#2a1c00;color:var(--amber);border:1px solid var(--amber-dim);font:inherit;padding:3px;"></div>
       <div class="row"><label>pace (ticks/step)</label><input id="pace" type="range" min="1" max="8" step="1" value="3"><output id="pace_o"></output></div>
-      <div class="row"><label>seeds</label><input id="seeds" type="range" min="1" max="48" step="1" value="10"><output id="seeds_o"></output></div>
       <div class="row"><label>connector</label>
         <select id="connector"><option>SCATTER</option><option>SPROUT</option><option>BRANCH</option><option>OVERLAY</option></select>
       </div>
 
       <h2>SWARM</h2>
-      <div class="row"><label>seed fan</label><input id="seedFan" type="range" min="0" max="4" step="1" value="2"><output id="seedFan_o"></output></div>
       <div class="row"><label>rate (ms)</label><input id="rate" type="range" min="20" max="300" step="10" value="70"><output id="rate_o"></output></div>
 
       <h2>TRACE SCAN</h2>

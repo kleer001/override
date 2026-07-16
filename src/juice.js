@@ -61,10 +61,13 @@ export function detonate(now, strength = 1) {
 const esc = (ch) => ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch === '&' ? '&amp;' : ch;
 const escLine = (ln) => ln.replace(/[<>&]/g, esc);
 
-// the memory block is drawn in the FIELD panel for every phase except the shop
-// (which fills the field area with the item list instead)
-function boardShown(game) {
-  return !!(game.run && game.run.machine) && game.phase !== 'shop';
+// The machine whose burn state the field is currently showing: the TEST bench's
+// blank block during a test, the run's machine otherwise (none in the shop, which
+// fills the field area with the item list instead).
+function boardMachine(game) {
+  if (game.phase === 'shop') return null;
+  if (game.phase === 'test') return game.testSim ? game.testSim.machine : null;
+  return (game.run && game.run.machine) || null;
 }
 
 // mark each conquered sector's celebration start the first frame we see it owned
@@ -139,8 +142,8 @@ function composeRow(line, y, machine, now) {
 
 export function composeBoard(text, game, now) {
   const lines = text.split('\n');
-  const machine = game.run && game.run.machine;
-  if (!machine || !boardShown(game)) return lines.map(escLine).join('\n');
+  const machine = boardMachine(game);
+  if (!machine) return lines.map(escLine).join('\n');
   sync(machine);
   markConquered(machine, now);
   for (let i = 0; i < lines.length; i++) {

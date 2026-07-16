@@ -22,10 +22,9 @@ function makeShop(root = 1000) {
     if (it.kind === 'deckcard') deck.push({ ...CARDS[DECK_CARD[it.id]] });
     else if (it.kind === 'card') { const u = unlockedCards(); u.push(CARD_UNLOCK[it.id]); store.set('cards', JSON.stringify(u)); }
     else if (it.kind === 'retry') retry++;
-    else if (it.kind === 'curse') store.set('oc', '1');
     return true;
   }
-  return { draftPool, buy, owned, deck, oc: () => store.get('oc') === '1', getRetry: () => retry, getRoot: () => root };
+  return { draftPool, buy, owned, deck, getRetry: () => retry, getRoot: () => root };
 }
 
 test('shop catalog is well-formed and self-consistent', () => {
@@ -61,13 +60,10 @@ test('permanent: buying a card unlock expands the draft pool', () => {
   assert.ok(s.draftPool().some((c) => c.id === 'PAYLOAD'));
 });
 
-test('consumables: retry tokens stack, overclock arms', () => {
+test('consumables: retry tokens stack', () => {
   const s = makeShop();
   s.buy('retry'); s.buy('retry');
   assert.equal(s.getRetry(), 2);
-  assert.ok(!s.oc());
-  s.buy('overclock');
-  assert.ok(s.oc());
 });
 
 test('cannot buy above your ROOT balance', () => {
