@@ -27,18 +27,22 @@ export const BREACH_HOLD = 15;      // ticks held ≥WIN_COVERAGE to breach
 
 // --- AGGRESSION: the single difficulty dial. It scales the whole trace scan (the
 // enemy), mirroring how your deck scales the whole beam. The player raises it for
-// free (harder scan, bigger reward) or spends ROOT to lower it (safer). ---
-export const AGGRO_BASE = 0.75;        // reference "standard" aggression (reward is relative to your own baseline)
-export const AGGRO_STEP = 0.25;
-export const AGGRO_MIN = 0.3;          // absolute floor — matches the DDA baseline's low end
-export const AGGRO_MAX = 2.5;
+// free (harder scan, bigger reward) or spends ROOT to lower it (safer). The one-
+// anchor beam paints less than the old seed swarm, so the winnable band is compact:
+// ~0.20 (easy) to ~0.65 (even the grail loses past here). Every constant is scaled
+// to that range. ---
+export const AGGRO_BASE = 0.40;        // reference "standard" aggression (reward is relative to your own baseline)
+export const AGGRO_STEP = 0.10;
+export const AGGRO_MIN = 0.20;         // absolute floor — matches the DDA baseline's low end
+export const AGGRO_MAX = 0.65;         // top of the winnable range (grail's knife-edge)
 export const AGGRO_REDUCE_COST = 15;   // ROOT to lower aggression one step
 
 // Reward/draft are relative to the run's baseline, so the current default always
-// pays "standard" and cranking ABOVE it is what pays more.
+// pays "standard" and cranking ABOVE it is what pays more. The draft step (0.15 ≈
+// 1.5 aggro steps) is scaled to the compact band so cranking earns a pick or two.
 export function rewardMult(aggro, base = AGGRO_BASE) { return aggro / base; }
 export function draftPicks(aggro, base = AGGRO_BASE) {
-  return Math.max(1, 1 + Math.floor((aggro - base) / 0.5 + 1e-9));
+  return Math.max(1, 1 + Math.floor((aggro - base) / 0.15 + 1e-9));
 }
 
 // Build the full beam params for a node from an already-built chain, overlaying the

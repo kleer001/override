@@ -14,12 +14,17 @@
 // grammar: a launch aim is just a prefix of turns (e.g. 'RRFF' points east, climbs).
 export const SYMBOLS = 'FLRK';
 
-// Connector vocabulary (§7) — how the next card couples to this one:
-//   SCATTER — no handoff; the next card seeds fresh from the spine (order-blind swarm)
-//   SPROUT  — the next card continues from this card's frontier tips (chain grows)
-//   BRANCH  — the next card fans out as children off the tips (chain bushes)
-//   OVERLAY — the next card runs concurrently from the same seed points
-export const CONNECTORS = ['SCATTER', 'SPROUT', 'BRANCH', 'OVERLAY'];
+// Connector vocabulary (§7) — how the next card couples to this one. These are the
+// three algebraically independent composition primitives (research/lsystem-growth.md
+// §7): a disjoint union, a string concatenation, and a tree graft — nothing else
+// adds expressiveness (the old BRANCH was a fixed-arity special case of the graft).
+//   SCATTER — no handoff; the next card seeds fresh from the spine (parallel union)
+//   SPROUT  — on self-trap, the next card grafts off the dead tip, leaping to the
+//             first open cell past it (the chain relays deeper — a rooted-tree graft)
+//   OVERLAY — the next card's program is APPENDED to this card's: ONE strand runs
+//             both grammars as a single loop, at this card's pace (grammar splice —
+//             resolved at chain build, so the sim never sees an OVERLAY junction)
+export const CONNECTORS = ['SCATTER', 'SPROUT', 'OVERLAY'];
 
 // The Tier-1 card pool (research/lsystem-growth.md §10 turtle-type roster). Each
 // card is a bundled beam + identity. grammar ⊆ F/L/R/K;
@@ -27,36 +32,50 @@ export const CONNECTORS = ['SCATTER', 'SPROUT', 'BRANCH', 'OVERLAY'];
 // Coverage is EARNED by the strands' branching skeleton — fork (`K`) density is the
 // area lever (research/lsystem-growth.md §6). Runners (no forks) stay thin and weak;
 // forkers bush out and fill. Pace is the tempo/power knob (2 = fast/strong, 3–4 =
-// slow/weak). These are a first tuning pass (§10 roster still open).
+// slow/weak). Grammars run on a base-10 loop, so a card's turn/fork pattern gets room
+// to draw before it repeats. These are a first tuning pass (§10 roster still open).
 export const CARDS = {
-  'SCRIPT.COM': { id: 'SCRIPT.COM', name: 'SCRIPT.COM', grammar: 'FFFFF',     pace: 3, connector: 'SCATTER', desc: 'the starter warez — a thin forkless runner; barely rakes the block alone' },
-  'FORK.COM':   { id: 'FORK.COM',   name: 'FORK.COM',   grammar: 'FFFFKF',    pace: 2, connector: 'BRANCH',  desc: 'a fast runner that forks once a loop — and branches the next card off its tips' },
-  'SCRIPT.SYS': { id: 'SCRIPT.SYS', name: 'SCRIPT.SYS', grammar: 'RRFFFK',    pace: 3, connector: 'SCATTER', desc: 'the mirror — a turn-prefix aims it east, then it runs and forks once' },
-  'BUFFER.OVR': { id: 'BUFFER.OVR', name: 'BUFFER.OVR', grammar: 'FLFKFRFK',  pace: 2, connector: 'SCATTER', desc: 'overflow — a fast wide forking zig-zag; the curtain workhorse' },
-  'WORM':       { id: 'WORM',       name: 'WORM',       grammar: 'FFKFFK',    pace: 2, connector: 'SPROUT',  desc: 'the Morris spread — forks hard and sprouts the chain onward' },
-  'HARMONIC':   { id: 'HARMONIC',   name: 'HARMONIC',   grammar: 'FFKFRK',    pace: 2, connector: 'OVERLAY', desc: 'octave up — a forking coiler that overlays the next card on its anchor' },
-  'PHREAK':     { id: 'PHREAK',     name: 'PHREAK',     grammar: 'FFRFK',     pace: 3, connector: 'SCATTER', desc: '3rd harmonic — a tight coiler that curls and forks into the gaps' },
-  'BLUEBOX':    { id: 'BLUEBOX',    name: 'BLUEBOX',    grammar: 'FFFFFFK',   pace: 2, connector: 'SCATTER', desc: 'fast vertical jets that fork late — climbs toward the top objectives' },
-  'LOGICBOMB':  { id: 'LOGICBOMB',  name: 'LOGICBOMB',  grammar: 'RRRRFFFK',  pace: 3, connector: 'SCATTER', desc: 'turns to face down, then drills and forks toward the core' },
-  'XOR':        { id: 'XOR',        name: 'XOR',        grammar: 'RFLFK',     pace: 3, connector: 'SCATTER', desc: 'crossing diagonals — a forking wanderer that fills a curtain’s gaps' },
-  'DAEMON':     { id: 'DAEMON',     name: 'DAEMON',     grammar: 'FFKFK',     pace: 4, connector: 'SPROUT',  desc: 'a slow, sparse but heavily forking spawner that keeps sprouting where it traps' },
-  'NOP.SLED':   { id: 'NOP.SLED',   name: 'NOP.SLED',   grammar: 'F',         pace: 3, connector: 'SPROUT',  desc: 'a plain forkless sled — weak alone, but the next card rides its trapped tips' },
-  'TANGENT':    { id: 'TANGENT',    name: 'TANGENT',    grammar: 'FFFFFFFFF', pace: 2, connector: 'SCATTER', desc: 'a fast forkless blowout runner — usually fizzles, sometimes paints half a block' },
-  'ROOTKIT':    { id: 'ROOTKIT',    name: 'ROOTKIT',    grammar: 'FFKFKFK',   pace: 2, connector: 'BRANCH',  desc: 'dense forks — and it branches hard off every trapped tip' },
-  'PAYLOAD':    { id: 'PAYLOAD',    name: 'PAYLOAD',    grammar: 'FFKFKFK',   pace: 2, connector: 'SPROUT',  desc: 'the rare workhorse — dense forks that sprout the chain onward' },
-  '0DAY':       { id: '0DAY',       name: '0DAY',       grammar: 'FKFKFKFK',  pace: 2, connector: 'BRANCH',  desc: 'the legendary grail — fast, dense, maximal forks, and it bushes the chain' },
+  'SCRIPT.COM': { id: 'SCRIPT.COM', name: 'SCRIPT.COM', grammar: 'FFFFFFFFFF', pace: 3, connector: 'SCATTER', desc: 'the starter warez — a thin forkless runner; barely rakes the block alone' },
+  'FORK.COM':   { id: 'FORK.COM',   name: 'FORK.COM',   grammar: 'FFFFKFFFFF', pace: 2, connector: 'SPROUT',  desc: 'a fast runner that forks once a loop — sprouts the next card where it traps' },
+  'SCRIPT.SYS': { id: 'SCRIPT.SYS', name: 'SCRIPT.SYS', grammar: 'RRFFFFFFKF', pace: 3, connector: 'SCATTER', desc: 'the mirror — a turn-prefix aims it east, then it runs long and forks late' },
+  'BUFFER.OVR': { id: 'BUFFER.OVR', name: 'BUFFER.OVR', grammar: 'FLFKFRFKLF', pace: 2, connector: 'SCATTER', desc: 'overflow — a fast wide forking zig-zag; the curtain workhorse' },
+  'WORM':       { id: 'WORM',       name: 'WORM',       grammar: 'FFKFFKFFKF', pace: 2, connector: 'SPROUT',  desc: 'the Morris spread — forks hard and sprouts the chain onward' },
+  'HARMONIC':   { id: 'HARMONIC',   name: 'HARMONIC',   grammar: 'FFKFRKFFRK', pace: 2, connector: 'OVERLAY', desc: 'octave up — a forking coiler that splices the next card’s program onto its own' },
+  'PHREAK':     { id: 'PHREAK',     name: 'PHREAK',     grammar: 'FFRFKFFRFK', pace: 3, connector: 'SCATTER', desc: '3rd harmonic — a tight coiler that curls and forks into the gaps' },
+  'BLUEBOX':    { id: 'BLUEBOX',    name: 'BLUEBOX',    grammar: 'FFFFFFFFKF', pace: 2, connector: 'SCATTER', desc: 'fast vertical jets that fork late — climbs toward the top objectives' },
+  'LOGICBOMB':  { id: 'LOGICBOMB',  name: 'LOGICBOMB',  grammar: 'RRRRFFFFKF', pace: 3, connector: 'SCATTER', desc: 'turns to face down, then drills and forks toward the core' },
+  'XOR':        { id: 'XOR',        name: 'XOR',        grammar: 'RFLFKRFLFK', pace: 3, connector: 'SCATTER', desc: 'crossing diagonals — a forking wanderer that fills a curtain’s gaps' },
+  'DAEMON':     { id: 'DAEMON',     name: 'DAEMON',     grammar: 'FFKFKFFKFK', pace: 4, connector: 'SPROUT',  desc: 'a slow but heavily forking spawner that keeps sprouting where it traps' },
+  'NOP.SLED':   { id: 'NOP.SLED',   name: 'NOP.SLED',   grammar: 'F',          pace: 3, connector: 'SPROUT',  desc: 'a plain forkless sled — weak alone, but the next card rides its trapped tips' },
+  'TANGENT':    { id: 'TANGENT',    name: 'TANGENT',    grammar: 'FRFFFFFFFF', pace: 2, connector: 'SCATTER', desc: 'a fast forkless blowout runner — usually fizzles, sometimes paints half a block' },
+  'ROOTKIT':    { id: 'ROOTKIT',    name: 'ROOTKIT',    grammar: 'FFKFKFKFKF', pace: 2, connector: 'SPROUT',  desc: 'dense forks — and it sprouts the chain onward from every trapped tip' },
+  'PAYLOAD':    { id: 'PAYLOAD',    name: 'PAYLOAD',    grammar: 'FFKFKFKFFK', pace: 2, connector: 'SPROUT',  desc: 'the rare workhorse — dense forks that sprout the chain onward' },
+  '0DAY':       { id: '0DAY',       name: '0DAY',       grammar: 'FKFKFKFKFK', pace: 2, connector: 'SPROUT',  desc: 'the legendary grail — fast, dense, maximal forks that sprout the chain onward' },
 };
 
 // Build the merged beam a chain of cards produces (research/lsystem-growth.md §7):
-// an ORDERED chain of segments — one per card, in deck order — carrying
-// grammar/pace and the connector governing the junction to the NEXT segment.
+// an ORDERED chain of segments in deck order, carrying grammar/pace and the
+// connector governing the junction to the NEXT segment. An OVERLAY junction folds
+// the following card INTO the segment — grammars concatenate into one looped
+// program (pace stays the leading card's; the fold carries the folded card's
+// connector onward), so consecutive OVERLAYs splice into a single strand.
+// `cards` on the result is the slotted-card count (segments may be fewer).
 export function buildChain(cards) {
   const chain = [];
+  let count = 0;
   for (const c of cards) {
     if (!c) continue;
-    chain.push({ grammar: sanitizeGrammar(c.grammar), pace: Math.max(1, c.pace | 0), connector: c.connector });
+    count++;
+    const grammar = sanitizeGrammar(c.grammar);
+    const prev = chain[chain.length - 1];
+    if (prev && prev.connector === 'OVERLAY') {
+      prev.grammar += grammar;
+      prev.connector = c.connector;
+    } else {
+      chain.push({ grammar, pace: Math.max(1, c.pace | 0), connector: c.connector });
+    }
   }
-  return { chain };
+  return { chain, cards: count };
 }
 
 // Keep only valid turtle symbols; an empty program falls back to a lone 'F' so a
@@ -80,12 +99,12 @@ export function cardLines(card) {
 
 // A short one-line readout of a merged chain for the assemble UI, sized generously.
 export function beamLabel(merged) {
-  return `${merged.chain.length} card chain`;
+  return `${merged.cards} card chain`;
 }
 
 // Short lines describing a merged chain, sized for the ~13-col status gutter.
 export function beamGutterLines(merged) {
-  return [`${merged.chain.length} card chain`];
+  return [`${merged.cards} card chain`];
 }
 
 // Tier-1 starting deck — the SCRIPT.COM + FORK.COM pair. Merged they seed a runner

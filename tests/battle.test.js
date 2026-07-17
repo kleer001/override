@@ -54,6 +54,23 @@ test('buildChain: an invalid/empty grammar is sanitised to a lone F', () => {
   assert.equal(seg.grammar, 'F', 'unknown symbols dropped → falls back to F');
 });
 
+test('buildChain: OVERLAY splices the next card into ONE looped program', () => {
+  const a = { grammar: 'FFKF', pace: 2, connector: 'OVERLAY' };
+  const b = { grammar: 'FFFK', pace: 4, connector: 'SPROUT' };
+  const c = { grammar: 'RRF', pace: 3, connector: 'SCATTER' };
+  const m = buildChain([a, b, c]);
+  assert.equal(m.cards, 3, 'card count survives the fold');
+  assert.equal(m.chain.length, 2, 'OVERLAY folds two cards into one segment');
+  assert.equal(m.chain[0].grammar, 'FFKFFFFK', 'grammars concatenate');
+  assert.equal(m.chain[0].pace, 2, 'the leading card is the engine — its pace holds');
+  assert.equal(m.chain[0].connector, 'SPROUT', 'the fold carries the folded card’s connector onward');
+  assert.equal(m.chain[1].grammar, 'RRF');
+  // consecutive OVERLAYs splice into a single strand
+  const mm = buildChain([{ ...a }, { ...b, connector: 'OVERLAY' }, c]);
+  assert.equal(mm.chain.length, 1);
+  assert.equal(mm.chain[0].grammar, 'FFKFFFFKRRF');
+});
+
 test('COST table: OPEN cheap, HARD dear, WALL unaffordable, BUS refunds', () => {
   assert.equal(COST[OPEN], 1);
   assert.ok(COST[1] > COST[OPEN]);          // HARD
@@ -146,18 +163,18 @@ test('forking is load-bearing: the branching skeleton is the area engine (§6)',
 test('aggression is a difficulty dial: higher aggression wins less', () => {
   let low = 0, high = 0;
   for (let seed = 1; seed <= 40; seed++) {
-    if (play(generateMachine(seed), 0, STRONG, 0.5).outcome === 'win') low++;
-    if (play(generateMachine(seed), 0, STRONG, 2.5).outcome === 'win') high++;
+    if (play(generateMachine(seed), 0, STRONG, 0.25).outcome === 'win') low++;
+    if (play(generateMachine(seed), 0, STRONG, 0.65).outcome === 'win') high++;
   }
-  assert.ok(low > high, `aggression 0.5 wins (${low}) should exceed aggression 2.5 wins (${high})`);
+  assert.ok(low > high, `aggression 0.25 wins (${low}) should exceed aggression 0.65 wins (${high})`);
 });
 
 test('aggression pays: reward multiplier and draft picks rise with it', () => {
-  assert.ok(rewardMult(2.0) > rewardMult(1.0));
-  assert.equal(draftPicks(1.0), 1);
-  assert.equal(draftPicks(1.5), 2);
-  assert.equal(draftPicks(2.5), 4);
-  assert.equal(draftPicks(0.5), 1);   // lowering never drops below one pick
+  assert.ok(rewardMult(0.60) > rewardMult(0.40));
+  assert.equal(draftPicks(0.40), 1);   // at baseline: one pick
+  assert.equal(draftPicks(0.55), 2);   // +1 step (~0.15) over baseline: two picks
+  assert.equal(draftPicks(0.65), 2);   // top of the band
+  assert.equal(draftPicks(0.20), 1);   // lowering never drops below one pick
 });
 
 test('difficulty varies and is derived from energy-to-cover', () => {

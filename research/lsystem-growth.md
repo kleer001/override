@@ -4,22 +4,34 @@
 the beam still fires a spine and emits strands, but a strand is no longer an
 isotropic `reproduce%`-into-a-random-neighbour ember with a `spreadReach`. It is a
 **deterministic L-system turtle** drawn at a per-card **pace**, racing the trace
-scan. No budget, no reproduce level. Everything else in ember-model — turret, beam
-spine, probability→seed count, terrain cost, trace scan, WIN_COVERAGE 50% — stands
-(direction is no longer a separate aspect; it folds into the grammar, §2). Status:
-**shipped to `src/` 2026-07-16** (turtle VM in `src/beam.js`, connector chain in
-`src/cards.js`, tuned via `preview/beam-balance.js`); constants are a first pass —
-the §10 knobs (pace band, roster, connector semantics) are still open. The real-board
-tuning diverged from the prototype's open-field numbers: the knife-edge pace landed
-near 2 (not 4), and **smolder was cut** — area is earned by grammar fork density
-instead (§6), so a runner is thin and loses while a forker bushes out and fills.
-Terrain cost folds into the pace clock (HARD slows a strand, BUS speeds it), and a
-small deterministic **seed fan** radiates a card's strands off the spine to stop them
-self-trapping in one column.*
+scan. No budget, no reproduce level. Turret, beam spine, terrain cost, trace scan,
+and WIN_COVERAGE 50% stand from ember-model; direction folds into the grammar (§2).
+Status: **shipped to `src/`** (turtle VM in `src/beam.js`, connector chain in
+`src/cards.js`, tuned via `preview/beam-balance.js`).
+
+The model settled through play in two big moves past the first ship:
+
+- **One anchor strand per card, not a seed swarm.** The old `seeds` count (8–18
+  strands raked off the spine per card) saturated the real board — on a median map
+  the open spine is ~20 cells, so 18–42 launches stacked into a wall of embers that
+  read identically regardless of deck. Now each launching card anchors exactly **one**
+  turtle on a straight spine (bottom / top / centre of the open column), and coverage
+  is earned purely by grammar fork density and pace (§6). Card stacking became legible
+  and the deck's structure shows on the field. The `seeds` aspect is gone entirely.
+- **Three connectors, not four (§7).** SCATTER, SPROUT, OVERLAY are the minimal
+  algebraically independent set (parallel-union, graft, concatenation); the old BRANCH
+  was a fixed-arity special case of the graft and added no expressiveness.
+
+Grammars run on a base-10 loop so a card's turn/fork pattern has room to draw before
+it repeats. Area is earned by grammar fork density (§6) — a runner is thin and loses
+while a forker bushes out and fills. Terrain cost folds into the pace clock (HARD
+slows a strand, BUS speeds it). The tunable knife-edge is the aggression band: the
+one-anchor beam paints less than the old swarm, so the winnable range is compact
+(~0.20 easy to ~0.65 grail-loses), and the whole aggro/DDA economy is scaled to it.*
 
 Terminology: a growing ember is a **turtle**; its branching trail is the
 **skeleton** — and that skeleton (via fork density) *is* the area; there is no
-separate fill (smolder was cut, §6).
+separate fill.
 
 ---
 
@@ -83,9 +95,10 @@ on-board, non-wall, and unburned. If none, the turtle dies. This makes the blaze
 hug walls and thread gaps with zero pathfinding — reactive, deterministic, and it
 never re-treads its own trail.
 
-**Fork.** `K` spawns a child at the current cell with heading turned `+2` (parent
-`−1`), sharing nothing — there is no budget to split (§4). Child count is bounded
-by `MAX_EMBERS`; grammars near `d ≈ 0.33` `K`-density stay cheap.
+**Fork.** `K` spawns a child near the current cell (a short forward probe finds it
+live ground so it doesn't trap on the parent's burned cell) with heading turned `+2`
+(parent `−1`), sharing nothing — there is no budget to split (§4). Child count is
+bounded by `MAX_TURTLES`; grammars near `d ≈ 0.33` `K`-density stay cheap.
 
 A turtle draws until it self-traps, leaves the board, or is reclaimed by the scan.
 
@@ -112,18 +125,23 @@ and holding through the breach timer before the scan lands, never by what surviv
 after. So the whole battle is a **race: how much can your strands paint before the
 scan sweeps down through them.**
 
-Pace-vs-scan is the entire tension, and it is tunable. Prototype (board 64×32,
-grammar `FFFFFFK`, run ends at scan-bottom):
+Pace-vs-scan is the entire tension, and it is tunable. On the real 62×28 block with
+one anchor per card, the winnable band is **compact**: the aggression dial scales the
+scan (`scanSpeed = 0.40 × aggro`), and even the grail deck loses past aggro ≈ 0.65,
+while a starter opens fairly around 0.30. The whole aggro/DDA economy in `battle.js`
+is scaled to that [0.20, 0.65] range (§10). Pace is the per-card power knob (2 =
+fast/strong, 3–4 = slow/weak); scan speed is the difficulty dial — difficulty and the
+beam model are the same system.
 
-- **Period ≈ 4 is the knife-edge** — coverage lands 52–67% across seed counts and
-  wins by a hair. Faster (p2) trivialises it (~90%); slower (p8+) mostly loses.
-- **Scan speed is the difficulty dial** — the existing `aggression` knob. At p4:
-  lazy scan 0.15 → 68% win, aggressive 0.30 → 35% loss. Difficulty and the ember
-  model are the same system.
+The win condition is **hold**, not peak: coverage must sit at/above WIN_COVERAGE for
+the breach timer. With one anchor per card, coverage *spikes and decays* (strands
+trap out, then the scan erodes) rather than plateauing, so `breachHold` is a weak
+knob (4 vs 15 ticks barely move win rate) — the load-bearing terminal constants are
+WIN_COVERAGE and the aggression band.
 
 ---
 
-## 6. Area comes from forking, not smolder (cut 2026-07-16)
+## 6. Area comes from forking, not fill
 
 Turtles *look* thin, so the prototype proposed a **smolder** pass: an aged skeleton
 cell blooms into a neighbour, thickening filaments into rivers. Building it revealed
@@ -148,111 +166,114 @@ coverage ~1.7× (the `forking is load-bearing` test). The roster is tuned so run
 
 ## 7. The card, and the merge (connector chain)
 
-A card's growth aspect has four channels:
+A card's growth aspect has three channels:
 
 ```
-growth: { grammar: 'FFFFFFK', pace: 4, seeds: 12, connector: 'SCATTER' }
+growth: { grammar: 'FFKFKFK', pace: 2, connector: 'SCATTER' }
 ```
 
-- **grammar** `F/L/R/K` — shape *and* launch direction (§2)
+- **grammar** `F/L/R/K` — shape *and* launch direction (§2), a base-10 loop
 - **pace** — tempo (§4)
-- **seeds** — strands raked off the beam spine (the old probability/density axis:
-  the coverage multiplier)
 - **connector** — how the **next** card in the deck couples to this one
 
-The deck is read **top-to-bottom as a chain** —
-`seed → card₁ → [card₁.connector] → card₂ → [card₂.connector] → card₃ …` — which is
-the "assembling a program" fiction made literal. A card's connector governs *its*
-junction to the card after it, so the merge is **order-dependent by construction**:
+Each launching card anchors **one** turtle on the spine (§0) — there is no seed
+count, no launch density. The deck is read **top-to-bottom as a chain** —
+`card₁ → [card₁.connector] → card₂ → [card₂.connector] → card₃ …` — which is the
+"assembling a program" fiction made literal. A card's connector governs *its*
+junction to the card after it, so the merge is **order-dependent by construction**.
 
-- **`SCATTER`** — no handoff; the next card seeds fresh from the spine. This is the
-  order-blind union — cards run as an independent swarm.
-- **`SPROUT`** — the next card continues from this card's frontier tips; the chain
-  grows longer (a runner that sprouts forks where it traps).
-- **`BRANCH`** — the next card fans out as children off the tips; the chain bushes.
-- **`OVERLAY`** — the next card runs concurrently from the same seed points.
+The three connectors are the minimal set of **algebraically independent composition
+primitives** — a disjoint union, a string concatenation, and a tree graft. Nothing
+else adds expressiveness (the retired BRANCH was a fixed-arity, ±90° special case of
+the graft, not a fresh operation):
 
-There is still **no arithmetic** — no pool to sum, no level to average — so the
-merge pathologies of a numeric budget cannot arise. `SCATTER` is the neutral
-default; the coupling connectors add ordered structure on top. (Rejected
-alternative: commutative string-operators that fold cards into one hybrid grammar —
-they lose both order and pace diversity.)
+- **`SCATTER`** — no handoff; the next card launches on its own spine anchor. This is
+  the parallel union — cards run as independent strands. The neutral default.
+- **`SPROUT`** — on self-trap, the next card grafts off the dead tip. A trapped tip
+  has all eight radius-1 neighbours blocked (that is *why* it trapped), so the graft
+  leaps to the first open cell on the next ring out (radius 2), forward-biased — the
+  chain relays past the wall/trail it hit and continues deeper. (This ring-2 leap is
+  load-bearing: a graft placed *on* the trapped cell is inert.)
+- **`OVERLAY`** — the next card's program is **appended** to this card's: one strand
+  runs both grammars as a single base-longer loop, at this card's pace. Resolved at
+  chain-build time, so the sim never sees an OVERLAY junction; consecutive OVERLAYs
+  splice into one strand. This is the only connector that changes *what a strand is*
+  rather than where strands come from.
 
-**Order matters, non-monotonically.** Prototype, a two-card `SPROUT` chain (16
-strands): a runner-then-forker draws 36%, but forker-then-runner draws **55%** — a
-19-point swing, and the winner flips with the geometry (bushing low first builds
-safe area the scan reaches last, *then* runners climb out of it). Unlike a simple
-launch stagger, there is no monotonic "lead with the fast card" rule; the right
-sequence is a real puzzle.
+There is **no arithmetic** — no pool to sum, no level to average — so the merge
+pathologies of a numeric budget cannot arise. (Rejected alternative: commutative
+string-operators that fold cards into one hybrid grammar — they lose both order and
+pace diversity.)
 
-**Seed count self-optimises.** More strands is not strictly better: they crowd at
-the spine and self-trap into each other. Prototype at p4 — 16 seeds → 67%, 48 seeds
-→ 52%. An emergent sweet spot, no cap needed.
+**Order matters, non-monotonically.** A card's connector couples it to the *next*
+card, so `A→B` (via A's connector) differs from `B→A` (via B's). Leading with a
+forker that SPROUTs, then a runner, differs from the reverse — bushing low first
+builds safe area the scan reaches last, *then* the next card climbs out of it. There
+is no monotonic "lead with the fast card" rule; the sequence is a real puzzle, and
+the TEST bench (a blank scanless block) exists so a player can *see* it.
 
 ---
 
-## 8. Synergy comes from pace diversity
+## 8. Synergy comes from pace and connector diversity
 
-Because the beam is a swarm, the deckbuilding depth is **blending tempos**, and it
-is genuinely non-additive:
+The deckbuilding depth is **blending tempos and coupling**, and it is genuinely
+non-additive:
 
-- **Vanguard + fill.** Prototype, 24 strands: uniform p4 → 56%; a **fast-scout
-  (p3) + slow-filler (p8)** mix → **71%**. The fast strands punch their paths
-  first; the slow strands trickle into the gaps *later*, so they don't crowd and
-  self-trap. Temporal separation makes strands cooperate instead of compete. This
-  is the engine of the system — a "scouts and fillers" archetype, no special card.
-- **Connector order** (§7) is the second synergy axis — sequencing the chain to
-  build safe area before climbing is worth ~19 points and is non-monotonic.
-- **Direction fan** is a minor, situational knob (+~7% for a wide lateral fan that
-  spreads into territory the scan reaches last; full 8-way does not help). Spice,
-  not a headline.
+- **Vanguard + fill.** A fast card and a slow card in one chain cooperate rather than
+  compete: the fast strand punches its path first; the slow one trickles into the
+  gaps *later*, so they don't crowd and self-trap. Temporal separation is the engine
+  — a "scouts and fillers" archetype with no special card.
+- **Connector order** (§7) is the second synergy axis — sequencing the chain to build
+  safe area before climbing, non-monotonic.
+- **OVERLAY splicing** is the third — folding a coiler's turns or a forker's `K`s into
+  another card's loop makes a hybrid strand neither card draws alone.
 
-So the "dynamic synergy" the growth rework was chasing comes from the two mechanics
-that replaced budget: diverse *paces* in one swarm, and the *order* of the chain.
+So the "dynamic synergy" the growth rework was chasing comes from the mechanics that
+replaced budget: diverse *paces*, the *order* of the chain, and *spliced* grammars —
+never a stacked number.
 
 ---
 
 ## 9. Implementation touch points
 
-- `src/cards.js` — growth aspect → `{grammar, pace, seeds, connector}`; drop the
-  `GROWTH` reproduce/reach table and the additive `mergeBeam` growth math; merge
-  becomes an ordered connector chain over the slotted cards.
-- `src/beam.js` — replace the reproduce block in `stepEmbers` with the turtle VM
-  (symbols, looped `pc`, searching reroute, fork); per-strand pace clock; the
-  connector handoff (tip → next segment) on trap; end the run at scan-bottom and
-  track peak coverage. (Area comes from fork density in the skeleton — no smolder
-  pass; §6.)
+- `src/cards.js` — growth aspect is `{grammar, pace, connector}`; `buildChain` folds
+  an OVERLAY junction into the preceding segment (grammar concatenation) and otherwise
+  emits an ordered chain of segments.
+- `src/beam.js` — the turtle VM (symbols, looped `pc`, searching reroute, `fork`);
+  per-strand pace clock; one anchor per launching card (`seedSwarm`); the SPROUT
+  handoff (ring-2 graft off a trapped tip); end the run at scan-bottom, track peak
+  coverage. Area comes from fork density in the skeleton.
 - `src/battle.js` — gutter readout shows the chain (grammar / pace / connector per
-  card) and seed total; wire scan speed to `aggression`.
+  card); scan speed wired to `aggression`; the aggro/DDA economy scaled to the compact
+  winnable band.
 - `src/juice.js` — a beat for the advancing frontier; see [`juice-model.md`](juice-model.md).
-- `tests/` — determinism (same swarm + field twice → identical), searching-reroute
-  never re-treads, coverage regression on a fixed seeded board at fixed scan speed.
+- `tests/` — determinism (same field twice → identical), searching-reroute never
+  re-treads, coverage regression on a fixed seeded board, OVERLAY-splice fold, and the
+  scanless TEST bench.
 
 ---
 
 ## 10. Open / to-tune
 
-- **Pace band** — where the knife-edge sits on the real 62×28 block at the shipped
-  scan speed; the p≈4 figure was prototype-relative and landed near p2 in practice.
 - **Fork-density curve** — where each card should sit on the `K`-density → coverage
   curve (§6) so the roster spreads from thin runners to bushing grails.
 - **Turtle-type roster** — validate a starter set (runner / forker / coiler /
   wanderer) feels distinct; pace and connector per card.
-- **Connector semantics** — pin down `SPROUT`/`BRANCH`/`OVERLAY` handoff rules and
-  which the starter cards carry; confirm order stays non-monotonic across the roster.
-- **Seed sweet spot** per grammar, and the canonical launch heading off the spine.
-- **Enclosed-territory** coverage (Qix/Go) — parked; possible later spice for
-  looping grammars.
+- **Aggression band** — the winnable range is compact (~[0.20, 0.65]); confirm the
+  DDA settles there across a real career and that manual cranking earns its reward.
+- **Enclosed-territory** coverage (Qix/Go) — parked; possible later spice for looping
+  grammars.
 
 ---
 
 ## 11. References
 
 Langton's ant; diffusion-limited aggregation / dielectric (Lichtenberg) breakdown;
-turtle graphics & bounded L-systems (structure from dumb local rules). The
-pace-diversity synergy is the deckbuilding lineage (composition patterns from
-Balatro / Slay the Spire / Noita wand chains) expressed as tempo blending rather
-than number-stacking, plus the ordered connector chain (Noita wand-chains: a card
-transforms what comes after it). Prototypes: `scratchpad/pace{2,3,4}.mjs`
-(geometry, run-ends-at-scan-bottom, pace/scan sweeps, pace-mix + direction-fan) and
-`order2.mjs` (connector chain, non-monotonic order).
+turtle graphics & bounded L-systems (structure from dumb local rules). The connector
+algebra rests on three algebraically independent composition primitives (§7): the free
+monoid on the symbol alphabet (OVERLAY = string concatenation, the base structure of
+L-systems), the grafting product on rooted trees / free pre-Lie algebra (SPROUT =
+graft — one graft generator builds the whole tree structure, so a second fixed-arity
+graft adds nothing), and a disjoint-union coproduct (SCATTER = parallel launch). The
+deckbuilding lineage is tempo blending and ordered chains rather than number-stacking
+(Balatro / Slay the Spire / Noita wand-chains: a card transforms what comes after it).

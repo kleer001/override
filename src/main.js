@@ -92,7 +92,7 @@ function shopOwned(item) {
 // ("about half, not more"). Kept as the BASELINE the player still dials from, and
 // clamped to a band so it can't run away. Persisted across runs.
 const AGGRO_KEY = 'override.aggro';
-const DDA_START = 0.30, DDA_UP = 0.04, DDA_DOWN = 0.03, DDA_MIN = 0.30, DDA_MAX = 1.50;
+const DDA_START = 0.30, DDA_UP = 0.04, DDA_DOWN = 0.03, DDA_MIN = 0.20, DDA_MAX = 0.65;
 const clampDDA = (v) => Math.max(DDA_MIN, Math.min(DDA_MAX, v));
 const loadAggro = () => clampDDA(parseFloat(localStorage.getItem(AGGRO_KEY)) || DDA_START);
 const saveAggro = (v) => localStorage.setItem(AGGRO_KEY, clampDDA(v).toFixed(2));

@@ -127,12 +127,13 @@ function burn(sim, x, y, fromF = false) {
 }
 
 // --- seeding (§7 connector chain) --------------------------------------------
-// ONE turtle per launching card — coverage is earned by grammar fork density and
-// pace alone. The deck is read top-to-bottom. Segment 0 always launches off the
-// spine; a later segment's coupling is set by the PRECEDING segment's connector:
-//   SCATTER → the next card launches fresh off the spine (own anchor)
-//   OVERLAY → the next card launches from the SAME anchor, concurrently
-//   SPROUT/BRANCH → deferred: seeded from the previous card's tips when they trap
+// ONE turtle per launching segment — coverage is earned by grammar fork density
+// and pace alone. The deck is read top-to-bottom. Segment 0 always launches off
+// the spine; a later segment's coupling is set by the PRECEDING segment's
+// connector:
+//   SCATTER → the next segment launches fresh off the spine (own anchor)
+//   SPROUT  → deferred: grafted from the previous segment's tips when they trap
+// (OVERLAY never reaches the sim — buildChain folds it into one spliced grammar.)
 function validSpineCells(sim) {
   const x = Math.max(0, Math.min(FIELD_W - 1, sim.params.p | 0));   // spine = straight column at the trigger
   const out = [];
@@ -159,16 +160,12 @@ function seedSwarm(sim) {
   const p = sim.params, valid = validSpineCells(sim);
   if (!valid.length) return;
   const anchors = anchorPoints(valid);
-  const segStart = [];   // where each segment launched (OVERLAY reference)
   let launches = 0;      // how many anchors have been claimed so far
   for (let i = 0; i < p.chain.length; i++) {
     const conn = i === 0 ? 'SCATTER' : p.chain[i - 1].connector;
-    let point = null;
-    if (conn === 'SCATTER') point = anchors[launches++ % anchors.length];
-    else if (conn === 'OVERLAY') point = segStart[i - 1] ?? anchors[launches++ % anchors.length];
-    // SPROUT / BRANCH → seeded on trap, not at launch
-    segStart[i] = point;
-    if (point) spawnTurtle(sim, point.x, point.y, SEED_HEADING, i);
+    if (conn !== 'SCATTER') continue;   // SPROUT → grafted on trap, not at launch
+    const pt = anchors[launches++ % anchors.length];
+    spawnTurtle(sim, pt.x, pt.y, SEED_HEADING, i);
   }
 }
 
@@ -219,17 +216,26 @@ function fork(sim, t, spawned) {
   t.heading = (t.heading + 7) & 7;   // parent −1
 }
 
-// Connector handoff on self-trap (§7): the trapping strand's segment connector
-// governs how the NEXT segment couples off this tip. SPROUT continues the heading;
-// BRANCH fans two children out (±2). SCATTER/OVERLAY already seeded at launch, so
-// they hand off nothing here — the trapped strand simply dies.
+// Connector handoff on self-trap (§7): a SPROUT segment grafts the NEXT segment
+// off this dead tip. The tip trapped because all 8 radius-1 neighbours are blocked,
+// so a graft there is inert — we jump to the first open cell on the NEXT ring out
+// (radius 2), forward-biased, so the chain leaps the wall/trail it hit and continues
+// instead of dying on it. SCATTER seeded at launch and hands off nothing here.
 function handoff(sim, t, spawned) {
   const chain = sim.params.chain, next = t.seg + 1;
-  if (next >= chain.length) return;
-  const conn = chain[t.seg].connector;
-  const add = (heading) => { if (sim.turtles.length + spawned.length < MAX_TURTLES) spawned.push({ x: t.x, y: t.y, heading: heading & 7, pc: 0, seg: next, clock: 0 }); };
-  if (conn === 'SPROUT') add(t.heading);
-  else if (conn === 'BRANCH') { add(t.heading + 2); add(t.heading + 6); }
+  if (next >= chain.length || chain[t.seg].connector !== 'SPROUT') return;
+  if (sim.turtles.length + spawned.length >= MAX_TURTLES) return;
+  for (const off of PROBE) {
+    const h = (t.heading + off + 8) & 7;
+    const [dx, dy] = HEADINGS[h];
+    const nx = t.x + dx * 2, ny = t.y + dy * 2;   // ring 2 — ring 1 is fully blocked
+    if (nx < 0 || nx >= FIELD_W || ny < 0 || ny >= FIELD_H) continue;
+    const c = idx(nx, ny);
+    if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;
+    spawned.push({ x: nx, y: ny, heading: h, pc: 0, seg: next, clock: 0 });
+    burn(sim, nx, ny, true);
+    return;
+  }
 }
 
 // Advance every live strand one grammar step when its pace clock is due. Deferred
