@@ -3,8 +3,8 @@
 *The first thing a new player sees. Doubles as the shipped **author-phase tutorial**:
 the contact hands you the `F/L/R` alphabet, you write a **self-avoiding line**, hit RUN,
 and **survive** the trace — keeping that line as your first card. Aiming, forks, and the
-coverage game come later (unlocked by the COLLISION-DETECTION upgrade). Draft v0.3 —
-prose up for rewrite; the BLOCKING section is the authoritative sequence.*
+coverage game come later (unlocked by the COLLISION-DETECTION upgrade). Draft v0.4 —
+voice lines committed (punk-zine); the BLOCKING section is the authoritative sequence.*
 
 > **⚠ Model note (read this).** `GAME-SHEET.md` / `SPEC-SHEET.md` still describe the
 > retired **bundled-quad** card model — `(shape, direction, probability, growth)` that
@@ -48,8 +48,8 @@ contact) is unchanged; what it hands off to is now the real tutorial: the contac
 you the **alphabet** (`F/L/R`), you **write a self-avoiding line**, hit **RUN**, and
 **survive** the scan. No handed-out card, no slotting, **no aiming** (the tutorial fires
 from centre). A crash isn't a loss — it drops you back into the editor to revise, and
-that fail-and-revise loop **is** how you learn the symbols. Voice lines are placeholders
-(`[V#]`); tone isn't locked, the sequence is.*
+that fail-and-revise loop **is** how you learn the symbols. Voice lines are now committed
+(`[V#]`, punk-zine register); the sequence is authoritative.*
 
 **A naive player must exit having:** (1) seen a line draw from `F/L/R`, (2) understood a
 crossing = a crash, (3) written a line that survives, (4) kept it as their first card.
@@ -59,8 +59,9 @@ That's the whole first run.
 - **Fail-and-revise, not a rigged win** *(decided by the shipped code)*. Survival is
   *findable, not lucky* — ~15–23% of formulas survive; a balanced zigzag (≥3 turns,
   equal `L`/`R`) reliably does, a straight runner races off the edge. So a first-timer
-  may crash a few times; each crash returns to the editor with the line intact-ish to
-  revise. The teaching is in the retries — do **not** rig a guaranteed pass.
+  may crash a few times; each crash drops back to a **blank** editor (the shipped
+  `newAuthor` clears the grammar — you re-type from scratch, not from the wreck). The
+  teaching is in the retries — do **not** rig a guaranteed pass.
 - **Input model.** In a non-interactive state, only a **SKIP** affordance responds.
   In the WRITE gate, the live buttons are `F` `L` `R` `DEL` `RUN` (RUN inert until the
   grammar has an `F`); an idle **nudge** re-prompts after ~4s.
@@ -88,22 +89,22 @@ progression and **absent by design** here:
 **Minimum to be "up and running" = one surviving line authored.** No card is handed
 out; the line *is* the card. There is no aim and no slot on run one.
 
-### Voice-line inventory (slugs — fill later, tone TBD)
+### Voice-line inventory (committed copy)
 
-Every line the anonymous contact speaks, ID'd so blocking can reference it before copy
-is final. The long Beat-3 monologue is the *fiction* reference; here it's split so each
-line lands **attached to the action it teaches**.
+Every line the anonymous contact speaks, ID'd so blocking can reference it. The long
+Beat-3 monologue is the *fiction* reference; here it's split so each line lands **short
+and attached to the action it teaches**. Register: punk-zine, lowercase, loud, PG.
 
-| ID | State | Purpose | Placeholder slug |
-|----|-------|---------|------------------|
+| ID | State | Purpose | Committed copy |
+|----|-------|---------|----------------|
 | `[V0a]` | 2 | provoke | "do you believe everything you're told?" |
 | `[V0b]` | 2 | provoke | "are you a good little citizen?" |
-| `[V1]` | 4 | hand over the alphabet (`F` moves, `L`/`R` turn) | *(≈ "F walks it. L and R turn it. that's the whole alphabet.")* |
-| `[V2]` | 5 | prompt WRITE (a self-avoiding line) + hit RUN | *(≈ "write me a line that never crosses itself. then RUN it.")* |
-| `[N2]` | 5 | idle nudge for the WRITE gate | *(≈ "tap F. give it somewhere to go.")* |
-| `[Vc]` | 6c | crash feedback → revise | *(≈ "you crossed your own trail. that's a crash. turn sooner. again.")* |
-| `[V4]` | 6 | optional survive hype | *(≈ "hold it… hold it…")* |
-| `[V5]` | 7 | release / keep the card | *(≈ "it lived. that's yours now. you're GONE.")* |
+| `[V1]` | 4 | hand over the alphabet (`F` moves, `L`/`R` turn) | "F walks it forward. L and R turn it. three keys — that's the whole alphabet. steal it." |
+| `[V2]` | 5 | prompt WRITE (a self-avoiding line) + hit RUN | "now write me a line that never crosses itself. then hit RUN." |
+| `[N2]` | 5 | idle nudge for the WRITE gate | "tap F. it can't run if it won't walk." |
+| `[Vc]` | 6c | crash feedback → revise | "you crossed your own trail — that's a crash. turn sooner. go again." |
+| `[V4]` | 6 | optional survive hype | "hold it… hold it… don't box yourself in—" |
+| `[V5]` | 7 | release / keep the card | "it LIVED. that line's yours now. you're GONE, kid." |
 
 ---
 
@@ -270,25 +271,36 @@ progression (the COLLISION-DETECTION upgrade and beyond). There is no
   person on a 300-baud line; *WOPR-cool* — measured, uncanny, machine-like. Both were
   viable; punk won for tone-match.)
 
-## Open questions (still to decide)
+## Design calls (resolved 2026-07-18)
 
-1. **The essay text — how on-the-nose?**
-   Current draft is broad satire ("I am thankful for the cameras"). Dial up (funnier,
-   more cartoon) or down (drier, creepier, more real)?
+1. **Essay tone — DRY / earnest, not cartoon.** Play it straight: an obedient teen
+   writing a real assignment, deadpan ("I am thankful for the cameras"), no winks. The
+   punk contact is the game's comic voice; if the essay also mugs for the camera the two
+   fight, and the blackout + `no` land harder off a sincere set-up than a joke one. Keep
+   the current copy, just resist punching it up. *Decided.*
 
 2. ~~Naming the two channels / do we surface the `F/L/R` letters?~~ **Resolved by the
    shipped `author` phase (commit `4f46899`):** the tutorial *is* typing `F/L/R` on
    three buttons and watching the line draw — the letters are the interface, fully
    surfaced. (There is no "odds/probability" channel — the sim has none.)
 
-3. **Skippable?** Returning players hit this every new run (it's the new-game screen).
-   Full cinematic first time, then a tap-to-skip / abbreviated version after?
+3. **Skippable — moot, and here's why.** The shipped gate (`main.js`: `isAuthored()` ?
+   `newAssemble()` : `newAuthor()`) runs the author tutorial **only on a fresh save** —
+   first boot, or after a NEW-GAME wipe. Returning players (and every later level in a
+   run) skip straight to the loadout; they do **not** re-hit this. So there's no
+   "replay every run" problem to solve. Ship a persistent **SKIP** affordance through the
+   cinematic (states 0–3) for the impatient on that one boot; no separate abbreviated
+   variant is needed. *Decided — and corrects the old premise that this replays each run.*
 
-4. **Length & pacing.** Beat 1 idle theatre: how long before the blackout? Too short
-   and the "ordinary" doesn't land; too long and it's a wait. ~5–7s is my guess.
+4. **Beat 1 length — 5s, SKIP live throughout.** Lean to the short end of the 5–7s
+   range: enough to read the essay's last sentence and clock the back-window `I WILL
+   NOT / GOTO 10` gag, not long enough to feel like a wait. SKIP is available the whole
+   time, so the floor matters more than the ceiling. *Decided.*
 
-5. **The unfinished word.** Essay cuts on `stopped asking questio_`. Is the missing
-   "-ns" too cute, or exactly right? (It's the one place the machine "stops asking.")
+5. **Unfinished word — keep `questio_`.** It's the one diegetic beat where the machine
+   literally stops asking; the missing "-ns" *is* the joke and the cut point for the
+   blackout. Reads as intentional, not a typo, because the cursor is still blinking on
+   it. *Decided.*
 
 ---
 
