@@ -107,13 +107,6 @@ export function beamGutterLines(merged) {
   return [`${merged.cards} card chain`];
 }
 
-// Reference two-card deck (SCRIPT.COM + FORK.COM) for the balance harness and tests.
-// The GAME no longer hands this out — a new player authors their own first card
-// (cardFromGrammar) in the tutorial; see main.js.
-export function startingDeck() {
-  return ['SCRIPT.COM', 'FORK.COM'].map((id) => ({ ...CARDS[id] }));
-}
-
 // The player's hand-authored first card. Its id is constant (AUTHORED_ID) so the deck
 // still persists as ids; the grammar rides alongside in localStorage and rehydrates
 // through here. Pace 1 to match the survival-mode tuning; SCATTER so it composes

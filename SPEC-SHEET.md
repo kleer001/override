@@ -3,11 +3,17 @@
 Technical spec for the buildable vertical slice. Numbers are starting points to
 tune, not gospel.
 
-> **Authoritative core:** the battle loop, card model, ignition, and win/lose
-> clock described below follow [`research/ember-model.md`](research/ember-model.md)
-> (the "Beam-Card Model," core locked 2026-07-14). Where a section here still
-> describes the retired ordered-accumulator design, treat `ember-model.md` as
-> the source of truth and this doc as the section that needs porting.
+> **Authoritative core:** the battle loop, card model, and win/lose clock follow
+> [`research/lsystem-growth.md`](research/lsystem-growth.md) — the "Beam-Card Model"
+> with growth as a deterministic **L-system turtle** (shipped to `src/beam.js` +
+> `src/cards.js`, tuned via `preview/beam-balance.js`). This supersedes **both** the
+> earlier `ember-model.md` reproduce%/REACH design *and* the original bundled-quad
+> `(shape, direction, probability, growth)` model. In the shipped model a card is
+> `{ grammar, pace, connector }`; there is **no probability/odds and no REACH
+> budget**; a program is a turtle that crawls the board and **forks**; and the deck
+> is an **ordered connector chain** — *order matters*. Where a section below still
+> describes the retired accumulator, REACH, or quad design, treat the code +
+> `lsystem-growth.md` as source of truth.
 
 ---
 
@@ -48,55 +54,65 @@ HUD and controls are fixed furniture the CA never touches.
 
 ---
 
-## The living board (cellular automaton)
+## The living board (turtle crawl + trace scan)
 
-*Ignition and the win/lose clock are settled by
-[`research/ember-model.md`](research/ember-model.md) §1, §4, §9 — one packet
-fires a beam that emits and spreads embers over time, and a top-down **trace
-scan** (not a passes-based lockdown) is the run clock. The CA field mechanics
-below (infect/grow/decay, islands, links) still describe the living board itself.*
+*Settled by [`research/lsystem-growth.md`](research/lsystem-growth.md): one packet
+anchors one **turtle** per launching card; each crawls the memory as a deterministic
+L-system, burning cells and forking, while a top-down **trace scan** descends and
+reclaims. There is **no cellular-automaton faction and no smolder fill** — the board
+"lives" from the crawling frontier, the scan's travelling wipe, and render heat-decay.
+Terrain generation, islands, and bus links (below) still stand.*
 
-**Core idea:** crack % *is* territory on a living CA field, so the number going up
-is literally a stain spreading across the screen.
+**Core idea:** crack % *is* territory — the cells your turtles have burned — so the
+number going up is literally a stain crawling across the screen.
 
-Your **intrusion** (spreading embers) claims cells from **neutral memory**; the
-**trace scan** reclaims burned cells back to neutral as it descends. **Crack %
-= fraction of the grid you hold.** Win by holding **≥50% coverage** through the
-breach timer; lose if the trace scan reaches the bottom before you get there
-(traced). (Pure coverage — the CODE/vault objective was cut.)
+Your **turtles** (burning crawlers) claim cells from **neutral memory**; the **trace
+scan** reclaims burned cells back to neutral as it descends. **Crack % = fraction of
+the claimable grid you hold.** Win by holding **≥50% coverage** through the breach
+timer; lose if the trace scan reaches the bottom first (traced). (Pure coverage — the
+CODE/vault objective was cut.) *This is the post-**COLLISION DETECTION** regime; before
+that upgrade the win is **SURVIVAL** — keep a self-avoiding literal line alive to
+scan-bottom — see §"Progression".*
 
-### Cell model & CA rules (per tick)
+### Cell model & board motion (per tick)
 
-Each cell = `{ owner: none | worm, strength: 0–9 }`. Double-buffered grid,
-deterministic under seeded RNG. **Settled: Tier 1 has one active faction — your
-intrusion (`worm`) against neutral memory — and the antagonist is the descending
-trace scan, not a second spreading CA player. A rival spreading faction
-(hardened ICE that infects your cells back) is a later-tier escalation (§ later
-tiers of `ember-model.md`), not the base board. "ICE" at Tier 1 is the trace /
-countermeasures, i.e. the scan itself.**
+Each cell = `{ terrain, burned: 0|1 }` (plus a per-cell burn *tick* the renderer reads
+for brightness). Deterministic: the **turtle VM is RNG-free** — same grammar + same
+field ⇒ byte-for-byte identical growth; the only seeded RNG left is the scan's reclaim
+order and terrain generation. Tier 1 has **one active agent — your turtles — against
+the descending scan**; a rival *spreading* faction (hardened ICE) is a later-tier
+escalation, not the base board. "ICE" at Tier 1 is the scan itself.
 
-- **Spread:** a burned cell's embers advance into open neighbours, spending REACH
-  against the terrain cost — the moving frontier is where most motion lives.
-- **Grow:** an interior burned cell (all neighbours held) slowly gains strength →
-  held territory hardens (the render ramp climbs).
-- **Reclaim/die:** a cell the trace scan crosses is set back to neutral and its
-  strength resets → no static blobs; the scan band is a travelling wipe.
-- **Churn:** the advancing frontier, the scan's moving reclaim line, drifting
-  addresses and ticking strength digits keep the board alive without a second
-  faction. (Later tiers reintroduce a true border war once ICE spreads.)
+- **Crawl:** each turtle probes headings (straight, then gentle turns out, reverse
+  last) and steps to the first on-board, non-wall, **unburned** cell, burning it — so
+  it hugs walls and threads gaps with zero pathfinding and never re-treads. The moving
+  frontier is where most motion lives.
+- **Fork (`K`):** a turtle spawns a child crawler turned off its heading — **fork
+  density is the entire area engine** (no fill pass); a forkless runner stays thin, a
+  forker bushes out and fills.
+- **Pace, not budget:** a turtle has no total-cells cap; it advances on a per-strand
+  **pace** clock (ticks per step). Terrain folds into that clock — HARD ground stalls a
+  crawler, a BUS lane speeds it — so terrain cost is *felt as time*, not a REACH spend.
+  A turtle ends by self-trapping, leaving the board, or being reclaimed by the scan.
+- **Reclaim:** a cell the trace scan crosses is set back to neutral → no static blobs;
+  the scan band is a travelling wipe, and coverage is measured as **peak simultaneous
+  burn**, not what survives after.
 
 ### One memory block, islands within it
 
 A run is ONE **memory block** (`THE MACHINE`, a single 62×28 sector — the 3-sector
-`KERNEL`/`IO.SYS`/`SWAP` split is retired). The noise still carves **islands** in a
-sea of firewall, bridged by **bus links**; distant islands can stay stranded, so a
-block can be only partly reachable (or unwinnable). A link dies when the trace scan
-reclaims its cells. `FORK()` (Tier 3) seeds a beachhead on a fresh island → two fronts.
+`KERNEL`/`IO.SYS`/`SWAP` split is retired). The noise carves **islands** in a sea of
+firewall, bridged by **bus links**; distant islands can stay stranded, so a block can
+be only partly reachable (or unwinnable). A link dies when the trace scan reclaims its
+cells. A **`SPROUT`** connector grafts the chain's next crawler past a wall its
+predecessor trapped on, relaying onto fresh ground → a new front.
 
 ### Overlays
 
 - **Addresses** — a drifting hex address ticker: ambient flicker.
-- **Strength digits** — border cells show a 0–9 that ticks as the burn rages.
+- **Burn heat** — a burned cell's brightness derives from *how recently* it burned
+  (newest = brightest tip, cooling behind), so the frontier reads bright and the body
+  fades — no per-cell strength value, just the burn tick.
 - *(CODE bar cut — see §"Battle model". The win is pure coverage; no digit objective.)*
 
 ### The play screen — three static panels
@@ -106,132 +122,210 @@ modulates — see `src/layout.js`); the 80×40 grid divides 80% / 20%:
 
 ```
 ┌── THE MACHINE — one memory block ─────────┐┌─ STATUS ──┐
-│  terrain · beam spine · embers spreading  ││ ROOT 1240 │   FIELD  cols 0–63
-│  · reproduction · the descending #scan#   ││ PTS   80  │   (block drawn at a
+│  terrain · beam spine · turtles crawling  ││ ROOT 1240 │   FIELD  cols 0–63
+│  · forking · the descending #scan#        ││ PTS   80  │   (block drawn at a
 │  · ▲ turret at the base                   ││ DECK 11   │    1-cell inset)
 │                                           ││ TRACE …   │
 │                                           ││ COVERAGE… ││   GUTTER cols 64–79
-│                                           ││ BEAM …    ││   (run state + the
+│                                           ││ CHAIN …   ││   (run state + the
 │                                           ││ AGGRO …   ││    phase's controls)
 └───────────────────────────────────────────┘└───────────┘
-┌── LOADOUT — tap a card to slot the beam ──────────────┐   TRAY  rows 30–39
-│ [SCRIPT][SCRIPT][BUFFER][WORM  ][NOP   ]              │   (hand / draft /
-└───────────────────────────────────────────────────────┘    jack-ins, 25% tall)
+┌── LOADOUT — tap a card to slot the chain ─────────────┐   TRAY  rows 30–39
+│ [SCRIPT.COM][FORK.COM][BUFFER.OVR][WORM]              │   (hand / draft, in
+└───────────────────────────────────────────────────────┘    slot order; 25% tall)
 ```
 
-Legend (density ramp): `· : = + * @ %` = burn strength rising · `#` = trace-scan
-line · `X` = just-reclaimed cell · `▓` = firewall (WALL) · `═` = bus · `▲` = turret.
+Legend (heat ramp): `· : = + * @ %` = burn *recency* rising (cool body → bright tip) ·
+`#` = trace-scan line · `X` = just-reclaimed cell · `▓` = firewall (WALL) · `═` = bus ·
+`▲` = turret.
 
 ---
 
 ## Battle model
 
-*Full mechanic: [`research/ember-model.md`](research/ember-model.md) §1–4, §9.
-The ordered accumulator and its pass loop are retired.*
+*Full mechanic: [`research/lsystem-growth.md`](research/lsystem-growth.md) §2–9.
+The ordered accumulator, the REACH budget, and the bundled-quad merge are all retired.*
 
-- Slotted cards **merge** into one beam before the battle starts: probability
-  adds (capped at 100%), direction unions, shape sums (Fourier superposition),
-  growth adds (capped ~60%). This merge is a one-time computation, not a per-tick
-  loop — order doesn't matter.
-- A **turret** slides along the bottom edge. One tap fires **one packet** at
-  column `p`. The packet draws the beam **spine** upward,
-  `x(y) = p + Σ shape(y)`; at each spine cell it rolls the merged probability,
-  and on a hit emits ember(s) in the merged direction(s).
-- Emitted embers then **spread hands-off**, burning cells and spending
-  **REACH** against the terrain COST table (§ below) each tick, and — off the
-  merged **growth** — **reproducing** onto fresh unburned neighbours so the fire
-  sustains instead of dying at pool's end. No further input.
-- **One clock, not two:** a top-down **trace scan** descends the field,
-  reclaiming burned cells to neutral as it crosses them. Its single descent
-  from top to bottom *is* the run clock (replaces the old `LOCKDOWN = 10
-  passes` counter). Honeypots spike the scan's speed.
-- **Win = reach, then hold:** hit **≥50% coverage** → a **breach timer**
-  starts; hold ≥50% until it expires → breached. Drop under 50% and the timer
-  pauses/resets. Scan bottoms out first → traced, run ends.
-- **Timing:** the fire is instantaneous; the watch phase (emission + spread +
-  scan) runs the length of a Tier-1 battle, on the order of ~12–15 s. Snappy
-  now; deeper tiers add rate/branch/hold aspects (§8 of the ember model), not
-  more phases.
+- **Two regimes, one flag.** The **COLLISION DETECTION** upgrade (`extra.collision`,
+  `beamParams` in `src/battle.js`; `sim.collision` in `src/beam.js`) picks the *entire*
+  regime — turtle `F` behaviour, scan, and win mode all key off it, so pre- and
+  post-upgrade play share every code path (no divergent branch). The bullets below
+  describe the **collision-on** game (the tuned coverage battle); the pre-upgrade
+  **survival** regime is in §"Progression". Everything else here holds in both.
+- Slotted cards build an **ordered connector chain** before the battle
+  (`buildChain`, `src/cards.js`): the deck is read top-to-bottom and each card's
+  connector governs its junction to the *next* card. `OVERLAY` junctions fold at
+  build time (two grammars splice into one looped program); `SCATTER`/`SPROUT`
+  survive into the sim. **There is no arithmetic and order matters** — nothing sums
+  or averages.
+- A **turret** slides along the bottom edge. One tap fires **one packet** at column
+  `p`. The packet lays a straight **spine** up that column; each *launching* card
+  anchors exactly **one turtle** on the spine (bottom / top / centre of the open
+  line), so a chain brackets the block even when firewall eats most of the column.
+- Each turtle then crawls **hands-off** as a deterministic L-system (§ "living
+  board"): `F` advances & burns via the searching reroute, `L`/`R` turn, `K` forks a
+  child. It spends no budget — it advances on its **pace** clock, and terrain folds
+  into that clock (HARD slows, BUS speeds). Area comes from **fork density**, not a
+  fill pass. A `SPROUT` predecessor grafts the next card off its trapped tip. No
+  further input.
+- **One clock:** a top-down **trace scan** descends the field, reclaiming burned
+  cells to neutral as it crosses them. Its single descent *is* the run clock.
+  Honeypots (HONEY) spike the scan's speed when burned.
+- **Win = reach, then hold (collision-on):** hit **≥50% coverage** → a **breach timer** starts; hold
+  ≥50% until it expires → breached. Drop under 50% and the timer resets. Scan bottoms
+  out first → traced, run ends. Coverage is **peak simultaneous** burn — with one
+  anchor per card it spikes and decays rather than plateauing, so `breachHold` is a
+  weak knob; **WIN_COVERAGE (50%) and the aggression band are the load-bearing dials.**
+- **Difficulty = AGGRESSION**, a single dial scaling the whole scan
+  (`scanSpeed = 0.40 × aggro`, plus reclaim bite). The one-anchor beam paints less
+  than the old seed swarm, so the winnable band is **compact (~0.20 easy → 0.65 even
+  the grail loses)**; the whole DDA/reward economy in `battle.js` is scaled to it.
+- **Timing:** the fire is instantaneous; the watch runs the length of a Tier-1
+  battle (~6–18 s, self-scaling with the drama; see `climax_todo.md`). Deeper tiers
+  add new card *aspects* (rate, `FORK()` branching, hold), not more phases.
 
 ---
 
-## Cards drive the beam (bundled quads, per `ember-model.md` §3, §5)
+## Cards drive the beam (turtle programs, per `lsystem-growth.md` §2–7)
 
-Every card is a complete beam — `(shape, direction, probability, growth)` — not a
-CA effect applied in sequence. Slotting several **merges** them into one beam
-before the packet fires.
+Every card is a complete little program — `{ grammar, pace, connector }` — that
+crawls the board as a deterministic turtle. Slotting several builds an **ordered
+connector chain** (§7), not a merged number.
 
-| Card | Shape | Direction | Probability | Growth | Identity / wrinkle |
-|------|-------|-----------|-------------|--------|---------------------|
-| `SCRIPT.COM` | Linear | ← | 25% | Low | the starter forbidden card |
-| `SCRIPT.SYS` | Linear | → | 25% | Low | the mirror — opens a curtain |
-| `BUFFER.OVR` | Linear | ←→ | 50% | Med | overflow; the curtain workhorse |
-| `WORM` | Sine | ←→ | 25% | **High** | self-replicates hard — the Morris spread |
-| `NOP.SLED` | Linear | — (none) | 50% | None | high prob, no direction/growth — inert alone, bad on purpose |
+- **grammar** `F/L/R/K` — shape *and* launch aim in one (a turn-prefix points it);
+  run on a base-10 loop so a small string draws a large emergent form.
+- **pace** — ticks per step; the tempo/power knob (2 = fast/strong, 3–4 = slow/weak).
+- **connector** — how the **next** card couples: `SCATTER` (parallel — next card
+  launches on its own anchor), `SPROUT` (graft — next card relays off this crawler's
+  trapped tip, leaping to the next open ring), `OVERLAY` (splice — next grammar
+  appends into this one strand).
 
-Merge rules: probability **adds** (capped at 100%), direction **unions** (each
-unioned direction emits its own ember per firing cell — more directions = more
-surface area), shape **sums** (superposition — two sines reinforce; a line +
-sine wavers; sine + 3rd-harmonic starts squaring), growth **adds** its reproduce
-rate (capped ~60%; child spread-reach takes the max). Order does not matter — see
-§3 of the ember model for the full merge rules and the discipline behind
-"some cards are bad on purpose." Growth is core at Tier 1 (a growth-less packet
-can't breach — §4). Later tiers add new card *aspects* — rate (T2), `FORK()`
-directed branching (T3), hold/IQ (T4) — per §8; Tier 1 is shape + direction +
-probability + growth.
+| Card | Grammar | Pace | Connector | Identity / wrinkle |
+|------|---------|------|-----------|---------------------|
+| `SCRIPT.COM` | `FFFFFFFFFF` | 3 | SCATTER | the starter warez — a thin forkless runner |
+| `FORK.COM` | `FFFFKFFFFF` | 2 | SPROUT | forks once a loop; sprouts the chain onward |
+| `SCRIPT.SYS` | `RRFFFFFFKF` | 3 | SCATTER | the mirror — `RR` aims it east, then runs long |
+| `BUFFER.OVR` | `FLFKFRFKLF` | 2 | SCATTER | a fast wide forking zig-zag; the curtain workhorse |
+| `WORM` | `FFKFFKFFKF` | 2 | SPROUT | the Morris spread — forks hard, sprouts onward |
+| `NOP.SLED` | `F` | 3 | SPROUT | a lone forkless sled — weak alone; the next card rides its tips |
+| `0DAY` | `FKFKFKFKFK` | 2 | SPROUT | the legendary grail — fast, maximal forks |
 
-### Tier-1 starting deck (9 cards, indicative)
+Chain rules (`buildChain`): **no arithmetic** — nothing sums or averages. The deck is
+read top-to-bottom; a card's connector governs *its* junction to the next card, so the
+merge is **order-dependent by construction** (`A→B` ≠ `B→A`). `OVERLAY` folds at
+build time into one longer looped grammar; `SCATTER`/`SPROUT` reach the sim. **Fork
+(`K`) density is the area engine** — a runner is thin and loses, a forker fills; some
+cards (`NOP.SLED`) are inert alone, bad on purpose. Later tiers add new card *aspects*
+— rate, `FORK()` directed branching, hold — not new merge arithmetic.
 
-| Card | Bundle | Type |
-|------|--------|------|
-| `SCRIPT.COM` ×4 | Linear · ← · 25% · gr Low | curtain starter |
-| `SCRIPT.SYS` ×2 | Linear · → · 25% · gr Low | curtain mirror |
-| `BUFFER.OVR` ×2 | Linear · ←→ · 50% · gr Med | curtain workhorse |
-| `NOP.SLED` ×1 | Linear · — · 50% · gr None | enabler; bad alone |
+### No handed deck — you author your first card (`cardFromGrammar`, `src/cards.js`)
 
-Core tension in a handful of scarce slots: stacking probability/direction on
-one bundle for raw coverage vs. spreading across bundles for a wider curtain —
-every card is welded to its own trade-off, so the deck you can field is the
-decision, not the order you'd fire it in.
+There is **no starting deck**. A fresh save opens with **0 ROOT** and an empty deck;
+the first run drops into the AUTHOR phase (§"Progression") where you *type* an `F/L/R`
+grammar and, on a surviving run, keep it as your first card — `PROG.COM`
+(`AUTHORED_ID`, pace 1, `SCATTER`), persisted in `localStorage` (`AUTHORED_KEY`). The
+deck grows from there: draft picks between nodes (`SCRIPT.SYS`, `BUFFER.OVR`, `WORM`,
+`HARMONIC`, `PHREAK`, `BLUEBOX`, `LOGICBOMB`, `XOR`, `DAEMON`) and ROOT-shop buys (a
+cheap `FORK.COM` deck-add, then the pool rares `ROOTKIT`/`PAYLOAD`/`0DAY`).
+
+*(The old two-card `SCRIPT.COM → FORK.COM` handout is retired — commit `4f46899`. The
+`startingDeck()` helper is still exported from `src/cards.js` but is **no longer
+called anywhere** in the game, tests, or preview harness: dead legacy left as a
+reference two-card deck.)*
+
+Core tension in a handful of scarce slots (`SLOTS = 3`): which *shapes* you field, and
+in what *order* you chain them — sequencing a bushing forker and a fast runner so they
+cooperate (scout-then-fill) instead of crowding. **The order you build the chain is the
+decision, not just the cards you hold.**
+
+---
+
+## Progression — literal turtle → collision detection
+
+*Spec-altitude mirror of [`research/lsystem-growth.md`](research/lsystem-growth.md)
+§11. One persistent upgrade — **COLLISION DETECTION** — is the single flag that selects
+the whole regime (turtle `F` §3, win mode §5, board terrain). Pre- and post-upgrade
+share every code path (`sim.collision`; `beamParams` in `src/battle.js`).*
+
+- **Author (first run — `main.js` `author` phase).** No handed deck. On a brand-new
+  save the run opens the AUTHOR screen: three big `F`/`L`/`R` keys build a grammar (max
+  `GRAMMAR_MAX = 12`), and a **literal** turtle draws it live on a blank block. RUN
+  fires a **survival** battle from **centre** (no aiming). The turtle is a Tron
+  light-cycle — `F` steps one cell; crossing its own trail, a wall, or the edge is a
+  **crash** (the strand dies). Win = keep the self-avoiding line alive to scan-bottom
+  having drawn ≥ `SURVIVAL_MIN_CELLS` (**10**). Survive → the grammar is kept as your
+  first card (`AUTHORED_ID` = `PROG.COM`, `localStorage`) and banks the flat
+  `SURVIVAL_REWARD` (**15**); crash → back to the editor to revise & retry.
+- **Pre-collision runs.** Blank blocks (`blankMachine` — literal turtles can't navigate
+  walls, so there are none), survival win, flat bounty, a fixed brisk scan
+  (`SURVIVAL_SCAN = 0.45`, ~8 s, aggression-independent — a fixed-difficulty training
+  ground, not the tunable game). ~15–23 % of formulas survive, so a starter is
+  findable, not lucky — a *balanced* zig-zag (≥3 turns, equal `L`/`R`; e.g. `FLLFRR`)
+  is the recipe.
+- **COLLISION DETECTION (the pivot; ROOT shop, cost 35).** Strands stop crashing and
+  start **navigating** — `F` becomes the searching reroute that hugs walls and threads
+  gaps. The win flips from *survive* → **conquer** (hold ≥ WIN_COVERAGE **50 %** through
+  the breach timer), and terrain returns (`generateMachineUpTo`, difficulty ceiling
+  keyed to **conquers** — survival wins don't count, so the first walled block is
+  **EASY**, not BRUTAL; `difficultyCeil` in `main.js`). Every run after is the full
+  tuned coverage game the sections above describe.
+
+The tutorial pays **15** and COLLISION DETECTION costs **35**, so it takes a couple of
+real levels past the tutorial to bank the pivot. The splash gates it all: `OVERRIDE
+1983` with `[C]ONTINUE` / `[N]EW` (`showTitle` / `resetSave`, `main.js`).
 
 ---
 
 ## Economy / progression
 
-- **Win node** → draft 1 of 3 new cards (warez looted off the breached
-  machine) into the deck; earn a slot; +ROOT.
-- **Clear 3 nodes** → zoom out to Tier 2 (adds a 2nd island cluster + upgrades
-  toward more slots and the rate aspect, per `ember-model.md` §8).
-- **Lose battle** → fail skin, run ends, keep ~50% ROOT.
-- **ROOT (persistent)** buys, at the black-market BBS shop: extra starting
-  cards, +1 slot, +REACH, unlock new card types in drafts,
-  retry-from-a-deeper-tier.
+- **Lean, no-penalty ROOT.** A fresh save opens with **0 ROOT**, and every run banks
+  ROOT **whether you win or lose** — there is no loss penalty (`showResult`, `main.js`).
+  Coverage (collision-on) runs pay the run's **peak** coverage % × aggression mult
+  (`coverageReward`, `src/battle.js`); survival runs pay the flat `SURVIVAL_REWARD`
+  (15). A ~50 % breach at baseline pays ~50; a survival scratch pays 15.
+- **Win node (coverage)** → draft 1-of-3 looted cards into the deck (more picks if you
+  cranked aggression above baseline, `draftPicks`); a breach lifts next run's terrain
+  ceiling (`difficultyCeil`, keyed to conquers).
+- **Aggression** is the single difficulty/reward dial: raise it for free in the target
+  phase (harder scan, bigger payout) or spend **15 ROOT** (`AGGRO_REDUCE_COST`) to lower
+  it a step. The persistent baseline also self-adjusts (DDA) toward ~43 % win rate. The
+  winnable band is compact (~0.20 → 0.65).
+- **ROOT shop (`src/shop.js`, black-market BBS)** — verified catalogue: **COLLISION
+  DETECTION** 35 (the survival→coverage pivot, permanent), **FORK.COM** deck-add 10
+  (repeatable), **RETRY TOKEN** 100 (survive one lost battle this run), and the
+  permanent pool rares **ROOTKIT** 200 / **PAYLOAD** 400 / **0DAY** 600 — spaced
+  ~3 wins apart.
+- **Clear 3 nodes** → zoom out to Tier 2 (adds a 2nd island cluster + upgrades toward
+  more slots and new card aspects, per `lsystem-growth.md` §8). *(Tiers 2–7 are design,
+  not yet built.)*
 
 ---
 
 ## Data model (sketch)
 
-*Reflects the bundled-quad card model and turret/reach/scan battle loop —
-see `ember-model.md` §3–4, §9.*
+*Reflects the shipped turtle model — see `lsystem-growth.md` §2–9, `src/cards.js`,
+`src/beam.js`.*
 
 ```js
-Cell   = { terrain, burned: 0 }                         // one 62×28 block
-Card   = { id, name, shape, dirs, prob, growth }         // the bundled quad
-Block  = { w: 62, h: 28, t: [...], burned: [...],       // the one memory block
-           islands, links }                              // islands within it, bus-linked
-Beam   = { shapes, dirs, prob, reproduce, spreadReach }  // the merged result of slotted cards
-Battle = { coverage: 0, winCoverage: 50, pool, reachCap,
-           block: Block, slots: [Card, Card, Card], beam: Beam,
-           triggerCol, scanRow: 0, breachLeft: -1 }
-Run    = { tier: 1, deck: [...], slots: 3, root: 120 }   // one block per run
+Cell    = { terrain, burned: 0|1 }                          // one 62×28 block; heat is a separate per-cell tick array
+Card    = { id, name, grammar, pace, connector }            // grammar F/L/R/K; connector SCATTER|SPROUT|OVERLAY
+Machine = { seed, t:[...], burned:[...], sectors[] }        // the persistent block (one sector at Tier 1)
+Chain   = { chain: [{ grammar, pace, connector }], cards }  // buildChain(): ordered segments; OVERLAY folded in
+Turtle  = { x, y, heading, pc, seg, clock }                 // a live crawler running its segment's grammar
+Sim     = { machine, sector, claim, params, collision,      // params = { p, chain, collision, scanSpeed, reclaim,
+            turtles[], scanRow, breachLeft:-1, cov,          //   breachHold, winCoverage:50, survivalMinCells:10 }
+            outcome, tick }                                  // collision off ⇒ literal Tron turtle + SURVIVAL win
+Run     = { tier:1, deck:[...], slots:3, root }             // one machine per run; SLOTS = 3
 ```
 
-Resolution is a deterministic tick loop: merge slotted cards into `beam` once
-→ fire the packet at `turretCol` to seed the spine and initial embers → each
-tick, spread embers (spend `reach` against terrain COST) and advance the trace
-`scanRow` → check coverage vs. `winCoverage` (breach timer) and `scanRow` vs.
-board bottom (traced) for win/fail. Pure function of state → trivially
-unit-testable with `node --test` (same harness as `finding_numbers`).
+Resolution is a deterministic tick loop (`stepSim`): `buildChain` slotted cards →
+`seedSwarm` anchors one turtle per launching segment on the spine at `params.p` →
+each tick, `stepTurtles` advances every crawler on its pace clock (crawl / turn /
+fork / SPROUT-handoff) and `advanceScan` descends the trace, reclaiming crossed
+cells → check `cov` vs. `winCoverage` (breach timer) and `scanRow` vs. board bottom
+(traced). The **turtle VM is RNG-free**; only the scan reclaim + terrain gen are
+seeded — so a `(seed, params)` pair replays identically. Pure function of state →
+trivially unit-testable with `node --test`.
 
 ---
 
@@ -243,27 +337,36 @@ RNG for reproducible draws, boards, and runs.
 
 ---
 
-## MVP build order
+## MVP build order (status: Tier-1 slice shipped to `src/`)
 
-1. Port grid renderer + CRT filter; render a static 80×40 Tier-1 screen.
-2. Card data + slot arrangement (draw / merge bundled quads into one beam).
-3. Battle tick loop: turret fire → spine + emission → spread against REACH +
-   reproduce off GROWTH + COVERAGE bar (no CA yet) — tune the number feel.
-4. Add the CA living board + islands/links (the territory war replaces any lane).
-5. Trace scan + breach timer; result screen + fail skin + node advance.
-6. Draft-between-nodes + ROOT meta.
+1. ✅ Grid renderer + CRT filter; the three-panel 80×40 screen (`render.js`, `layout.js`).
+2. ✅ Card data + slot arrangement — draw a hand, slot into an ordered connector chain
+   (`cards.js`, `main.js › toggleSlot`).
+3. ✅ Battle tick loop: turret fire → spine → one turtle per card → L-system crawl +
+   fork against the pace clock → coverage (`beam.js`, `battle.js`).
+4. ✅ Generated memory terrain + islands/bus links (`terrain.js`); the turtle frontier
+   is the living board (no separate CA / smolder — cut, see `lsystem-growth.md` §6).
+5. ✅ Trace scan + breach timer; result + fail skin + node advance (`main.js`).
+6. ✅ Draft-between-nodes + ROOT shop meta (`shop.js`).
+7. ✅ On-ramp progression (commit `4f46899`): AUTHOR-your-first-card survival tutorial
+   → **COLLISION DETECTION** pivot into the coverage game — one regime flag across the
+   sim (`main.js` `author` phase, `beam.js` `sim.collision`, `battle.js` `beamParams`,
+   `shop.js`). See §"Progression".
 
-→ Steps 1–6 = a complete Tier-1 vertical slice.
+→ The Tier-1 vertical slice is live. **Open art-direction pass:** the breach climax
+(`climax_todo.md`). **Not yet built:** jack-in character picker (straight into loadout
+today) and Tiers 2–7.
 
 ---
 
 ## Living board v2 — terrain & burn (prototyped in `preview/`)
 
-*Ignition, reach, and the cost model here are settled by
-[`research/ember-model.md`](research/ember-model.md) §2 and §4 — this section's
-terrain generation and CA plumbing still stand; the "heat = accumulator" gate
-and the oscillating-gnomon jack-in minigame below are retired in favor of
-REACH and the Peggle turret.*
+*This section's **terrain generation** still stands and is shipped in `src/terrain.js`.
+The burn/cost model has moved on: there is **no REACH budget** — terrain cost folds
+into each turtle's **pace clock** (`lsystem-growth.md` §4; `paceSurcharge` in
+`src/beam.js`). The "heat = accumulator" gate and the oscillating-gnomon jack-in
+minigame described here are retired in favor of the pace clock and the Peggle turret.
+Read the cost table below as a **pace surcharge** (per step), not a spend budget.*
 
 The MVP board is homogeneous, so a point ignition spreads as a Manhattan-distance
 diamond. v2 replaces the uniform field with a generated **memory terrain** the
@@ -279,26 +382,26 @@ beam must burn *through*. Prototype: `preview/terrain.js`, `ignite.js`, `burn.js
    stranded (some blocks are only partly reachable);
 4. honeypots = HONEY placed deep in open reachable ground (trips the trace).
 
-**Terrain cost** (`COST` by type, per `ember-model.md` §4 — a spend curve, not a
-gate): OPEN 1 (baseline) · HONEY 1 (random placement, spikes the trace) · HARD 6
-(a curve, not a wall; deep reach affords a few) · BUS −1 (refund — accelerant) ·
-WALL ∞ (unaffordable firebreak). A per-burn ±1 jitter keeps fronts fingered, not
-round. (Five types — VAULT was cut with the CODE objective.)
+**Terrain cost** (`COST` by type, `src/terrain.js` — now a **pace surcharge**, not a
+spend budget): OPEN 1 · HONEY 1 (spikes the trace when burned) · HARD 6 · BUS −1
+(accelerant) · WALL ∞ (a firebreak the reroute never enters). The turtle VM reads this
+as `paceSurcharge = clamp(COST − 1, −1, 3)` (§4): OPEN +0, HARD +3 (a crawler waits
+longer per step on hard ground), BUS −1 (faster), HONEY +0, WALL never stood on. So
+terrain is *felt as time*, not an affordability gate. (Five types — VAULT was cut with
+the CODE objective.)
 
-**Reach = the terminal stat.** Each emitted ember spends a **REACH** budget as it
-travels, `budget -= COST[cell.terrain]` per step, until it hits 0 or a WALL (see
-`ember-model.md` §4). There is no ignition threshold to clear — REACH is a smooth
-cost curve, not a gate. REACH is a script-kiddie fiction: a faster CPU / more RAM
-lets embers travel further, and it's largely a terminal (meta-progression) stat
-rather than a per-card number. This replaces "heat = the accumulator"; the old
-cold/hot-fire numbers (116 cells @ heat 5, 2,155 cells @ heat 8) were measured
-under the retired gate model and need a fresh pass under the cost-curve model.
+**Pace = the tempo clock.** A turtle carries a per-card **pace** (ticks per step) and
+the terrain surcharge above stacks on it — there is **no REACH budget and no total-cells
+cap**. A strand is bounded by *time × space*: self-trapping caps its footprint, the
+descending scan caps its lifetime. Pace is the per-card power knob (2 = fast/strong,
+3–4 = slow/weak); aggression scales the scan on the other side of the race.
 
-**Surface area = spread rate.** Growth ∝ (emission points) × (front perimeter) ×
-(REACH vs. terrain cost). Hence direction-union stacking (more unioned
-directions = more emitted embers = more fronts), later `FORK()` (T3, an extra
-spine = a whole new front), and the jack-in characters (War-dialer / Shotgunner /
-Catapultist beam shapes) are surface-area tools, not just flat bonuses.
+**Area = fork density (not surface-area math).** Coverage scales monotonically with
+the `K`-density of the grammar (headless, real 62×28 blocks, scan 0.30: `FFFFF` 21% →
+`FFFFFK` 56% → `FFKFK` 64%). A runner is thin and loses; a forker bushes out and fills.
+Later `FORK()` (a whole new front) and the planned jack-in spine shapes are more
+fork/front tools — but the base engine is grammar fork density, not emission-point
+counting.
 
 **Live generation (src/terrain.js).** The one block generates as:
 - **Three independent noise fields** (different seeds & frequencies) place WALL
@@ -313,24 +416,22 @@ Catapultist beam shapes) are surface-area tools, not just flat bonuses.
 - **All five terrain types on every block** (OPEN, HARD, WALL, BUS, HONEY),
   guaranteed.
 
-**Win = coverage, held.** Breach the block by holding **≥ WIN_COVERAGE% (50%)** of
-its claimable cells through the breach timer before the trace scan reaches the
-bottom (`ember-model.md` §9) — not by reaching a point. Difficulty is emergent
-from the terrain cost curve (HARD's cost of 6 needs real REACH to afford) and
-**connectivity** (how much is linked to your entry). Labels: EASY · MED · HARD ·
-**BRUTAL** (can't reach 50% at any REACH). **Runs are not guaranteed winnable** —
-~1 in 8 blocks is BRUTAL, making that run a loss (Candy-Crush rules).
+**Win = coverage, held.** Breach the block by holding **≥ WIN_COVERAGE% (50%)** of its
+claimable cells through the breach timer before the trace scan reaches the bottom
+(`lsystem-growth.md` §5) — not by reaching a point. Difficulty is emergent from the
+terrain (HARD's pace surcharge stalls crawlers into the scan) and **connectivity** (how
+much is linked to your entry). Labels: EASY · MED · HARD · **BRUTAL** (can't reach 50%
+with any deck). **Runs are not guaranteed winnable** — ~1 in 8 blocks is BRUTAL, making
+that run a loss (Candy-Crush rules).
 
-**Jack-in (settled: Peggle turret, replaces the oscillating-gnomon minigame).**
-You pick a **character** at run start, then aim with a turret that **slides**
-along the bottom edge; one tap **fires a single packet** at your chosen column —
-no two-axis lock-in, one input. The packet draws the beam spine, and the
-character defines that spine's shape: War-dialer draws a thin, precise **lance**;
-Shotgunner draws a wide **spray** off the spine; Catapultist draws a deep **lob**
-that plants the spine far from the turret. Characters (`src/characters.js`) tune
-the spine shape rather than a scattered landing pattern. Wired through
-`createNode(…)` → the turret-fire path (supersedes `jackEmbers()`'s
-gnomon-locked landing).
+**Jack-in (turret shipped; character picker not built).** You aim with a turret that
+**slides** along the bottom edge; one tap **fires a single packet** at your chosen
+column — no two-axis lock-in, one input (`main.js › fireAt`, `beam.js › aimColAt`). The
+packet lays a **straight-column spine** and anchors one turtle per launching card.
+*Planned:* a run-start **character** that reshapes that spine — War-dialer **lance**,
+Shotgunner **spray**, Catapultist **lob** — via a `src/characters.js` that does not yet
+exist; today the run drops straight into the loadout (`main.js:128`). The oscillating-
+gnomon minigame is retired.
 
 The `preview/` archetypes remain a tuning sandbox; the live game uses the
 generator above.
