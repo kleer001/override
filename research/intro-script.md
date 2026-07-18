@@ -1,9 +1,10 @@
 # INTRO SCRIPT — the cold open / recruitment (working draft)
 
-*The first thing a new player sees. Doubles as the Tier-1 tutorial: the mysterious
-contact teaches the two channels the player actually acts on — **shape** (which
-program) and **direction** (where you aim it) — then releases you into your first
-breach. Draft v0.2 — everything here is up for rewrite.*
+*The first thing a new player sees. Doubles as the shipped **author-phase tutorial**:
+the contact hands you the `F/L/R` alphabet, you write a **self-avoiding line**, hit RUN,
+and **survive** the trace — keeping that line as your first card. Aiming, forks, and the
+coverage game come later (unlocked by the COLLISION-DETECTION upgrade). Draft v0.3 —
+prose up for rewrite; the BLOCKING section is the authoritative sequence.*
 
 > **⚠ Model note (read this).** `GAME-SHEET.md` / `SPEC-SHEET.md` still describe the
 > retired **bundled-quad** card model — `(shape, direction, probability, growth)` that
@@ -13,7 +14,14 @@ breach. Draft v0.2 — everything here is up for rewrite.*
 > turtle** that crawls the board, coverage is earned by **fork (`K`) density**, and the
 > deck is an **ordered connector chain** — *order matters now*. Crucially: **there is
 > no probability/odds channel at all.** This script follows the shipped model.
-> (`GAME-SHEET.md` and `SPEC-SHEET.md` were reconciled to this model on 2026-07-18.)
+> (`GAME-SHEET.md` and `SPEC-SHEET.md` were reconciled on 2026-07-18.)
+>
+> **Progression note (commit `4f46899`).** The game now unfolds in two regimes gated by
+> one upgrade, **COLLISION DETECTION**: *before* it, the turtle is a literal Tron line
+> (a self-crossing **crashes**) and the win is **survival**; *after* it, the turtle uses
+> the smart reroute and the win is **coverage/conquer**. The **tutorial is the survival
+> regime** — an `author` phase where you type an `F/L/R` grammar and keep the surviving
+> line as your first card. This BLOCKING is written to that shipped flow.
 
 ## Design intent
 
@@ -34,65 +42,68 @@ breach. Draft v0.2 — everything here is up for rewrite.*
 
 ## BLOCKING — the implementable gate sequence
 
-*This is the spec: the ordered states, the timing, and — the point — the three
-**GATES** where the game stops and waits for the player to act. Voice lines are
-placeholders (`[V#]`, filled from the inventory at the bottom); tone is not locked, the
-sequence is. A naive player must exit this sequence having (1) seen a program move,
-(2) slotted a card, (3) aimed & fired, and (4) watched it win — nothing more.*
+*This is the spec, retargeted to the **shipped `author` phase** (`main.js` `newAuthor` /
+`authorRun`; `layout.js` `AUTHOR_SYMS`). The narrative cold-open (essay → blackout →
+contact) is unchanged; what it hands off to is now the real tutorial: the contact hands
+you the **alphabet** (`F/L/R`), you **write a self-avoiding line**, hit **RUN**, and
+**survive** the scan. No handed-out card, no slotting, **no aiming** (the tutorial fires
+from centre). A crash isn't a loss — it drops you back into the editor to revise, and
+that fail-and-revise loop **is** how you learn the symbols. Voice lines are placeholders
+(`[V#]`); tone isn't locked, the sequence is.*
 
-**Two hard rules for the whole sequence:**
-- **Rigged first board (decision — recommend YES).** The tutorial battle uses a
-  guaranteed-EASY block with a slowed scan so a first-timer's first hack *cannot* lose.
-  The real game is ~50/50 even on EASY; losing your very first packet is a terrible
-  onboarding. Flagged as a decision, not yet wired.
-- **Input lockout.** During a non-interactive state, all input is swallowed except a
-  single **SKIP** affordance (hold, or a corner `[skip]`). During a GATE, *only* the
-  taught input does anything; everything else is inert, and an idle **nudge** line
-  re-prompts after ~4s.
+**A naive player must exit having:** (1) seen a line draw from `F/L/R`, (2) understood a
+crossing = a crash, (3) written a line that survives, (4) kept it as their first card.
+That's the whole first run.
+
+**Two hard rules:**
+- **Fail-and-revise, not a rigged win** *(decided by the shipped code)*. Survival is
+  *findable, not lucky* — ~15–23% of formulas survive; a balanced zigzag (≥3 turns,
+  equal `L`/`R`) reliably does, a straight runner races off the edge. So a first-timer
+  may crash a few times; each crash returns to the editor with the line intact-ish to
+  revise. The teaching is in the retries — do **not** rig a guaranteed pass.
+- **Input model.** In a non-interactive state, only a **SKIP** affordance responds.
+  In the WRITE gate, the live buttons are `F` `L` `R` `DEL` `RUN` (RUN inert until the
+  grammar has an `F`); an idle **nudge** re-prompts after ~4s.
 
 | # | State | ~Time | On screen | Voice `[V#]` | Player input | Advances when |
 |---|-------|-------|-----------|--------------|--------------|---------------|
-| 0 | **COLD OPEN** | 5–7s | Civilian machine: essay auto-types (FIELD), benign stats (STATUS), file browser (TRAY). Beat 1. | — | none (SKIP allowed) | timer, or SKIP |
-| 1 | **BLACKOUT** | ~2s | Essay stops on `questio_`; panels power-down top→bottom; `SIGNAL LOST`; true black + silence. Beat 2. | — | none | timer |
-| 2 | **THE QUESTION** | ~4s | Cursor blinks in; types `[V0a]` then `[V0b]`. Prompt waits. | `[V0a]`, `[V0b]` | *(optional)* press-any-key to "answer" | keypress (or ~2s auto) |
-| 3 | **THE REFUSAL** | ~2s | `> no` auto-types; `CITIZEN: COMPLIANT ✓` → `CITIZEN: ███████`; snap to black. | — | none (locked auto-`no`) | timer |
-| 4 | **RELIGHT + SHAPE DEMO** | ~5s | Panels relight **transformed** into battle UI. One starter card in TRAY. Game **auto-runs the TEST bench once** so the crawl draws itself across the FIELD. | `[V1]` (shape) | none (watch the demo) | bench finishes drawing |
-| 5 | **GATE ① — SLOT** | until done | TRAY card pulses; chain slot empty & highlighted; rest inert. | `[V2]` (slot) + nudge `[N2]` | **tap the card** to slot it | card is slotted |
-| 6 | **GATE ② — AIM & FIRE** | until done | Turret slides along the bottom edge; FIELD shows the block. | `[V3]` (aim/fire) + nudge `[N3]` | **tap to fire** the packet | packet fired |
-| 7 | **WATCH** | 6–12s | Turtles crawl, fork, race the (slowed) scan; coverage climbs; breach spectacle at ≥50%. | `[V4]` (optional hype) | none (SKIP allowed) | outcome = win |
-| 8 | **RELEASE** | ~3s | Breach lands; `[V5]` "you're GONE"; contact's cursor winks out; fall into the normal loop (draft/shop → next node). Tutorial flag set (never full-replays). | `[V5]` | none | → hands off to the live game |
+| 0 | **COLD OPEN** | 5–7s | Civilian machine: essay auto-types (FIELD), benign stats (STATUS), file browser (TRAY). Beat 1. | — | none (SKIP) | timer / SKIP |
+| 1 | **BLACKOUT** | ~2s | Essay stops on `questio_`; panels power-down top→bottom; `SIGNAL LOST`; black + silence. Beat 2. | — | none | timer |
+| 2 | **THE QUESTION** | ~4s | Cursor blinks in; types `[V0a]` then `[V0b]`. Prompt waits. | `[V0a]`,`[V0b]` | *(opt.)* press-any-key | keypress (or ~2s auto) |
+| 3 | **THE REFUSAL** | ~2s | `> no` auto-types; `CITIZEN: COMPLIANT ✓` → `CITIZEN: ███████`; snap to black. | — | none (auto-`no`) | timer |
+| 4 | **RELIGHT → AUTHOR** | ~4s | Panels relight into the **author** screen: FIELD = *"YOUR MACHINE — draw a self-avoiding line"* (blank block); GUTTER = `GRAMMAR: —`; TRAY = `[F][L][R][DEL] … [RUN]`. Contact hands over the alphabet. *(Optional: it ghost-types one `F` so the line visibly crawls, then hands you control.)* | `[V1]` (alphabet: F moves, L/R turn) | none (read) | line settles / timer |
+| 5 | **GATE ① — WRITE + RUN** | until survive-able | Each `F/L/R` tap appends and the **literal turtle redraws live** on the blank block — you watch your line grow and see where it would cross. `DEL` backspaces. `RUN` lights once there's an `F`. | `[V2]` (write a line that doesn't cross itself) + nudge `[N2]` | **tap `F/L/R`** to compose, **`RUN`** to fire | `RUN` pressed |
+| 6 | **WATCH — SURVIVE** | ~8s | Fires from centre (no aim). Literal turtle races a brisk fixed scan (`SURVIVAL_SCAN`). Msg: *"keep your thread alive until the trace hits bottom."* | `[V4]` (opt. hype) | none | outcome resolves |
+| 6c | **CRASH → REVISE** | — | Strand hit its own trail / a wall / the edge and died before scan-bottom. Return to the editor (State 5). | `[Vc]` (crossed yourself — turn sooner) | → back to WRITE | on any crash |
+| 7 | **RELEASE — KEEP THE CARD** | ~3s | Survived (≥`survivalMinCells`). The authored grammar is **saved as your first card** + a flat **15 ROOT**. Contact signs off; hands to the normal loop (shop → assemble). | `[V5]` (you're in / you're GONE) | none | → live game |
 
-**Onboarding scope (what a naive player is taught, in order):** **shape** (states 4 —
-*see* it move), then the **slot** input (GATE ①), then the **aim+fire** input (GATE ②),
-then the **payoff** (state 7). That's the whole first run. Everything else — a *second*
-card, chain **order**, connectors, forks/growth, pace, the TEST bench as a tool,
-aggression — is intentionally absent here and belongs to later beats (see the deferral
-row in the Mechanic-mapping table).
+**Onboarding scope (taught, in order):** `F` = **move**, `L`/`R` = **turn/steer**
+(states 4–5), self-avoidance as the whole skill (the crash loop, 5↔6c), then the payoff
+of a surviving line becoming yours (7). Everything else is gated behind later
+progression and **absent by design** here:
+- **aiming / "direction as turret"** — the `target` phase (turret sweep + timed LAUNCH) is post-tutorial;
+- **forks (`K`) / growth / coverage win** — unlock with the **COLLISION DETECTION** upgrade (survive→conquer pivot);
+- **slots, chain order, connectors, pace, draft, aggression** — all later.
 
-**Minimum to be "up and running" = one card slotted + one packet fired.** GATE ① can
-accept exactly one card (grey out the other slots on run one). GATE ② forgives
-aim entirely on run one (any column the tap lands on is fine on the rigged board).
+**Minimum to be "up and running" = one surviving line authored.** No card is handed
+out; the line *is* the card. There is no aim and no slot on run one.
 
 ### Voice-line inventory (slugs — fill later, tone TBD)
 
-Every line the anonymous contact speaks, with an ID so blocking can reference them
-before the copy is final. Current punk-draft copy lives in Beat 3; these are the slots.
+Every line the anonymous contact speaks, ID'd so blocking can reference it before copy
+is final. The long Beat-3 monologue is the *fiction* reference; here it's split so each
+line lands **attached to the action it teaches**.
 
-| ID | Beat/State | Purpose | Placeholder slug |
-|----|-----------|---------|------------------|
+| ID | State | Purpose | Placeholder slug |
+|----|-------|---------|------------------|
 | `[V0a]` | 2 | provoke | "do you believe everything you're told?" |
 | `[V0b]` | 2 | provoke | "are you a good little citizen?" |
-| `[V1]` | 4 | teach SHAPE (a program moves/crawls; that wiggle is the program) | *(≈ "watch how it moves…")* |
-| `[V2]` | 5 | prompt SLOT (tap the card to load it) | *(≈ "load it. tap it.")* |
-| `[N2]` | 5 | idle nudge for GATE ① | *(≈ "the card. tap the card.")* |
-| `[V3]` | 6 | teach DIRECTION + prompt FIRE (turret slides, tap to fire) | *(≈ "slide it, lock it, hit EXEC")* |
-| `[N3]` | 6 | idle nudge for GATE ② | *(≈ "tap to fire. anywhere.")* |
-| `[V4]` | 7 | optional watch hype | *(≈ "there it goes—")* |
-| `[V5]` | 8 | release / handoff | *(≈ "then, kid? you're GONE.")* |
-
-*(The long Beat-3 monologue is the *fiction* reference; in the blocking it's split into
-`[V1]`/`[V2]`/`[V3]` so each lands **attached to the action it teaches**, not front-loaded
-as a wall of text before the player touches anything.)*
+| `[V1]` | 4 | hand over the alphabet (`F` moves, `L`/`R` turn) | *(≈ "F walks it. L and R turn it. that's the whole alphabet.")* |
+| `[V2]` | 5 | prompt WRITE (a self-avoiding line) + hit RUN | *(≈ "write me a line that never crosses itself. then RUN it.")* |
+| `[N2]` | 5 | idle nudge for the WRITE gate | *(≈ "tap F. give it somewhere to go.")* |
+| `[Vc]` | 6c | crash feedback → revise | *(≈ "you crossed your own trail. that's a crash. turn sooner. again.")* |
+| `[V4]` | 6 | optional survive hype | *(≈ "hold it… hold it…")* |
+| `[V5]` | 7 | release / keep the card | *(≈ "it lived. that's yours now. you're GONE.")* |
 
 ---
 
@@ -204,45 +215,47 @@ register, anonymous):
   they let you name. i can chew through it — hand
   you the programs THEY made illegal.
 
-  here's your first one. watch how it moves — crawls
-  up, feels for a gap, keeps going. that little
-  wiggle IS the program. that's its SHAPE. steal a
-  hundred of these and no two crawl the same.
+  no card. i don't hand you a program — you WRITE
+  one. three keys, that's the whole alphabet:
+  F walks it forward. L and R turn it. that's it.
 
-  now point it. slide that turret along the bottom —
-  where you drop it is where it starts, and which way
-  it runs. that's DIRECTION. and tonight? that's the
-  whole trick. pick your shape, aim it, let it rip.
+  watch the line draw as you type. now the catch:
+  it can't cross itself. touch your own trail, a
+  wall, the edge — you CRASH. so turn before you
+  box yourself in. that's the whole skill tonight.
 
-  (how they breed, how you chain a stack of 'em into
-  one nasty program — that's later. you'll steal it.)
+  (forks, growth, aiming the thing — that comes
+  after you earn COLLISION DETECTION. later. steal it.)
 
-  so quit reading. slide it. lock it. hit EXEC.
+  so write me a line that stays alive. hit RUN.
+  keep it breathing till the trace hits bottom —
 
-  then, kid? you're GONE.
+  then, kid? it's YOURS. you're GONE.
 ```
 
-On the last line the panels **relight** — but transformed: FIELD is now the living
-memory block, STATUS is the battle HUD, TRAY is the LOADOUT with your starter cards.
-The civilian machine is gone. You're jacked in.
+On the last lines the panels **relight** — transformed into the **author** screen:
+FIELD reads *"YOUR MACHINE — draw a self-avoiding line"*, GUTTER shows `GRAMMAR: —`,
+and the TRAY is the `[F][L][R][DEL] … [RUN]` keypad. The civilian machine is gone.
+You're writing your first program.
 
 ### Mechanic mapping (the tutorial payload)
 
 | Contact line | → teaches |
 |---|---|
-| "the programs THEY made illegal" | the deck = forbidden warez you load (cards) |
-| "watch how it moves — crawls up, feels for a gap" | **SHAPE** — the card's grammar; a program is a turtle that draws a path (`F` forward, `L`/`R` turn) |
-| "that little wiggle IS the program… no two crawl the same" | each card *is* a shape; you pick shapes, you don't tune numbers |
-| "slide that turret… where you drop it is where it starts, and which way it runs" | **DIRECTION** — the one live input: aim the turret, tap to fire one packet |
-| "how they breed… how you chain a stack of 'em… that's later" | deferred by design: forks (`K` = growth/area), pace, connectors, deck **order** — all future tutorial beats |
-| "slide it. lock it. hit EXEC" | the single tap that fires the packet |
-| "then, kid? you're GONE." | pun — released into the run / your first breach. "gone" = EXEC fires *and* you're out |
+| "no card… you WRITE one" | the shipped `author` phase — no handed deck; the line you type becomes your first card |
+| "F walks it forward. L and R turn it. that's it." | the `F/L/R` alphabet — **SHAPE = move**, **DIRECTION = steer** (the three author buttons) |
+| "watch the line draw as you type" | the live literal-turtle preview (`refreshAuthorPreview`) — you *see* the shape as you build it |
+| "it can't cross itself… you CRASH" | collision-**off** literal Tron mode; self-avoidance is the win — a crossing kills the strand |
+| "forks, growth, aiming… after you earn COLLISION DETECTION" | deferred by design: `K`/forks, coverage win, and turret aiming all unlock post-upgrade |
+| "write me a line that stays alive. hit RUN." | the **RUN** button → a survival battle fired from centre (no aim) |
+| "keep it breathing till the trace hits bottom" | **survival win** — alive at scan-bottom, ≥`survivalMinCells` |
+| "then, kid? it's YOURS. you're GONE." | the surviving grammar is saved as your card (+15 ROOT); handed to the live loop |
 
-*Deliberately teaches only the two channels the player acts on their first run —
-**shape** (which program) and **direction** (where you aim it). Everything numeric or
-compositional (fork density = area, pace, the SCATTER/SPROUT/OVERLAY connectors, and
-that deck **order** now matters) is held back for later beats. There is no
-"probability/odds" to teach — the sim has none (verified headless; see the note below).*
+*Deliberately teaches only `F/L/R` self-avoidance — **shape** (move) and **direction**
+(steer/turn) — nothing else. Forks (`K` = growth), the coverage/conquer win, turret
+aiming, slots, chain order, connectors, pace, and aggression are all gated behind later
+progression (the COLLISION-DETECTION upgrade and beyond). There is no
+"probability/odds" to teach — the sim has none.*
 
 ---
 
@@ -263,12 +276,10 @@ that deck **order** now matters) is held back for later beats. There is no
    Current draft is broad satire ("I am thankful for the cameras"). Dial up (funnier,
    more cartoon) or down (drier, creepier, more real)?
 
-2. **Naming the two channels for the player.** SHAPE and DIRECTION are the picks.
-   Do we ever surface the F/L/R "grammar" letters to the player (flavor: the contact
-   flashes `FFKFK` on screen), or keep it fully wordless — a program is just "a shape
-   that crawls"? The preview sandbox types grammars, but the real game only picks/orders
-   cards. *(Resolved down from the old spec: there is no "odds/probability" channel to
-   name at all — the sim has none.)*
+2. ~~Naming the two channels / do we surface the `F/L/R` letters?~~ **Resolved by the
+   shipped `author` phase (commit `4f46899`):** the tutorial *is* typing `F/L/R` on
+   three buttons and watching the line draw — the letters are the interface, fully
+   surfaced. (There is no "odds/probability" channel — the sim has none.)
 
 3. **Skippable?** Returning players hit this every new run (it's the new-game screen).
    Full cinematic first time, then a tap-to-skip / abbreviated version after?
@@ -284,17 +295,20 @@ that deck **order** now matters) is held back for later beats. There is no
 ## How it actually plays (headless findings, 2026-07-18)
 
 Ran the real sim headless (`src/beam.js` + `src/battle.js`, scanless TEST bench and
-seeded battles) to keep this script honest about the mechanics it introduces:
+seeded battles) to keep this script honest. *Scope: these findings describe the
+**post-COLLISION coverage game** — what the tutorial leads INTO, not the tutorial
+itself (which is the survival/author regime above).*
 
 - **A card carries no numbers to "tune."** It's `{ grammar, pace, connector }`. The
-  player's whole surface is: *which cards*, *what order*, and *where they aim*. There
-  is no probability, no reach, no reproduce level. → the tutorial teaches **picks +
-  aim**, never a stat.
+  coverage game's whole surface is: *which cards*, *what order*, and *where they aim*.
+  There is no probability, no reach, no reproduce level → **picks + aim, never a stat.**
+  (The tutorial before it is narrower still: just the `F/L/R` alphabet + self-avoidance.)
 - **Shape and direction are the same channel** (the grammar). A turn-prefix *is* the
-  aim: `SCRIPT.SYS` (`RRFFFFFFKF`) runs east; `LOGICBOMB` (`RRRRFFFFKF`) turns to
-  face down and drills. So "SHAPE" (the crawl) and "DIRECTION" (which way / where you
-  drop the turret) are the two honest halves of one idea — exactly the two the intro
-  keeps.
+  aim: `SCRIPT.SYS` (`RRFFFFFFKF`) runs east; `LOGICBOMB` (`RRRRFFFFKF`) turns to face
+  down and drills. So "SHAPE" (the crawl) and "DIRECTION" (which way it turns) are two
+  halves of one idea — and the author tutorial teaches exactly that pair as `F` (move)
+  and `L`/`R` (turn); the *turret-aim* sense of "direction" arrives only with the
+  coverage game.
 - **Growth is fork density, and it's dramatic.** On the scanless bench, forkless
   `SCRIPT.COM` burns ~37% of the board; one `K` (`FORK.COM`) jumps to ~69%. That's the
   whole area engine — and it's why "how they breed… that's later" is the right defer:
