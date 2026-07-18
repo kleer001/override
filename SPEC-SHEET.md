@@ -70,7 +70,9 @@ Your **turtles** (burning crawlers) claim cells from **neutral memory**; the **t
 scan** reclaims burned cells back to neutral as it descends. **Crack % = fraction of
 the claimable grid you hold.** Win by holding **≥50% coverage** through the breach
 timer; lose if the trace scan reaches the bottom first (traced). (Pure coverage — the
-CODE/vault objective was cut.)
+CODE/vault objective was cut.) *This is the post-**COLLISION DETECTION** regime; before
+that upgrade the win is **SURVIVAL** — keep a self-avoiding literal line alive to
+scan-bottom — see §"Progression".*
 
 ### Cell model & board motion (per tick)
 
@@ -144,6 +146,12 @@ Legend (heat ramp): `· : = + * @ %` = burn *recency* rising (cool body → brig
 *Full mechanic: [`research/lsystem-growth.md`](research/lsystem-growth.md) §2–9.
 The ordered accumulator, the REACH budget, and the bundled-quad merge are all retired.*
 
+- **Two regimes, one flag.** The **COLLISION DETECTION** upgrade (`extra.collision`,
+  `beamParams` in `src/battle.js`; `sim.collision` in `src/beam.js`) picks the *entire*
+  regime — turtle `F` behaviour, scan, and win mode all key off it, so pre- and
+  post-upgrade play share every code path (no divergent branch). The bullets below
+  describe the **collision-on** game (the tuned coverage battle); the pre-upgrade
+  **survival** regime is in §"Progression". Everything else here holds in both.
 - Slotted cards build an **ordered connector chain** before the battle
   (`buildChain`, `src/cards.js`): the deck is read top-to-bottom and each card's
   connector governs its junction to the *next* card. `OVERLAY` junctions fold at
@@ -163,7 +171,7 @@ The ordered accumulator, the REACH budget, and the bundled-quad merge are all re
 - **One clock:** a top-down **trace scan** descends the field, reclaiming burned
   cells to neutral as it crosses them. Its single descent *is* the run clock.
   Honeypots (HONEY) spike the scan's speed when burned.
-- **Win = reach, then hold:** hit **≥50% coverage** → a **breach timer** starts; hold
+- **Win = reach, then hold (collision-on):** hit **≥50% coverage** → a **breach timer** starts; hold
   ≥50% until it expires → breached. Drop under 50% and the timer resets. Scan bottoms
   out first → traced, run ends. Coverage is **peak simultaneous** burn — with one
   anchor per card it spikes and decays rather than plateauing, so `breachHold` is a
@@ -210,13 +218,20 @@ build time into one longer looped grammar; `SCATTER`/`SPROUT` reach the sim. **F
 cards (`NOP.SLED`) are inert alone, bad on purpose. Later tiers add new card *aspects*
 — rate, `FORK()` directed branching, hold — not new merge arithmetic.
 
-### Tier-1 starting deck (`startingDeck`, `src/cards.js`)
+### No handed deck — you author your first card (`cardFromGrammar`, `src/cards.js`)
 
-Just **two cards**: `SCRIPT.COM` → `FORK.COM`. Merged they seed a runner that a fork
-sprouts onward — enough to crack an EASY block about half the time. The deck grows
-between nodes from the draft pool (`SCRIPT.SYS`, `BUFFER.OVR`, `WORM`, `HARMONIC`,
-`PHREAK`, `BLUEBOX`, `LOGICBOMB`, `XOR`, `DAEMON`) and ROOT-shop unlocks (`ROOTKIT`,
-`PAYLOAD`, `0DAY`, `TANGENT`).
+There is **no starting deck**. A fresh save opens with **0 ROOT** and an empty deck;
+the first run drops into the AUTHOR phase (§"Progression") where you *type* an `F/L/R`
+grammar and, on a surviving run, keep it as your first card — `PROG.COM`
+(`AUTHORED_ID`, pace 1, `SCATTER`), persisted in `localStorage` (`AUTHORED_KEY`). The
+deck grows from there: draft picks between nodes (`SCRIPT.SYS`, `BUFFER.OVR`, `WORM`,
+`HARMONIC`, `PHREAK`, `BLUEBOX`, `LOGICBOMB`, `XOR`, `DAEMON`) and ROOT-shop buys (a
+cheap `FORK.COM` deck-add, then the pool rares `ROOTKIT`/`PAYLOAD`/`0DAY`).
+
+*(The old two-card `SCRIPT.COM → FORK.COM` handout is retired — commit `4f46899`. The
+`startingDeck()` helper is still exported from `src/cards.js` but is **no longer
+called anywhere** in the game, tests, or preview harness: dead legacy left as a
+reference two-card deck.)*
 
 Core tension in a handful of scarce slots (`SLOTS = 3`): which *shapes* you field, and
 in what *order* you chain them — sequencing a bushing forker and a fast runner so they
@@ -225,16 +240,64 @@ decision, not just the cards you hold.**
 
 ---
 
+## Progression — literal turtle → collision detection
+
+*Spec-altitude mirror of [`research/lsystem-growth.md`](research/lsystem-growth.md)
+§11. One persistent upgrade — **COLLISION DETECTION** — is the single flag that selects
+the whole regime (turtle `F` §3, win mode §5, board terrain). Pre- and post-upgrade
+share every code path (`sim.collision`; `beamParams` in `src/battle.js`).*
+
+- **Author (first run — `main.js` `author` phase).** No handed deck. On a brand-new
+  save the run opens the AUTHOR screen: three big `F`/`L`/`R` keys build a grammar (max
+  `GRAMMAR_MAX = 12`), and a **literal** turtle draws it live on a blank block. RUN
+  fires a **survival** battle from **centre** (no aiming). The turtle is a Tron
+  light-cycle — `F` steps one cell; crossing its own trail, a wall, or the edge is a
+  **crash** (the strand dies). Win = keep the self-avoiding line alive to scan-bottom
+  having drawn ≥ `SURVIVAL_MIN_CELLS` (**10**). Survive → the grammar is kept as your
+  first card (`AUTHORED_ID` = `PROG.COM`, `localStorage`) and banks the flat
+  `SURVIVAL_REWARD` (**15**); crash → back to the editor to revise & retry.
+- **Pre-collision runs.** Blank blocks (`blankMachine` — literal turtles can't navigate
+  walls, so there are none), survival win, flat bounty, a fixed brisk scan
+  (`SURVIVAL_SCAN = 0.45`, ~8 s, aggression-independent — a fixed-difficulty training
+  ground, not the tunable game). ~15–23 % of formulas survive, so a starter is
+  findable, not lucky — a *balanced* zig-zag (≥3 turns, equal `L`/`R`; e.g. `FLLFRR`)
+  is the recipe.
+- **COLLISION DETECTION (the pivot; ROOT shop, cost 35).** Strands stop crashing and
+  start **navigating** — `F` becomes the searching reroute that hugs walls and threads
+  gaps. The win flips from *survive* → **conquer** (hold ≥ WIN_COVERAGE **50 %** through
+  the breach timer), and terrain returns (`generateMachineUpTo`, difficulty ceiling
+  keyed to **conquers** — survival wins don't count, so the first walled block is
+  **EASY**, not BRUTAL; `difficultyCeil` in `main.js`). Every run after is the full
+  tuned coverage game the sections above describe.
+
+The tutorial pays **15** and COLLISION DETECTION costs **35**, so it takes a couple of
+real levels past the tutorial to bank the pivot. The splash gates it all: `OVERRIDE
+1983` with `[C]ONTINUE` / `[N]EW` (`showTitle` / `resetSave`, `main.js`).
+
+---
+
 ## Economy / progression
 
-- **Win node** → draft 1 of 3 new cards (warez looted off the breached
-  machine) into the deck; earn a slot; +ROOT.
-- **Clear 3 nodes** → zoom out to Tier 2 (adds a 2nd island cluster + upgrades
-  toward more slots and new card aspects, per `lsystem-growth.md` §8).
-- **Lose battle** → fail skin, run ends, keep ~50% ROOT.
-- **ROOT (persistent)** buys, at the black-market BBS shop: extra starting
-  cards, +1 slot, lower aggression, and unlocks new card types
-  (`ROOTKIT`/`PAYLOAD`/`0DAY`/`TANGENT`) into the draft pool.
+- **Lean, no-penalty ROOT.** A fresh save opens with **0 ROOT**, and every run banks
+  ROOT **whether you win or lose** — there is no loss penalty (`showResult`, `main.js`).
+  Coverage (collision-on) runs pay the run's **peak** coverage % × aggression mult
+  (`coverageReward`, `src/battle.js`); survival runs pay the flat `SURVIVAL_REWARD`
+  (15). A ~50 % breach at baseline pays ~50; a survival scratch pays 15.
+- **Win node (coverage)** → draft 1-of-3 looted cards into the deck (more picks if you
+  cranked aggression above baseline, `draftPicks`); a breach lifts next run's terrain
+  ceiling (`difficultyCeil`, keyed to conquers).
+- **Aggression** is the single difficulty/reward dial: raise it for free in the target
+  phase (harder scan, bigger payout) or spend **15 ROOT** (`AGGRO_REDUCE_COST`) to lower
+  it a step. The persistent baseline also self-adjusts (DDA) toward ~43 % win rate. The
+  winnable band is compact (~0.20 → 0.65).
+- **ROOT shop (`src/shop.js`, black-market BBS)** — verified catalogue: **COLLISION
+  DETECTION** 35 (the survival→coverage pivot, permanent), **FORK.COM** deck-add 10
+  (repeatable), **RETRY TOKEN** 100 (survive one lost battle this run), and the
+  permanent pool rares **ROOTKIT** 200 / **PAYLOAD** 400 / **0DAY** 600 — spaced
+  ~3 wins apart.
+- **Clear 3 nodes** → zoom out to Tier 2 (adds a 2nd island cluster + upgrades toward
+  more slots and new card aspects, per `lsystem-growth.md` §8). *(Tiers 2–7 are design,
+  not yet built.)*
 
 ---
 
@@ -249,8 +312,9 @@ Card    = { id, name, grammar, pace, connector }            // grammar F/L/R/K; 
 Machine = { seed, t:[...], burned:[...], sectors[] }        // the persistent block (one sector at Tier 1)
 Chain   = { chain: [{ grammar, pace, connector }], cards }  // buildChain(): ordered segments; OVERLAY folded in
 Turtle  = { x, y, heading, pc, seg, clock }                 // a live crawler running its segment's grammar
-Sim     = { machine, sector, claim, params, turtles[],      // params = { p, chain, scanSpeed, reclaim,
-            scanRow, breachLeft:-1, cov, outcome, tick }    //           breachHold, winCoverage:50 }
+Sim     = { machine, sector, claim, params, collision,      // params = { p, chain, collision, scanSpeed, reclaim,
+            turtles[], scanRow, breachLeft:-1, cov,          //   breachHold, winCoverage:50, survivalMinCells:10 }
+            outcome, tick }                                  // collision off ⇒ literal Tron turtle + SURVIVAL win
 Run     = { tier:1, deck:[...], slots:3, root }             // one machine per run; SLOTS = 3
 ```
 
@@ -284,6 +348,10 @@ RNG for reproducible draws, boards, and runs.
    is the living board (no separate CA / smolder — cut, see `lsystem-growth.md` §6).
 5. ✅ Trace scan + breach timer; result + fail skin + node advance (`main.js`).
 6. ✅ Draft-between-nodes + ROOT shop meta (`shop.js`).
+7. ✅ On-ramp progression (commit `4f46899`): AUTHOR-your-first-card survival tutorial
+   → **COLLISION DETECTION** pivot into the coverage game — one regime flag across the
+   sim (`main.js` `author` phase, `beam.js` `sim.collision`, `battle.js` `beamParams`,
+   `shop.js`). See §"Progression".
 
 → The Tier-1 vertical slice is live. **Open art-direction pass:** the breach climax
 (`climax_todo.md`). **Not yet built:** jack-in character picker (straight into loadout

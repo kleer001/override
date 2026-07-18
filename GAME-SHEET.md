@@ -92,8 +92,29 @@ Roguelike climb (Balatro / Slay-the-Spire shape): clear nodes, loot a card and
 earn a slot between battles, zoom out a whole tier when a system falls. **One
 lost battle ends the run.** A persistent meta-currency (**ROOT**) survives —
 spend it between runs at the black-market BBS (the ROOT shop) on permanent
-unlocks (extra forbidden cards, more terminal-memory slots, lower aggression,
-new card types, retry-from-a-deeper-tier).
+unlocks: **COLLISION DETECTION** (the survival→coverage pivot, below), extra
+forbidden cards, and retry tokens — with more terminal-memory slots and lower
+aggression on the design board.
+
+---
+
+## Your first program (the on-ramp)
+
+*Onboarding is not a handed-out deck — you **write** your first card.* A brand-new
+player drops into an AUTHOR screen: type an `F/L/R` grammar on three big keys and
+watch a **literal turtle** draw it live on a blank block. Hit RUN and it fires a
+**survival** run — no aiming, straight up the centre. Pre-upgrade the turtle is a
+Tron light-cycle: cross your own trail, clip a wall, or run off the edge and the
+strand **crashes**. Win by keeping a self-avoiding line alive until the trace scan
+bottoms out. Survive and that grammar becomes your first card, banked for keeps;
+crash and you revise and retry — that's where you learn what the symbols do, by
+doing.
+
+The pivot is one permanent unlock, **COLLISION DETECTION**. Buy it and strands stop
+crashing and start *navigating* — hugging walls, threading gaps — the win flips from
+*stay alive* to *take territory* (hold **≥50% coverage**), and terrain returns. Every
+run after is the full game the loop above describes. See
+[`research/lsystem-growth.md`](research/lsystem-growth.md) §11.
 
 ---
 
