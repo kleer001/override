@@ -14,21 +14,24 @@ world, blah blah.
 
 ## The core loop (one screen)
 
-*Settled in [`research/ember-model.md`](research/ember-model.md) — the "Beam-Card
-Model." No ASSEMBLE / EXEC / RESULT cutaways; it's one screen, one shot.*
+*Settled in [`research/lsystem-growth.md`](research/lsystem-growth.md) — the "Beam-Card
+Model," with growth now a deterministic **L-system turtle**. No ASSEMBLE / EXEC /
+RESULT cutaways; it's one screen, one shot.*
 
-1. **Arrange** — slot your cards into your earned slots. They **merge** into one
-   beam: probability adds, direction unions, shape sums, growth adds. Order doesn't
-   matter — which cards you have slots for does.
+1. **Arrange** — slot your cards into your earned slots, top to bottom. They form an
+   ordered **connector chain**: each card is a little program, and each card's
+   connector governs how the *next* card couples onto it. **Order matters** — a fast
+   scout leading a slow filler plays nothing like the reverse.
 2. **Aim & fire** — a turret slides along the bottom edge; tap once to fire a
    single packet at the column of your choice. That's the only positional call
    in the whole battle.
-3. **Watch** — the packet draws a beam spine up the field; embers emit off it,
-   spread outward, and **reproduce** (the beam's growth) so the fire keeps filling —
-   burning terrain and racking up coverage while a top-down
-   **trace scan** bears down. Hold **≥50% coverage** through the breach timer →
-   **breach**, loot a card, earn a slot, advance. Scan reaches the bottom first
-   → traced, **fail skin**, the run ends, bank meta, go again.
+3. **Watch** — the packet anchors one **crawler** per card on the spine; each crawls
+   the memory as a tiny **turtle program** — advancing, turning, hugging walls,
+   threading gaps, and **forking** into fresh crawlers so the burn bushes out and
+   fills — racking up coverage while a top-down **trace scan** bears down. Hold
+   **≥50% coverage** through the breach timer → **breach**, loot a card, earn a slot,
+   advance. Scan reaches the bottom first → traced, **fail skin**, the run ends, bank
+   meta, go again.
 
 Fully idle after the fire: arrange, slide, fire, watch. No clicking once the
 packet is away.
@@ -38,32 +41,48 @@ packet is away.
 ## Cards = the dawn of computing
 
 Every card is a real machine instruction or hacking-history artifact — pirated,
-forbidden warez traded on a BBS. Unlike an accumulator, each card is a
-**complete, self-contained beam**: it bundles a shape (the spine's curve), a
-direction (which way embers emit off the spine), a probability (which spine
-cells fire), and a growth (how hard its embers **reproduce** as they burn).
-Playing several cards **merges** them into one beam — probability adds (capped
-at 100%), direction unions, shape sums like harmonics building a waveform, growth
-adds. **Order doesn't matter; which cards you have slots for does.**
+forbidden warez traded on a BBS. Each card is a **complete, self-contained
+program** — a little turtle that crawls the memory and burns a path — bundling
+three channels:
 
-Examples: `SCRIPT.COM` (the starter forbidden program — Linear, Left, 25%, low
-growth), `WORM` (a wide sine spread with vicious self-replication — the Morris
-Worm; drafted *for* its growth), `HARMONIC`/`PHREAK` (stacking sine harmonics
-into a literal Fourier synthesis), `NOP.SLED` (all probability, no direction, no
-growth — inert alone, a deliberately bad card), `FORK()` (spawn a second beam
-spine — directed growth), `0DAY` (the legendary grail: Sine, both directions,
-100%, high growth). The lore is an endless, free card-name pipeline: LISP
-recursion, the Morris Worm, Turing's Bombe, Ken Thompson's compiler backdoor,
-blue boxes, buffer overflows.
+- **grammar** — a string of `F` (advance & burn), `L`/`R` (turn 45°), `K` (fork a
+  new crawler). This is the card's *shape and its aim in one*: the way it wiggles,
+  and — since a turn-prefix points it before it runs — which direction it heads.
+  Run on a loop, a tiny grammar draws a large emergent form (a spiral, a zig-zag,
+  a bushing fork-tree).
+- **pace** — how fast it crawls (ticks per step). The only "how much" knob, and it's
+  a *rate*, not a quantity — fast crawlers punch a path, slow ones trickle into the
+  gaps left behind.
+- **connector** — how the **next** card in the chain couples to this one:
+  `SCATTER` (the next card launches on its own anchor), `SPROUT` (it grafts off this
+  crawler's dead tip and relays deeper), or `OVERLAY` (its grammar splices onto this
+  one — one crawler running both programs).
 
-**Why the bundle matters (worked example):**
-`SCRIPT.COM` alone = Linear · Left · 25% — a thin, unreliable trickle.
-`SCRIPT.COM` + a second copy of `SCRIPT.COM` **merges** to Linear · Left ·
-**50%** — same shape and direction, but probability stacks. Two cards, one
-beam, twice the hit rate. There's no order to choose — the trade-off is
-entirely which cards you have slots for: a gorgeous shape can arrive welded to
-a bad direction, a starved probability, or dead growth. Some cards are bad on
-purpose.
+Slotting several cards reads the deck **top-to-bottom as an ordered chain** —
+`card₁ →[connector]→ card₂ →[connector]→ card₃` — the "assembling a program" fiction
+made literal. There's **no arithmetic to merge** (no probability to add, no reach to
+sum), and **order matters, non-monotonically**: a card's connector couples it to
+what comes *after*, so `A→B` differs from `B→A`. **Area is earned by fork (`K`)
+density** — a forkless runner stays thin and loses; a forker bushes out and fills.
+
+Examples: `SCRIPT.COM` (the starter warez — `FFFFFFFFFF`, a thin forkless runner),
+`FORK.COM` (`FFFFKFFFFF` — forks once a loop and sprouts the chain onward), `WORM`
+(`FFKFFKFFKF` — the Morris spread, forks hard), `HARMONIC`/`PHREAK` (tight forking
+coilers; `HARMONIC` splices the next card's program onto its own via `OVERLAY`),
+`LOGICBOMB` (`RRRRFFFFKF` — the `RRRR` turns it to face *down* and drill the core),
+`NOP.SLED` (a lone `F` — inert alone, but the next card rides its sprouted tips; bad
+on purpose), `0DAY` (the legendary grail: `FKFKFKFKFK` — fast, maximal forks). The
+lore is an endless, free card-name pipeline: LISP recursion, the Morris Worm,
+Turing's Bombe, Ken Thompson's compiler backdoor, blue boxes, buffer overflows.
+
+**Why the chain matters (worked example):**
+`SCRIPT.COM` alone (`FFFFFFFFFF`) is a forkless runner — it snakes a thin trail and
+usually can't rake 50% before the scan lands. Chain it into `FORK.COM`
+(`FFFFKFFFFF`) and the fork density roughly doubles the burn — but *which order* you
+chain them, and whether the connector is `SCATTER` vs `SPROUT`, changes where the
+second program takes root. The trade-off isn't a stat to stack; it's the *shape* you
+drafted and the *sequence* you built. A gorgeous grammar can arrive welded to a
+sluggish pace or an awkward connector. Some cards are bad on purpose.
 
 ---
 
@@ -73,7 +92,7 @@ Roguelike climb (Balatro / Slay-the-Spire shape): clear nodes, loot a card and
 earn a slot between battles, zoom out a whole tier when a system falls. **One
 lost battle ends the run.** A persistent meta-currency (**ROOT**) survives —
 spend it between runs at the black-market BBS (the ROOT shop) on permanent
-unlocks (extra forbidden cards, more terminal-memory slots, deeper REACH,
+unlocks (extra forbidden cards, more terminal-memory slots, lower aggression,
 new card types, retry-from-a-deeper-tier).
 
 ---
@@ -113,6 +132,9 @@ building a case against.
 
 ## Jack-in characters (run-start meta)
 
+*(Planned layer — not in the current Tier-1 slice, which drops you straight into the
+loadout with a straight-column spine. See `SPEC-SHEET.md`.)*
+
 You pick *how you break in* at the start of a run — a character with an
 upgrade tree, defined by the **shape of the beam** its turret draws when it
 fires:
@@ -145,11 +167,12 @@ Beam/trail shapes are prototyped in `preview/` — see the terrain screenshots.
 ## Design pillars (do not lose these)
 
 1. **You write it, then watch it.** The joy is spectacle, not clicking.
-2. **The deck is bundled quads.** Every card is a complete beam — shape,
-   direction, probability, and growth welded together. Merging cards adds
-   probability, unions direction, sums shape like Fourier harmonics, and adds
-   growth; order is commutative. The skill is scarce-slot allocation and accepting
-   bundled trade-offs — some cards are bad on purpose.
+2. **The deck is turtle programs you chain.** Every card is a complete little
+   program — grammar (shape + aim), pace, and a connector — that crawls the memory
+   as a deterministic L-system turtle. Slotting cards builds an *ordered connector
+   chain*, not a merged number; area is earned by fork density. The skill is
+   scarce-slot allocation, sequencing the chain, and accepting bundled trade-offs —
+   some cards are bad on purpose.
 3. **The number is visible.** Crack % is territory on a living field, never a
    bare bar.
 4. **Fractal reuse.** One battle engine, seven reskins + one new rule each —

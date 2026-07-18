@@ -12,8 +12,8 @@ breach. Draft v0.2 — everything here is up for rewrite.*
 > `{ grammar (F/L/R/K), pace, connector }`, a program is a deterministic **L-system
 > turtle** that crawls the board, coverage is earned by **fork (`K`) density**, and the
 > deck is an **ordered connector chain** — *order matters now*. Crucially: **there is
-> no probability/odds channel at all.** This script follows the shipped model. The two
-> design sheets need a reconciliation pass (flagged; not done here).
+> no probability/odds channel at all.** This script follows the shipped model.
+> (`GAME-SHEET.md` and `SPEC-SHEET.md` were reconciled to this model on 2026-07-18.)
 
 ## Design intent
 
