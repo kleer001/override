@@ -32,6 +32,70 @@ breach. Draft v0.2 — everything here is up for rewrite.*
 
 ---
 
+## BLOCKING — the implementable gate sequence
+
+*This is the spec: the ordered states, the timing, and — the point — the three
+**GATES** where the game stops and waits for the player to act. Voice lines are
+placeholders (`[V#]`, filled from the inventory at the bottom); tone is not locked, the
+sequence is. A naive player must exit this sequence having (1) seen a program move,
+(2) slotted a card, (3) aimed & fired, and (4) watched it win — nothing more.*
+
+**Two hard rules for the whole sequence:**
+- **Rigged first board (decision — recommend YES).** The tutorial battle uses a
+  guaranteed-EASY block with a slowed scan so a first-timer's first hack *cannot* lose.
+  The real game is ~50/50 even on EASY; losing your very first packet is a terrible
+  onboarding. Flagged as a decision, not yet wired.
+- **Input lockout.** During a non-interactive state, all input is swallowed except a
+  single **SKIP** affordance (hold, or a corner `[skip]`). During a GATE, *only* the
+  taught input does anything; everything else is inert, and an idle **nudge** line
+  re-prompts after ~4s.
+
+| # | State | ~Time | On screen | Voice `[V#]` | Player input | Advances when |
+|---|-------|-------|-----------|--------------|--------------|---------------|
+| 0 | **COLD OPEN** | 5–7s | Civilian machine: essay auto-types (FIELD), benign stats (STATUS), file browser (TRAY). Beat 1. | — | none (SKIP allowed) | timer, or SKIP |
+| 1 | **BLACKOUT** | ~2s | Essay stops on `questio_`; panels power-down top→bottom; `SIGNAL LOST`; true black + silence. Beat 2. | — | none | timer |
+| 2 | **THE QUESTION** | ~4s | Cursor blinks in; types `[V0a]` then `[V0b]`. Prompt waits. | `[V0a]`, `[V0b]` | *(optional)* press-any-key to "answer" | keypress (or ~2s auto) |
+| 3 | **THE REFUSAL** | ~2s | `> no` auto-types; `CITIZEN: COMPLIANT ✓` → `CITIZEN: ███████`; snap to black. | — | none (locked auto-`no`) | timer |
+| 4 | **RELIGHT + SHAPE DEMO** | ~5s | Panels relight **transformed** into battle UI. One starter card in TRAY. Game **auto-runs the TEST bench once** so the crawl draws itself across the FIELD. | `[V1]` (shape) | none (watch the demo) | bench finishes drawing |
+| 5 | **GATE ① — SLOT** | until done | TRAY card pulses; chain slot empty & highlighted; rest inert. | `[V2]` (slot) + nudge `[N2]` | **tap the card** to slot it | card is slotted |
+| 6 | **GATE ② — AIM & FIRE** | until done | Turret slides along the bottom edge; FIELD shows the block. | `[V3]` (aim/fire) + nudge `[N3]` | **tap to fire** the packet | packet fired |
+| 7 | **WATCH** | 6–12s | Turtles crawl, fork, race the (slowed) scan; coverage climbs; breach spectacle at ≥50%. | `[V4]` (optional hype) | none (SKIP allowed) | outcome = win |
+| 8 | **RELEASE** | ~3s | Breach lands; `[V5]` "you're GONE"; contact's cursor winks out; fall into the normal loop (draft/shop → next node). Tutorial flag set (never full-replays). | `[V5]` | none | → hands off to the live game |
+
+**Onboarding scope (what a naive player is taught, in order):** **shape** (states 4 —
+*see* it move), then the **slot** input (GATE ①), then the **aim+fire** input (GATE ②),
+then the **payoff** (state 7). That's the whole first run. Everything else — a *second*
+card, chain **order**, connectors, forks/growth, pace, the TEST bench as a tool,
+aggression — is intentionally absent here and belongs to later beats (see the deferral
+row in the Mechanic-mapping table).
+
+**Minimum to be "up and running" = one card slotted + one packet fired.** GATE ① can
+accept exactly one card (grey out the other slots on run one). GATE ② forgives
+aim entirely on run one (any column the tap lands on is fine on the rigged board).
+
+### Voice-line inventory (slugs — fill later, tone TBD)
+
+Every line the anonymous contact speaks, with an ID so blocking can reference them
+before the copy is final. Current punk-draft copy lives in Beat 3; these are the slots.
+
+| ID | Beat/State | Purpose | Placeholder slug |
+|----|-----------|---------|------------------|
+| `[V0a]` | 2 | provoke | "do you believe everything you're told?" |
+| `[V0b]` | 2 | provoke | "are you a good little citizen?" |
+| `[V1]` | 4 | teach SHAPE (a program moves/crawls; that wiggle is the program) | *(≈ "watch how it moves…")* |
+| `[V2]` | 5 | prompt SLOT (tap the card to load it) | *(≈ "load it. tap it.")* |
+| `[N2]` | 5 | idle nudge for GATE ① | *(≈ "the card. tap the card.")* |
+| `[V3]` | 6 | teach DIRECTION + prompt FIRE (turret slides, tap to fire) | *(≈ "slide it, lock it, hit EXEC")* |
+| `[N3]` | 6 | idle nudge for GATE ② | *(≈ "tap to fire. anywhere.")* |
+| `[V4]` | 7 | optional watch hype | *(≈ "there it goes—")* |
+| `[V5]` | 8 | release / handoff | *(≈ "then, kid? you're GONE.")* |
+
+*(The long Beat-3 monologue is the *fiction* reference; in the blocking it's split into
+`[V1]`/`[V2]`/`[V3]` so each lands **attached to the action it teaches**, not front-loaded
+as a wall of text before the player touches anything.)*
+
+---
+
 ## BEAT 1 — "A good citizen" (the civilian machine, ~5–7s of idle theatre)
 
 All three panels are lit, amber, ordinary. The player does nothing; this plays itself
