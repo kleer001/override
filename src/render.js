@@ -8,7 +8,7 @@ import { buildChain, beamGutterLines, cardLines, cardLabel, CARDS } from './card
 import {
   COLS, ROWS, FIELD, GUTTER, TRAY, FIELD_OX, FIELD_OY,
   HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_TEST, BTN_TEST_RESET, BTN_TEST_PLAY,
-  BTN_START, BTN_FIRE, BTN_CONTINUE,
+  BTN_START, BTN_FIRE, BTN_CONTINUE, AUTHOR_SYMS, BTN_AUTHOR_DEL, BTN_AUTHOR_RUN,
   BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, BTN_TITLE_CONTINUE, BTN_TITLE_NEW,
 } from './layout.js';
 export { COLS, ROWS };
@@ -80,7 +80,7 @@ function drawBlockCells(g, machine, sim) {
   if (sim) g[FIELD_OY + FIELD_H - 1][FIELD_OX + params.p] = '▲';                        // turret
 }
 
-const SHOP_TYPE = { deckcard: 'DECK', card: 'UNLOCK', retry: '1-USE' };
+const SHOP_TYPE = { deckcard: 'DECK', card: 'UNLOCK', retry: '1-USE', upgrade: 'UPGRADE' };
 
 function drawShop(g, game) {
   const d = game.shopData || { root: 0, retry: 0, items: [] };
@@ -129,6 +129,10 @@ function drawField(g, game, now) {
     drawBlockCells(g, game.testSim ? game.testSim.machine : game.testMachine, game.testSim);
     return;
   }
+  if (phase === 'author') {   // the tutorial: the literal turtle's drawn path (static preview)
+    drawBlockCells(g, game.authorPreview ? game.authorPreview.machine : run.machine, game.authorPreview);
+    return;
+  }
   const sim = node && node.sim;
   drawBlockCells(g, run.machine, sim);
   if (phase === 'target') drawAim(g, now);
@@ -167,8 +171,14 @@ function drawGutter(g, game) {
   if (node && (phase === 'exec' || phase === 'result')) {
     const sim = node.sim, cp = crackPct(node);
     L('TRACE'); L(bar((sim.scanRow / FIELD_H) * 100, 10)); L(`${sim.scanRow}/${FIELD_H}`); gap();
-    L('COVERAGE'); L(bar(cp, 10)); L(`${cp.toFixed(0)}% /${WIN_COVERAGE}%`);
-    L(sim.breachLeft > 0 ? `HOLD ${sim.breachLeft}` : sim.breachLeft === 0 ? 'BREACH!' : ''); gap();
+    if (sim.collision) {   // coverage regime: fill the block, hold the breach
+      L('COVERAGE'); L(bar(cp, 10)); L(`${cp.toFixed(0)}% /${WIN_COVERAGE}%`);
+      L(sim.breachLeft > 0 ? `HOLD ${sim.breachLeft}` : sim.breachLeft === 0 ? 'BREACH!' : '');
+    } else {               // survival regime: just stay alive to the bottom
+      L('DRAWN'); L(bar(cp, 10)); L(`${cp.toFixed(0)}%`);
+      L(sim.turtles.length ? 'THREAD ALIVE' : 'CRASHED');
+    }
+    gap();
     L(`STRANDS ${sim.turtles.length}`); gap();
     L('BEAM'); node.beamLines.forEach(L);                       // cached at fire — no per-frame merge
     gap();
@@ -204,15 +214,27 @@ function drawGutter(g, game) {
     if (base < AGGRO_BASE) L('TRAINING');
     drawButton(g, BTN_AGGRO_DOWN, run.root < AGGRO_REDUCE_COST);
     drawButton(g, BTN_AGGRO_UP, false);
+  } else if (phase === 'author') {
+    L('WRITE A PROGRAM'); gap();
+    L('GRAMMAR'); L((game.authorGrammar || '—').slice(0, GUTTER.w - 3)); gap();
+    L('GOAL: keep your'); L('thread alive to'); L('the trace-bottom.'); gap();
+    L('tip: 3+ turns,'); L('balance L and R.'); gap();
+    legend(L);
   }
 
   // transient feedback flows right below the stats (above the fixed buttons).
   if (game.message) { gap(); wrap(game.message, GUTTER.w - 3).slice(0, 3).forEach((ln) => L(ln)); }
 }
 
-// --- TRAY: hand / draft / loadout ---
+// --- TRAY: hand / draft / loadout / author ---
 function drawTray(g, game) {
   const { phase } = game;
+  if (phase === 'author') {
+    for (const b of AUTHOR_SYMS) drawButton(g, b, false);
+    drawButton(g, BTN_AUTHOR_DEL, !game.authorGrammar);
+    drawButton(g, BTN_AUTHOR_RUN, !game.authorGrammar.includes('F'));
+    return;
+  }
   if (phase === 'draft') {
     game.draft.forEach((c, i) => drawCard(g, DRAFT_CARDS[i].x, DRAFT_CARDS[i].y, String(i + 1), c, false));
   } else if (phase === 'assemble') {
@@ -232,18 +254,20 @@ function drawTray(g, game) {
 // panel titles change with the phase; the panels themselves never move
 function titles(phase) {
   const tray = phase === 'draft' ? 'DRAFT — bank a card into your deck'
-    : phase === 'assemble' ? 'LOADOUT — slot cards, then ▶ START'
-      : phase === 'target' ? 'AIM — the turret sweeps · time your LAUNCH'
-        : phase === 'test' ? 'LOADOUT — the beam under test'
-          : 'LOADOUT — the beam you fired';
+    : phase === 'author' ? 'WRITE — F/L/R build your program · ▶ RUN'
+      : phase === 'assemble' ? 'LOADOUT — slot cards, then ▶ START'
+        : phase === 'target' ? 'AIM — the turret sweeps · time your LAUNCH'
+          : phase === 'test' ? 'LOADOUT — the beam under test'
+            : 'LOADOUT — the beam you fired';
   const field = phase === 'shop' ? 'ROOT SHOP'
     : phase === 'test' ? 'TEST BENCH — a blank block'
-      : 'THE MACHINE — one memory block';
+      : phase === 'author' ? 'YOUR MACHINE — draw a self-avoiding line'
+        : 'THE MACHINE — one memory block';
   return { field, tray };
 }
 
 // A 5×5 block-letter font (built from █, which the embedded GridMono covers) — the
-// "2× font" for the boot/title banner. Only the letters OVERRIDE needs are defined.
+// "2× font" for the boot/title banner. Only the glyphs the title "OVERRIDE 1983" needs.
 const GLYPH5 = {
   O: ['█████', '█   █', '█   █', '█   █', '█████'],
   V: ['█   █', '█   █', '█   █', ' █ █ ', '  █  '],
@@ -251,7 +275,17 @@ const GLYPH5 = {
   R: ['████ ', '█   █', '████ ', '█  █ ', '█   █'],
   I: ['█████', '  █  ', '  █  ', '  █  ', '█████'],
   D: ['████ ', '█   █', '█   █', '█   █', '████ '],
+  1: ['  ██ ', ' █ █ ', '   █ ', '   █ ', '█████'],
+  9: ['█████', '█   █', '█████', '    █', '█████'],
+  8: ['█████', '█   █', '█████', '█   █', '█████'],
+  3: ['█████', '    █', ' ████', '    █', '█████'],
 };
+// width of `text` in columns when stamped by drawBig (5-wide glyphs + 1-col gaps).
+function bigWidth(text) {
+  let w = 0;
+  for (const chr of text.toUpperCase()) w += GLYPH5[chr] ? 6 : 3;
+  return Math.max(0, w - 1);   // drop the trailing gap
+}
 // stamp `text` as 5-tall block letters from (x,y); letters are 5 wide + a 1-col gap.
 function drawBig(g, x, y, text) {
   let cx = x;
@@ -261,21 +295,19 @@ function drawBig(g, x, y, text) {
     else cx += 3;   // unknown/space
   }
 }
+// centre a big-font line horizontally on the screen.
+const drawBigCenter = (g, y, text) => drawBig(g, Math.max(1, Math.floor((COLS - bigWidth(text)) / 2)), y, text);
 const center = (g, y, s) => stamp(g, Math.max(0, Math.floor((COLS - s.length) / 2)), y, s);
 
 // The boot / title screen — a full-screen takeover (no three-panel layout). NEW
 // wipes the save; CONTINUE resumes. game.titleWins carries the saved breach count.
 function drawTitle(g, game) {
   frame(g, 0, 0, COLS, ROWS);
-  drawBig(g, 16, 6, 'OVERRIDE');
-  center(g, 13, 'an idle deckbuilding intrusion battler · 1983');
+  drawBigCenter(g, 9, 'OVERRIDE 1983');
   const wins = game.titleWins || 0;
-  center(g, 16, wins > 0 ? `saved progress — ${wins} breach${wins === 1 ? '' : 'es'} logged`
-    : 'no saved progress yet — jack in to begin');
+  if (wins > 0) center(g, 18, `${wins} breach${wins === 1 ? '' : 'es'} logged`);
   drawButton(g, BTN_TITLE_CONTINUE, false);
   drawButton(g, BTN_TITLE_NEW, false);
-  center(g, 30, 'CONTINUE resumes your run · NEW wipes the save and starts fresh');
-  center(g, 34, '[ENTER] continue     [N] new');
 }
 
 export function buildScreen(game, now = 0) {

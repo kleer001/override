@@ -14,7 +14,9 @@ function makeShop(root = 1000) {
   const draftPool = () => DRAFT_POOL.concat(unlockedCards().map((id) => SHOP_CARDS[id]).filter(Boolean));
   const deck = [{ ...CARDS['SCRIPT.COM'] }];       // the one-card starter
   let retry = 0;
-  const owned = (it) => it.kind === 'card' ? unlockedCards().includes(CARD_UNLOCK[it.id]) : false;
+  const collision = () => store.get('collision') === '1';
+  const owned = (it) => it.kind === 'card' ? unlockedCards().includes(CARD_UNLOCK[it.id])
+    : it.kind === 'upgrade' ? (it.id === 'collision' && collision()) : false;
   function buy(id) {
     const it = SHOP_ITEMS.find((s) => s.id === id);
     if (!it || owned(it) || root < it.cost) return false;
@@ -22,9 +24,10 @@ function makeShop(root = 1000) {
     if (it.kind === 'deckcard') deck.push({ ...CARDS[DECK_CARD[it.id]] });
     else if (it.kind === 'card') { const u = unlockedCards(); u.push(CARD_UNLOCK[it.id]); store.set('cards', JSON.stringify(u)); }
     else if (it.kind === 'retry') retry++;
+    else if (it.kind === 'upgrade') store.set('collision', '1');
     return true;
   }
-  return { draftPool, buy, owned, deck, getRetry: () => retry, getRoot: () => root };
+  return { draftPool, buy, owned, deck, collision, getRetry: () => retry, getRoot: () => root };
 }
 
 test('shop catalog is well-formed and self-consistent', () => {
@@ -64,6 +67,14 @@ test('consumables: retry tokens stack', () => {
   const s = makeShop();
   s.buy('retry'); s.buy('retry');
   assert.equal(s.getRetry(), 2);
+});
+
+test('upgrade: COLLISION DETECTION is a one-time permanent unlock', () => {
+  const s = makeShop();
+  assert.ok(!s.collision());
+  assert.ok(s.buy('collision'));
+  assert.ok(s.collision());
+  assert.ok(!s.buy('collision'), 'already owned — cannot re-buy');
 });
 
 test('cannot buy above your ROOT balance', () => {

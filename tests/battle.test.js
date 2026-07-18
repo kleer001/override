@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { CARDS, buildChain, CONNECTORS } from '../src/cards.js';
+import { CARDS, buildChain, CONNECTORS, cardFromGrammar, AUTHORED_ID } from '../src/cards.js';
 import { generateMachine, createNode, runBattle, runBattlePeak, rewardMult, draftPicks,
-  createTestSim, stepSim } from '../src/battle.js';
+  createTestSim, stepSim, blankMachine, coverageReward } from '../src/battle.js';
+import { createSim } from '../src/beam.js';
 import { WIN_COVERAGE, idx, FIELD_H, energyTo, COST, OPEN, generateMachineUpTo, tierRank } from '../src/terrain.js';
 
 // A strong chain (dense, fast, forking) and the deliberately weak one-card starter.
@@ -122,6 +123,63 @@ test('TEST bench: blank block, no scan — the pattern draws until every strand 
   assert.equal(sim.scanRow, 0, 'the scan never moves on the bench');
   assert.ok(sim.cov > 10, `the chain should paint the open block (got ${sim.cov.toFixed(1)}%)`);
   assert.equal(sim.reTread, 0);
+});
+
+test('collision gate: OFF ⇒ literal Tron turtle crashes on its own trail; ON ⇒ reroutes', () => {
+  // A closed square grammar (FFRR-style) re-enters its start cell after one loop.
+  // Literal (collision off): that F crashes into the burned trail → the strand dies,
+  // so it never re-treads (reTread stays 0 by dying, not by avoiding).
+  const litSim = createSim(3, 0, { p: 31, chain: [{ grammar: 'FFRR', pace: 1, connector: 'SCATTER' }],
+    scanSpeed: 0, reclaim: 0, breachHold: 0, winCoverage: 101, collision: false });
+  let g = 0; while (litSim.turtles.length && g++ < 5000) stepSim(litSim);
+  assert.ok(g < 5000, 'the literal turtle must die (crash), not loop forever');
+  assert.equal(litSim.reTread, 0, 'a crash never burns a re-tread cell');
+
+  // Same grammar with collision ON reroutes around the trail and keeps drawing longer.
+  const onSim = createSim(3, 0, { p: 31, chain: [{ grammar: 'FFRR', pace: 1, connector: 'SCATTER' }],
+    scanSpeed: 0, reclaim: 0, breachHold: 0, winCoverage: 101, collision: true });
+  let g2 = 0, onTicks = 0; while (onSim.turtles.length && g2++ < 5000) { stepSim(onSim); onTicks++; }
+  assert.ok(onTicks > g, 'the rerouting turtle survives longer than the literal one');
+  assert.equal(onSim.reTread, 0, 'the reroute never re-treads');
+});
+
+test('survival mode: a balanced self-avoiding line outlasts the scan; a straight one crashes', () => {
+  // collision OFF (pre-collision): win = a strand alive at scan-bottom having drawn
+  // ≥ survivalMinCells. Balanced turns snake and survive; a straight runner or a
+  // no-move formula does not (research/lsystem-growth.md: the tutorial recipe).
+  const survive = (grammar) => {
+    const node = createNode(blankMachine(1, 'YOUR MACHINE'), 0, 0.30, 0.40,
+      [cardFromGrammar(grammar)], { collision: false, triggerCol: 31 });
+    runBattle(node);
+    return node.outcome === 'win';
+  };
+  assert.ok(survive('FLLFRR'), 'a balanced-turn snake survives');
+  assert.ok(survive('FLLLRRR'), 'another balanced recipe survives');
+  assert.ok(!survive('FFFFFFFFFF'), 'a straight runner races off the block and crashes');
+  assert.ok(!survive('RRRR'), 'a formula that never advances draws nothing and cannot win');
+});
+
+test('createTestSim([]) is an empty, clean board — the author preview never shows a stale trail', () => {
+  // Empty grammar (all DELed) must build a fresh blank sim with no strands and no
+  // burns, so the author field never falls back to a prior attempt's trail.
+  const sim = createTestSim([], false);
+  assert.equal(sim.turtles.length, 0, 'no strands');
+  assert.equal(sim.cellsBurned, 0, 'nothing drawn');
+  assert.ok(!sim.machine.burned.some((b) => b), 'board is unburned');
+});
+
+test('cardFromGrammar: an authored card carries its grammar under the stable authored id', () => {
+  const c = cardFromGrammar('FL9R xRF');   // sanitised to valid symbols
+  assert.equal(c.id, AUTHORED_ID);
+  assert.equal(c.grammar, 'FLRRF', 'unknown symbols dropped, F/L/R kept');
+  assert.equal(c.pace, 1);
+});
+
+test('coverageReward: pays crack% × mult always — a scratch pays little, a breach pays full', () => {
+  assert.equal(coverageReward(0, 0.40, 0.40), 0);
+  assert.equal(coverageReward(15, 0.40, 0.40), 15);   // survival scratch
+  assert.equal(coverageReward(50, 0.40, 0.40), 50);   // a bare breach
+  assert.ok(coverageReward(50, 0.60, 0.40) > 50, 'cranking aggression above baseline pays more');
 });
 
 // --- balance (research/lsystem-growth.md §5, §10) ---------------------------

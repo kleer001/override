@@ -6,19 +6,19 @@
 // again. The deck grows between runs.
 
 import { mulberry32, shuffle } from './rng.js';
-import { startingDeck, DRAFT_POOL, SHOP_CARDS, CARDS } from './cards.js';
+import { DRAFT_POOL, SHOP_CARDS, CARDS, cardFromGrammar, AUTHORED_ID } from './cards.js';
 import { SHOP_ITEMS, DECK_CARD, CARD_UNLOCK } from './shop.js';
 import { createNode, fire, stepBattle, coverage, aimColAt, REDRAW_COST, SLOTS,
-  blankMachine, createTestSim, stepSim,
-  rewardMult, draftPicks, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
+  blankMachine, createTestSim, stepSim, coverageReward, SURVIVAL_REWARD,
+  draftPicks, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
 import { buildScreen } from './render.js';
 import { composeBoard, detonate, setReducedMotion } from './juice.js';
 import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
 import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_TEST, BTN_TEST_RESET, BTN_TEST_PLAY,
-  BTN_START, BTN_FIRE,
+  BTN_START, BTN_FIRE, AUTHOR_SYMS, BTN_AUTHOR_DEL, BTN_AUTHOR_RUN,
   BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, BTN_TITLE_CONTINUE, BTN_TITLE_NEW, inRect } from './layout.js';
-import { generateMachineUpTo, FIELD_W, WIN_COVERAGE } from './terrain.js';
+import { generateMachineUpTo, FIELD_W } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
 
 const screen = document.getElementById('screen');
@@ -52,16 +52,31 @@ const game = {
   phase: 'assemble', run: null, node: null,
   program: new Array(SLOTS).fill(null), selection: [], hand: [], draft: [],
   testSim: null, testMachine: null,
+  authorGrammar: '', authorPreview: null, authoring: false,
   message: '', bannerLines: [], seed: 0, redrawCount: 0,
 };
 
-const loadRoot = () => parseInt(localStorage.getItem(ROOT_KEY) || '120', 10) || 120;
+// Lean start: a fresh player opens with 0 ROOT and authors their first card (no
+// handed-out deck). ROOT is banked per run in proportion to coverage.
+const loadRoot = () => parseInt(localStorage.getItem(ROOT_KEY) || '0', 10) || 0;
 const saveRoot = (v) => localStorage.setItem(ROOT_KEY, String(v));
+
+// --- The authored first card: its grammar persists on its own; the deck stores ids
+// (AUTHORED_ID for the authored card) and rehydrates through cardFromGrammar. ---
+const AUTHORED_KEY = 'override.authored';       // the player's committed first-card grammar
+const isAuthored = () => !!localStorage.getItem(AUTHORED_KEY);
+const authoredCard = () => cardFromGrammar(localStorage.getItem(AUTHORED_KEY) || 'F');
+const rehydrate = (id) => (id === AUTHORED_ID ? authoredCard() : { ...CARDS[id] });
 const loadDeck = () => {
   const raw = localStorage.getItem(DECK_KEY);
-  return raw ? JSON.parse(raw).map((id) => ({ ...CARDS[id] })).filter((c) => c.id) : startingDeck();
+  return raw ? JSON.parse(raw).map(rehydrate).filter((c) => c && c.id) : [];
 };
 const saveDeck = (deck) => localStorage.setItem(DECK_KEY, JSON.stringify(deck.map((c) => c.id)));
+
+// --- COLLISION DETECTION: the base upgrade that flips survival play into coverage
+// play (see stepSim / beamParams / difficulty gating). Persisted once bought. ---
+const CD_KEY = 'override.collision';
+const hasCollision = () => localStorage.getItem(CD_KEY) === '1';
 const loadPlays = () => parseInt(localStorage.getItem(PLAYS_KEY) || '0', 10) || 0;
 const savePlays = (v) => localStorage.setItem(PLAYS_KEY, String(v));
 const loadWins = () => parseInt(localStorage.getItem(WINS_KEY) || '0', 10) || 0;
@@ -82,6 +97,7 @@ const draftPool = () => DRAFT_POOL.concat(unlockedCards().map((id) => SHOP_CARDS
 
 function shopOwned(item) {
   if (item.kind === 'card') return unlockedCards().includes(CARD_UNLOCK[item.id]);
+  if (item.kind === 'upgrade') return item.id === 'collision' && hasCollision();
   return false;   // deck-adds / consumables are repeatable
 }
 
@@ -99,20 +115,23 @@ const saveAggro = (v) => localStorage.setItem(AGGRO_KEY, clampDDA(v).toFixed(2))
 // nudge the persisted baseline after an outcome (applies to the NEXT run).
 const adaptAggro = (won) => saveAggro(loadAggro() + (won ? DDA_UP : -DDA_DOWN));
 
-// Terrain difficulty CEILING keyed to WINS — the block generator rerolls until it's
-// at most this tier, so RNG can't hand you an unwinnable wall before you're ready.
-// (The aggression DDA above tunes the trace SPEED; this gates the map's terrain.)
-// Clear a tier (a win) to unlock the next; fully-random blocks arrive at 3 wins.
-function difficultyCeil(wins) {
-  if (wins <= 0) return 'EASY';    // no wins yet: a soft block to learn on
-  if (wins === 1) return 'MED';    // cleared one → step up
-  if (wins === 2) return 'HARD';
-  return 'BRUTAL';                 // 3+ wins: any block the generator rolls
+// Terrain difficulty CEILING keyed to CONQUERS (coverage wins only — survival wins
+// don't count, so buying collision detection drops you onto a fresh EASY *walled*
+// block, not a BRUTAL one). The block generator rerolls until it's at most this tier,
+// so RNG can't hand you an unwinnable wall before you're ready.
+function difficultyCeil(conquers) {
+  if (conquers <= 0) return 'EASY';    // just got collision: a soft walled block to learn on
+  if (conquers === 1) return 'MED';
+  if (conquers === 2) return 'HARD';
+  return 'BRUTAL';                      // 3+ conquers: any block the generator rolls
 }
 
 function startRun() {
   const plays = loadPlays(), wins = loadWins();
-  const machine = generateMachineUpTo((Date.now() ^ 0x9e3779b9) >>> 0, difficultyCeil(wins));
+  // Pre-collision runs (incl. the tutorial) are on a blank block — literal turtles
+  // can't navigate walls yet, so there are none. Post-collision, terrain returns.
+  const seed = (Date.now() ^ 0x9e3779b9) >>> 0;
+  const machine = hasCollision() ? generateMachineUpTo(seed, difficultyCeil(wins)) : blankMachine(seed, 'YOUR MACHINE');
   game.seed = machine.seed;                          // adopt the chosen block's seed for hand/draft RNG
   const baseAggro = loadAggro();                      // adaptive baseline (DDA), tuned by past outcomes
   game.run = {
@@ -125,7 +144,8 @@ function startRun() {
   trauma.reset();
   game.node = null;
   game.bannerLines = [];
-  newAssemble();                                   // straight into the loadout — no character picker
+  if (isAuthored()) newAssemble();                 // returning player → the loadout
+  else newAuthor();                                // first ever run → author your first card
 }
 
 // The boot / title screen. CONTINUE resumes saved progress; NEW wipes it.
@@ -135,11 +155,11 @@ function showTitle() {
   game.run = null; game.node = null; game.bannerLines = []; game.message = '';
   draw();
 }
-// Wipe every persisted key so NEW truly starts from zero (deck reverts to the
-// starter, ROOT to 120, wins/plays to 0). Keep the deck-version stamp current so
-// the fresh starter isn't re-wiped by the migration guard on the next load.
+// Wipe every persisted key so NEW truly starts from zero (no deck — you re-author your
+// first card, ROOT to 0, no collision detection). Keep the deck-version stamp current
+// so the migration guard doesn't re-wipe on the next load.
 function resetSave() {
-  for (const k of [ROOT_KEY, DECK_KEY, PLAYS_KEY, WINS_KEY, AGGRO_KEY, CARDS_KEY, RETRY_KEY]) localStorage.removeItem(k);
+  for (const k of [ROOT_KEY, DECK_KEY, PLAYS_KEY, WINS_KEY, AGGRO_KEY, CARDS_KEY, RETRY_KEY, AUTHORED_KEY, CD_KEY]) localStorage.removeItem(k);
   localStorage.setItem(DECK_VERSION_KEY, DECK_VERSION);
 }
 
@@ -236,6 +256,55 @@ function exitTest() {
   draw();
 }
 
+// --- AUTHOR phase (first run only): type an F/L/R grammar, watch the literal turtle
+// draw it, then RUN a survival battle. Win by keeping the self-avoiding thread alive
+// to the scan-bottom. On win the card is kept (persisted); on a crash, revise and
+// retry. This is where the player learns what the symbols do.
+const GRAMMAR_MAX = 12;
+function newAuthor() {
+  game.phase = 'author';
+  game.node = null;
+  game.authoring = true;
+  game.authorGrammar = '';           // always a blank slate — never carry the last recipe
+  refreshAuthorPreview();
+  game.message = '';
+  game.bannerLines = [];
+  draw();
+}
+// Draw the literal turtle to completion on a FRESH blank block so the field previews
+// the exact self-avoiding (or self-crossing) shape the current grammar makes. Always
+// builds its own sim (empty grammar → a clean empty board), so it never falls back to
+// the run's machine and never shows a stale trail from a prior attempt.
+function refreshAuthorPreview() {
+  const g = game.authorGrammar;
+  const sim = createTestSim(g ? [cardFromGrammar(g)] : [], false);   // literal (collision off)
+  if (g) { let guard = 0; while (sim.turtles.length && guard++ < 3000) stepSim(sim); }
+  game.authorPreview = sim;
+}
+function addAuthorSym(s) {
+  if (game.phase !== 'author' || game.authorGrammar.length >= GRAMMAR_MAX) return;
+  game.authorGrammar += s;
+  refreshAuthorPreview();
+  sfx.load();
+  draw();
+}
+function delAuthorSym() {
+  if (game.phase !== 'author' || !game.authorGrammar) return;
+  game.authorGrammar = game.authorGrammar.slice(0, -1);
+  refreshAuthorPreview();
+  sfx.undo();
+  draw();
+}
+function authorRun() {
+  if (game.phase !== 'author') return;
+  if (!game.authorGrammar.includes('F')) { game.message = 'add at least one F — the program has to move.'; draw(); return; }
+  const card = cardFromGrammar(game.authorGrammar);
+  game.run.deck = [card];                       // the card you're about to keep
+  game.program = [card, null, null];
+  game.run.machine.burned.fill(0);              // fresh board each attempt — no leftover trail to crash into
+  fireAt((FIELD_W - 1) >> 1);                    // fire from centre — no aiming in the tutorial
+}
+
 function gotoTarget() {
   if (!game.program.some(Boolean)) return;
   game.phase = 'target';
@@ -264,11 +333,12 @@ function lowerAggro() {
   sfx.ui(); draw();
 }
 
-// Fire the turret at a block column (0..FIELD_W-1). This commits the run's single packet.
+// Fire the turret at a block column (0..FIELD_W-1). This commits the run's single
+// packet. Collision state picks the whole regime (turtle / scan / win mode).
 function fireAt(blockCol) {
   const r = game.run;
   const triggerCol = Math.max(0, Math.min(FIELD_W - 1, blockCol | 0));
-  game.node = createNode(r.machine, 0, r.aggression, r.baseAggro, game.program.slice(), { triggerCol });
+  game.node = createNode(r.machine, 0, r.aggression, r.baseAggro, game.program.slice(), { triggerCol, collision: hasCollision() });
   game.phase = 'exec';
   startExec();
 }
@@ -277,7 +347,9 @@ async function startExec() {
   resumeAudio();
   sfx.exec();
   const node = game.node;
-  game.message = 'WATCH — the strands grow; hold coverage through the breach.';
+  game.message = hasCollision()
+    ? 'WATCH — the strands grow; hold coverage through the breach.'
+    : 'WATCH — keep your thread alive until the trace hits bottom.';
   await sleep(200);
   fire(node);
   kick(0.35);
@@ -303,18 +375,27 @@ function showResult() {
   const node = game.node, r = game.run;
   game.phase = 'result';
   node.crack = coverage(node.sim);
-  adaptAggro(node.outcome === 'win');   // DDA: nudge the baseline for the NEXT run (win up, loss down)
-  if (node.outcome === 'win') {
-    const mult = rewardMult(node.aggro, node.baseAggro);
-    const overkill = Math.round(Math.max(0, node.crack - WIN_COVERAGE) * mult);   // coverage past 50% pays extra
-    const reward = Math.round(50 * mult) + overkill;
-    r.root += reward; saveRoot(r.root);
-    r.wins += 1; saveWins(r.wins);                    // a clear lifts the difficulty ceiling next run
-    r.pendingDrafts = draftPicks(node.aggro, node.baseAggro);
-    kick(0.7);
-    sfx.lock(); sfx.win();
-    game.bannerLines = ['>> THE MACHINE BREACHED <<', `+${reward} ROOT · ${r.pendingDrafts} card draft`];
-    game.message = `breached at ${node.crack.toFixed(0)}% (aggro x${node.aggro.toFixed(2)}).`;
+  const won = node.outcome === 'win';
+  const conquered = won && hasCollision();            // a real 50% breach (post-collision)
+  // Coverage regime pays the high-water mark (area burned); survival regime pays a
+  // flat bounty for staying alive (a thin line covers almost nothing).
+  const reward = hasCollision()
+    ? coverageReward(node.sim.peakCov, node.aggro, node.baseAggro)
+    : (won ? SURVIVAL_REWARD : 0);
+  r.root += reward; saveRoot(r.root);                 // ALWAYS bank ROOT — win or loss, no penalty
+  adaptAggro(won);                                    // DDA: nudge the baseline for the NEXT run
+  if (won) {
+    if (game.authoring) { localStorage.setItem(AUTHORED_KEY, game.authorGrammar); saveDeck(r.deck); }   // keep the card
+    kick(0.7); sfx.lock(); sfx.win();
+    if (conquered) {
+      r.wins += 1; saveWins(r.wins);                  // a breach lifts the terrain ceiling next run
+      r.pendingDrafts = draftPicks(node.aggro, node.baseAggro);
+      game.bannerLines = ['>> THE MACHINE BREACHED <<', `+${reward} ROOT · ${r.pendingDrafts} card draft`];
+      game.message = `breached at ${node.crack.toFixed(0)}% (aggro x${node.aggro.toFixed(2)}).`;
+    } else {
+      game.bannerLines = ['>> YOUR THREAD SURVIVED <<', `+${reward} ROOT · program held`];
+      game.message = 'alive when the trace hit bottom. buy COLLISION DETECTION to start conquering.';
+    }
   } else if (r.retry > 0) {
     r.retry -= 1; saveRetry(r.retry);
     game.retried = true;
@@ -323,17 +404,21 @@ function showResult() {
     game.message = 'close call.';
   } else {
     sfx.lose();
-    const kept = Math.floor(r.root * 0.5); saveRoot(kept);
-    game.bannerLines = ['>> TRACED — they found you <<', `banked ${kept} ROOT`];
-    game.message = 'run over.';
+    game.bannerLines = game.authoring
+      ? ['>> THREAD CRASHED <<', 'try again — a fresh slate']
+      : ['>> TRACED — they found you <<', `+${reward} ROOT banked`];
+    game.message = game.authoring ? 'it crossed itself or ran off the block — try 3+ balanced turns.' : 'run over.';
   }
   draw();
 }
 
 function advance() {
-  if (game.node.outcome === 'win') startDraft();      // bank a card, then the shop
-  else if (game.retried) { game.retried = false; newAssemble(); }   // retry: re-run the same block
-  else openShop();
+  const won = game.node.outcome === 'win';
+  if (game.authoring && !won) { newAuthor(); return; }   // crashed mid-tutorial → revise (grammar kept)
+  game.authoring = false;
+  if (won && hasCollision()) startDraft();               // a real breach → bank a card, then the shop
+  else if (game.retried) { game.retried = false; newAssemble(); }   // retry token: re-run the block
+  else openShop();                                       // survival win / loss → straight to the shop
 }
 
 // --- ROOT shop ---
@@ -362,8 +447,9 @@ function buyShop(id) {
   if (item.kind === 'deckcard') { game.run.deck.push({ ...CARDS[DECK_CARD[item.id]] }); saveDeck(game.run.deck); }
   else if (item.kind === 'card') { const u = unlockedCards(); u.push(CARD_UNLOCK[item.id]); localStorage.setItem(CARDS_KEY, JSON.stringify(u)); }
   else if (item.kind === 'retry') { saveRetry(loadRetry() + 1); }
+  else if (item.kind === 'upgrade') { localStorage.setItem(CD_KEY, '1'); }
   sfx.lock();
-  game.message = `bought ${item.name}.`;
+  game.message = item.id === 'collision' ? 'COLLISION DETECTION online — jack in to conquer.' : `bought ${item.name}.`;
   refreshShop();
   draw();
 }
@@ -400,6 +486,10 @@ function onTapCell(col, row) {
   } else if (game.phase === 'test') {
     if (inRect(col, row, BTN_TEST_RESET)) return resetTest();
     if (inRect(col, row, BTN_TEST_PLAY)) return exitTest();
+  } else if (game.phase === 'author') {
+    for (const b of AUTHOR_SYMS) if (inRect(col, row, b)) return addAuthorSym(b.sym);
+    if (inRect(col, row, BTN_AUTHOR_DEL)) return delAuthorSym();
+    if (inRect(col, row, BTN_AUTHOR_RUN)) return authorRun();
   } else if (game.phase === 'target') {
     if (inRect(col, row, BTN_AGGRO_DOWN)) return lowerAggro();
     if (inRect(col, row, BTN_AGGRO_UP)) return raiseAggro();
@@ -420,7 +510,7 @@ window.addEventListener('keydown', (e) => {
   resumeAudio();
   const k = e.key;
   if (game.phase === 'title') {
-    if (k === 'Enter') startRun();
+    if (k === 'Enter' || k === 'c' || k === 'C') startRun();
     else if (k === 'n' || k === 'N') { resetSave(); startRun(); }
   } else if (game.phase === 'assemble') {
     if (k >= '1' && k <= '5') toggleSlot(+k - 1);          // press again to unload
@@ -430,6 +520,11 @@ window.addEventListener('keydown', (e) => {
   } else if (game.phase === 'test') {
     if (k === 'r' || k === 'R') resetTest();
     else if (k === 'Enter') exitTest();
+  } else if (game.phase === 'author') {
+    const u = k.toUpperCase();
+    if (u === 'F' || u === 'L' || u === 'R') addAuthorSym(u);
+    else if (k === 'Backspace') { e.preventDefault(); delAuthorSym(); }
+    else if (k === 'Enter') authorRun();
   } else if (game.phase === 'target') {
     if (k === 'Enter' || k === ' ') launch();          // LAUNCH at the swinging turret
     else if (k === '+' || k === '=') raiseAggro();

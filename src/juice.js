@@ -67,6 +67,7 @@ const escLine = (ln) => ln.replace(/[<>&]/g, esc);
 function boardMachine(game) {
   if (game.phase === 'shop') return null;
   if (game.phase === 'test') return game.testSim ? game.testSim.machine : null;
+  if (game.phase === 'author') return game.authorPreview ? game.authorPreview.machine : null;
   return (game.run && game.run.machine) || null;
 }
 

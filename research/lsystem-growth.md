@@ -89,11 +89,16 @@ State: `{x, y, heading, pc}`. The program string is read on a **loop**
 (`pc mod len`), so a 4-symbol grammar like `FFRF` run past its length becomes a
 spiral — large emergent form from a tiny grammar.
 
-**Searching reroute (the "not smart" rule).** On `F`, probe headings in the fixed
-order `0, +1, −1, +2, −2, +3, −3, +4` and take the **first** cell that is
-on-board, non-wall, and unburned. If none, the turtle dies. This makes the blaze
-hug walls and thread gaps with zero pathfinding — reactive, deterministic, and it
-never re-treads its own trail.
+**`F` has two modes, gated by the COLLISION-DETECTION upgrade (§12).**
+- *Collision on* — the **searching reroute** (the "not smart" rule): on `F`, probe
+  headings in the fixed order `0, +1, −1, +2, −2, +3, −3, +4` and take the **first**
+  cell that is on-board, non-wall, and unburned. If none, the turtle dies. This makes
+  the blaze hug walls and thread gaps with zero pathfinding — reactive, deterministic,
+  and it never re-treads its own trail. The full game runs here.
+- *Collision off* — the **literal Tron turtle**: step the single cell in the current
+  heading; if it is off-board, a wall, or already burned, the strand **crashes** and
+  dies. Crossing your own trail is fatal, so a self-avoiding grammar is the whole
+  skill. This is the pre-upgrade / tutorial regime.
 
 **Fork.** `K` spawns a child near the current cell (a short forward probe finds it
 live ground so it doesn't trap on the parent's burned cell) with heading turned `+2`
@@ -138,6 +143,14 @@ the breach timer. With one anchor per card, coverage *spikes and decays* (strand
 trap out, then the scan erodes) rather than plateauing, so `breachHold` is a weak
 knob (4 vs 15 ticks barely move win rate) — the load-bearing terminal constants are
 WIN_COVERAGE and the aggression band.
+
+**Survival win (collision off, §12).** Before the collision-detection upgrade the win
+flips: keep a self-avoiding literal strand alive until the scan bottoms out (having
+drawn ≥`survivalMinCells`), on a fixed brisk scan (`SURVIVAL_SCAN`, ~8s). Because a
+crossing is fatal, the found recipe is a *balanced* zigzag — the data says ≥3 turns
+with equal `L`/`R` counts (unbalanced formulas net a turn, spiral in, and self-crash);
+`FLLFRR`, `FLLLRRR`, `FLLRR` are reliable survivors, a straight runner races off the
+edge. ~15–23% of all formulas survive, so it is findable, not lucky.
 
 ---
 
@@ -266,7 +279,33 @@ never a stacked number.
 
 ---
 
-## 11. References
+## 11. Progression: literal turtle → collision detection
+
+The mechanics unfold in layers, gated by one persistent upgrade — **COLLISION
+DETECTION** — which is the single switch that picks the whole regime (turtle `F`
+behaviour §3, win mode §5, and board terrain). One flag, no divergent code paths.
+
+- **Author (first run, `main.js` `author` phase).** No handed-out deck: the player
+  types an `F/L/R` grammar on three buttons and watches the *literal* turtle draw it
+  on a blank full block. RUN fires a survival battle; surviving keeps the card as the
+  starter and banks a flat bounty (`SURVIVAL_REWARD`). This is where the symbols are
+  learned — a crossing kills you, so you learn self-avoidance by doing.
+- **Pre-collision runs.** Blank blocks (literal turtles can't navigate walls yet, so
+  there are none), survival win, flat bounty. The tutorial pays 15 and collision
+  detection costs 35, so it takes a couple of real levels beyond the tutorial to bank it.
+- **Collision detection (the pivot).** Strands stop crashing and start navigating.
+  The win flips from *survive* to *conquer* (coverage ≥ WIN_COVERAGE), terrain returns
+  (`generateMachineUpTo`, ceiling keyed to **conquers** — survival wins don't count, so
+  the first walled block is EASY), and the full tuned game begins.
+
+**Economy.** ROOT is paid every run, no bank penalty on a loss — coverage runs pay the
+run's **peak** coverage % × aggression mult (a 50% breach ≈ 50; the high-water mark is
+the "area burned"), survival runs pay the flat bounty. Card unlocks are spaced ~3 wins
+apart (~200 ROOT/tier). Losses only ease the DDA (§10).
+
+---
+
+## 12. References
 
 Langton's ant; diffusion-limited aggregation / dielectric (Lichtenberg) breakdown;
 turtle graphics & bounded L-systems (structure from dumb local rules). The connector

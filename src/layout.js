@@ -38,6 +38,16 @@ export const BTN_FIRE = { x: 72, y: 31, w: 7, h: 8, label: 'LAUNCH' };
 const DRAFT_X0 = Math.floor((COLS - (3 * 15 + 2 * 2)) / 2);
 export const DRAFT_CARDS = Array.from({ length: 3 }, (_, i) => ({ x: DRAFT_X0 + i * 17, y: 31, w: 15, h: 8 }));
 
+// author (tutorial): the three symbol keys + delete build a grammar; RUN fires the
+// survival test. Big thumb-sized buttons across the tray, RUN beside them like FIRE.
+export const AUTHOR_SYMS = [
+  { sym: 'F', x: 3, y: 31, w: 11, h: 8, label: 'F' },
+  { sym: 'L', x: 16, y: 31, w: 11, h: 8, label: 'L' },
+  { sym: 'R', x: 29, y: 31, w: 11, h: 8, label: 'R' },
+];
+export const BTN_AUTHOR_DEL = { x: 42, y: 31, w: 11, h: 8, label: 'DEL' };
+export const BTN_AUTHOR_RUN = { x: 72, y: 31, w: 7, h: 8, label: 'RUN' };
+
 // gutter control stack — REDRAW/TEST in assemble (low, so the slotted card's
 // text above has room), RESET/PLAY on the test bench, aggression in aim.
 // (Unloading a slotted card is done by tapping the card again — no button.)
@@ -57,8 +67,8 @@ export const BTN_JACKIN = { x: 23, y: 26, w: 18, h: 3, label: 'JACK IN ▶' };
 
 // title / boot screen (a full-screen takeover): CONTINUE resumes saved progress,
 // NEW wipes the save and starts fresh. Chunky, thumb-sized buttons.
-export const BTN_TITLE_CONTINUE = { x: 14, y: 24, w: 24, h: 5, label: 'CONTINUE ▶' };
-export const BTN_TITLE_NEW = { x: 42, y: 24, w: 24, h: 5, label: 'NEW ▶' };
+export const BTN_TITLE_CONTINUE = { x: 14, y: 24, w: 24, h: 5, label: '[C]ONTINUE' };
+export const BTN_TITLE_NEW = { x: 42, y: 24, w: 24, h: 5, label: '[N]EW' };
 
 // shop: each item is a 2-row slot inside the field area — the name+type+price
 // line and the description below it, with a blank row between items (pitch 3).

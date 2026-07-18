@@ -72,6 +72,7 @@ export function defaultParams() {
     reclaim: 6,                                   // reclaimed cells per scanned row
     breachHold: 15,                               // ticks held ≥win to breach
     winCoverage: 50,                              // % of claimable cells to breach
+    survivalMinCells: 10,                         // cells a survival strand must draw to count (anti-spinner)
   };
 }
 
@@ -88,14 +89,16 @@ export function createSimOn(machine, sectorIndex, params, rng) {
   const sim = {
     machine, sector, claim,
     params,
+    collision: params.collision !== false,           // COLLISION-DETECTION upgrade (default on; off ⇒ literal Tron turtle)
     rng,
     heat: new Float32Array(FIELD_W * FIELD_H),      // per-cell burn TICK (render ramp derives brightness lazily)
     reclaimed: new Set(),                            // cells reclaimed on the last tick (flash)
     turtles: [],                                      // live strands (turtle VM)
+    cellsBurned: 0,                                    // cumulative distinct cells ever burned (survival guard)
+    cov: 0, peakCov: 0,                                // live + high-water coverage % (peak drives the reward)
     scanRow: 0, scanAcc: 0,                            // trace scan position
     honeyBurned: 0, honeySpike: 0,                    // honeypots burned (trace spike)
     breachLeft: -1,                                    // breach countdown (ticks)
-    cov: 0,                                             // cached coverage %, refreshed each tick
     reTread: 0,                                          // count of F-onto-already-F-burned (must stay 0)
     outcome: null,                                       // null | 'win' | 'traced'
     tick: 0,
@@ -120,7 +123,7 @@ export function createSim(seed, sectorIndex, params) {
 function burn(sim, x, y, fromF = false) {
   const c = idx(x, y);
   const was = sim.machine.burned[c];
-  if (!was && sim.machine.t[c] === HONEY) sim.honeyBurned++;   // tripped bait
+  if (!was) { sim.cellsBurned++; if (sim.machine.t[c] === HONEY) sim.honeyBurned++; }   // fresh cell (bait tripped)
   if (fromF && was) sim.reTread++;                             // F landed on burned ground → re-tread
   sim.machine.burned[c] = 1;
   sim.heat[c] = sim.tick;
@@ -177,22 +180,39 @@ function paceOf(sim, t) {
   return Math.max(1, base + paceSurcharge(sim.machine.t[idx(t.x, t.y)]));
 }
 
-// Searching reroute: probe headings PROBE-order, take the first on-board, non-wall,
-// UNBURNED cell; commit the heading and burn it. Returns false if the turtle is
-// trapped (all eight blocked) — the caller then runs the connector handoff.
+// `F` advance. Two modes, gated by the COLLISION-DETECTION upgrade (sim.collision):
+//
+//  • collision ON — the searching reroute: probe headings PROBE-order, take the first
+//    on-board, non-wall, UNBURNED cell; commit the heading and burn it. Auto-navigates
+//    terrain and never re-treads. Returns false only when all eight are blocked.
+//  • collision OFF — the literal Tron turtle: step the SINGLE cell in the current
+//    heading. If it is off-board, wall, or already burned, the strand CRASHES (returns
+//    false) — crossing your own trail is fatal, so a self-avoiding grammar is the skill.
+//
+// Both return false when the strand can't advance; the caller then runs the handoff.
 function advance(sim, t) {
-  for (const off of PROBE) {
-    const h = (t.heading + off + 8) & 7;
-    const [dx, dy] = HEADINGS[h];
-    const nx = t.x + dx, ny = t.y + dy;
-    if (nx < 0 || nx >= FIELD_W || ny < 0 || ny >= FIELD_H) continue;   // off-board
-    const c = idx(nx, ny);
-    if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;   // firebreak / trail
-    t.x = nx; t.y = ny; t.heading = h;
-    burn(sim, nx, ny, true);
-    return true;
+  if (sim.collision) {
+    for (const off of PROBE) {
+      const h = (t.heading + off + 8) & 7;
+      const [dx, dy] = HEADINGS[h];
+      const nx = t.x + dx, ny = t.y + dy;
+      if (nx < 0 || nx >= FIELD_W || ny < 0 || ny >= FIELD_H) continue;   // off-board
+      const c = idx(nx, ny);
+      if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;   // firebreak / trail
+      t.x = nx; t.y = ny; t.heading = h;
+      burn(sim, nx, ny, true);
+      return true;
+    }
+    return false;
   }
-  return false;
+  const [dx, dy] = HEADINGS[t.heading];
+  const nx = t.x + dx, ny = t.y + dy;
+  if (nx < 0 || nx >= FIELD_W || ny < 0 || ny >= FIELD_H) return false;   // ran off the board
+  const c = idx(nx, ny);
+  if (sim.machine.t[c] === WALL || sim.machine.burned[c]) return false;   // crashed into a wall / own trail
+  t.x = nx; t.y = ny;
+  burn(sim, nx, ny, true);
+  return true;
 }
 
 // `K`: fork a child heading turned +2 (parent −1); the child shares nothing and
@@ -296,9 +316,13 @@ export function coverage(sim) {
   return sim.claim ? (b / sim.claim) * 100 : 0;
 }
 
-// One tick of the watch: step strands → scan → resolve win/traced. The run ends
-// when the scan bottoms out; win by holding ≥winCoverage through the breach timer
-// before it lands (§5). Returns a small readout snapshot.
+// One tick of the watch: step strands → scan → resolve. Two win modes, gated by the
+// COLLISION-DETECTION upgrade (the same flag that governs the turtle, §3):
+//   • collision ON  — COVERAGE: hold ≥winCoverage through the breach timer before the
+//     scan lands (§5). The full game.
+//   • collision OFF — SURVIVAL: keep a self-avoiding literal strand alive until the
+//     scan bottoms out (having drawn ≥survivalMinCells). Pre-collision training.
+// Returns a small readout snapshot.
 export function stepSim(sim) {
   if (sim.outcome) return snapshot(sim);
   sim.tick++;
@@ -309,15 +333,21 @@ export function stepSim(sim) {
   advanceScan(sim);
 
   const cov = sim.cov = coverage(sim);
+  if (cov > sim.peakCov) sim.peakCov = cov;                       // high-water mark drives the reward
   const p = sim.params;
-  if (cov >= p.winCoverage) {
-    if (sim.breachLeft < 0) sim.breachLeft = p.breachHold;   // start breach timer
-    else if (sim.breachLeft === 0) sim.outcome = 'win';
-    else sim.breachLeft--;
-  } else if (sim.breachLeft >= 0) {
-    sim.breachLeft = -1;                                      // dropped under → reset
+  if (sim.collision) {
+    if (cov >= p.winCoverage) {
+      if (sim.breachLeft < 0) sim.breachLeft = p.breachHold;   // start breach timer
+      else if (sim.breachLeft === 0) sim.outcome = 'win';
+      else sim.breachLeft--;
+    } else if (sim.breachLeft >= 0) {
+      sim.breachLeft = -1;                                      // dropped under → reset
+    }
+    if (!sim.outcome && sim.scanRow >= FIELD_H) sim.outcome = 'traced';   // scan bottomed = run end
+  } else {
+    if (sim.turtles.length === 0) sim.outcome = 'traced';                 // crashed → lost
+    else if (sim.scanRow >= FIELD_H) sim.outcome = sim.cellsBurned >= p.survivalMinCells ? 'win' : 'traced';
   }
-  if (!sim.outcome && sim.scanRow >= FIELD_H) sim.outcome = 'traced';   // scan bottomed = run end
 
   return snapshot(sim);
 }

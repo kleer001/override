@@ -25,6 +25,17 @@ export const SCAN_SPEED = 0.40;     // scan rows/tick at aggression 1
 export const RECLAIM = 6;           // reclaimed cells/row at aggression 1
 export const BREACH_HOLD = 15;      // ticks held ≥WIN_COVERAGE to breach
 
+// --- SURVIVAL mode (pre-collision-detection): a fixed brisk scan so a self-avoiding
+// literal line must outlast ~8s (research/lsystem-growth.md: pace-1/scan-0.45 puts
+// the win rate at a findable ~15-23% of formulas). Aggression-independent — the
+// pre-CD phase is a fixed-difficulty training ground, not the tunable game. ---
+export const SURVIVAL_SCAN = 0.45;
+export const SURVIVAL_MIN_CELLS = 10;   // a strand must draw this much to count as alive (anti-spinner)
+// A thin survival line covers only ~2% of the full block, so survival wins pay a FLAT
+// ROOT bounty (not coverage%). The tutorial pays 15 and COLLISION DETECTION costs 35,
+// so it takes a couple of real levels beyond the tutorial to bank it.
+export const SURVIVAL_REWARD = 15;
+
 // --- AGGRESSION: the single difficulty dial. It scales the whole trace scan (the
 // enemy), mirroring how your deck scales the whole beam. The player raises it for
 // free (harder scan, bigger reward) or spends ROOT to lower it (safer). The one-
@@ -45,44 +56,59 @@ export function draftPicks(aggro, base = AGGRO_BASE) {
   return Math.max(1, 1 + Math.floor((aggro - base) / 0.15 + 1e-9));
 }
 
-// Build the full beam params for a node from an already-built chain, overlaying the
-// shared terminal/scan constants scaled by aggression. Every key the sim reads is
-// set here explicitly (no defaultParams fallback in the game).
+// ROOT paid for a run — proportional to the area you burned, every run (win OR loss),
+// scaled by how far above your baseline you dialled the aggression. A 50% breach at
+// baseline pays 50; a 15% survival scratch pays 15. The single payout rule.
+export function coverageReward(crackPct, aggro, base = AGGRO_BASE) {
+  return Math.round(Math.max(0, crackPct) * rewardMult(aggro, base));
+}
+
+// Build the full beam params for a node from an already-built chain. The COLLISION-
+// DETECTION upgrade (extra.collision) picks the whole regime — turtle behaviour, scan,
+// and win mode all key off it, so pre- and post-CD play never diverge into separate
+// code paths. Every key the sim reads is set here explicitly (no defaultParams
+// fallback in the game).
 function beamParams(machine, secIdx, merged, aggro, extra) {
   const sector = machine.sectors[secIdx];
+  const collision = extra.collision !== false;
   return {
     p: extra.triggerCol != null
       ? Math.max(sector.x0, Math.min(sector.x1, extra.triggerCol | 0))
       : (sector.x0 + sector.x1) >> 1,            // default: fire from sector centre
     chain: merged.chain,
-    scanSpeed: SCAN_SPEED * aggro,               // aggression = scan speed…
-    reclaim: Math.max(1, Math.round(RECLAIM * aggro)),   // …and bite
+    collision,
+    // COVERAGE regime scales the scan by aggression; SURVIVAL regime is a fixed brisk scan.
+    scanSpeed: collision ? SCAN_SPEED * aggro : SURVIVAL_SCAN,
+    reclaim: collision ? Math.max(1, Math.round(RECLAIM * aggro)) : 0,
     breachHold: BREACH_HOLD,
     winCoverage: WIN_COVERAGE,
+    survivalMinCells: SURVIVAL_MIN_CELLS,
   };
 }
 
-// --- TEST bench: a featureless block for previewing what a chain draws ---
-// Every cell OPEN — no firewalls, no terrain — one sector spanning the field.
-export function blankMachine() {
+// --- Blank block: every cell OPEN, no firewalls or terrain — one sector spanning the
+// field. Used by the TEST bench and by pre-collision (empty) battles.
+export function blankMachine(seed = 0, id = 'TEST BENCH') {
   return {
-    seed: 0,
+    seed: seed >>> 0,
     t: new Uint8Array(FIELD_W * FIELD_H),          // all OPEN
-    sectors: [{ id: 'TEST BENCH', x0: 0, x1: FIELD_W - 1 }],
+    sectors: [{ id, x0: 0, x1: FIELD_W - 1, difficulty: 'OPEN' }],
     burned: new Uint8Array(FIELD_W * FIELD_H),
   };
 }
 
-// Fire the chain at the centre of a blank block with the trace scan disabled —
-// the pattern draws until every strand self-traps. Nothing ends or wins the
-// bench run; the caller stops stepping when the strands are gone.
-export function createTestSim(program) {
+// Fire the chain at the centre of a blank block with the trace scan disabled and the
+// player's current collision state — the pattern draws until every strand traps/crashes.
+// Nothing ends or wins the bench run; the caller stops stepping when the strands are gone.
+export function createTestSim(program, collision = true) {
   const merged = buildChain(program.filter(Boolean));
   const params = {
     p: (FIELD_W - 1) >> 1,
     chain: merged.chain,
+    collision,
     scanSpeed: 0, reclaim: 0,               // no scan — nothing erases the drawing
     breachHold: 0, winCoverage: 101,        // unreachable — the bench never resolves
+    survivalMinCells: SURVIVAL_MIN_CELLS,
   };
   return createSimOn(blankMachine(), 0, params, mulberry32(1));
 }

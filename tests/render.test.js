@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { buildScreen } from '../src/render.js';
-import { generateMachine, createNode, fire, stepBattle, createTestSim, stepSim } from '../src/battle.js';
-import { CARDS } from '../src/cards.js';
+import { generateMachine, createNode, fire, stepBattle, createTestSim, stepSim, blankMachine } from '../src/battle.js';
+import { CARDS, cardFromGrammar } from '../src/cards.js';
 import { mulberry32, shuffle } from '../src/rng.js';
 
 // The embedded GridMono subset (grid-font.css) covers exactly these codepoint
@@ -49,6 +49,12 @@ function testGame() {
   for (let i = 0; i < 25; i++) stepSim(g.testSim);
   return g;
 }
+function authorGame() {
+  const preview = createTestSim([cardFromGrammar('FLLFRR')], false);
+  for (let i = 0; i < 40; i++) stepSim(preview);
+  return { phase: 'author', run: { root: 0, deck: [], machine: blankMachine(1, 'YOUR MACHINE') }, node: null,
+    authorGrammar: 'FLLFRR', authorPreview: preview, program: [null, null, null], hand: [], draft: [], message: 'add turns', bannerLines: [] };
+}
 
 test('font embed: grid-font.css declares GridMono and styles.css uses it as the primary grid font', () => {
   const font = readFileSync(new URL('../grid-font.css', import.meta.url), 'utf8');
@@ -59,9 +65,19 @@ test('font embed: grid-font.css declares GridMono and styles.css uses it as the 
   assert.match(styles, /font-family:\s*'GridMono'/, '#screen must use GridMono');
 });
 
+test('slotting the authored card renders (its desc feeds the gutter explainer)', () => {
+  // Regression: cardFromGrammar must carry a `desc`, or the gutter's just-slotted
+  // explainer wraps undefined and the whole draw throws when PROG.COM is last-slotted.
+  const auth = cardFromGrammar('FLLFRR');
+  const game = { phase: 'assemble', run: { root: 100, deck: [auth, CARDS['FORK.COM']], machine: blankMachine(1, 'YOUR MACHINE') },
+    node: null, program: [auth, null, null], selection: [0],
+    hand: [{ name: auth.name, card: auth, used: true }], draft: [], message: '', bannerLines: [] };
+  assert.doesNotThrow(() => buildScreen(game, 0));
+});
+
 test('closed glyph alphabet: the renderer only emits glyphs the embedded font covers', () => {
   const titleGame = { phase: 'title', titleWins: 3, run: null, node: null };
-  for (const [name, game] of [['title', titleGame], ['assemble', assembleGame()], ['target', { ...assembleGame(), phase: 'target' }], ['exec', execGame()], ['test', testGame()]]) {
+  for (const [name, game] of [['title', titleGame], ['author', authorGame()], ['assemble', assembleGame()], ['target', { ...assembleGame(), phase: 'target' }], ['exec', execGame()], ['test', testGame()]]) {
     const bad = offenders(buildScreen(game, 1000));
     assert.deepEqual(bad, [], `phase ${name} emitted glyphs outside GridMono: ${bad.map((c) => 'U+' + c.codePointAt(0).toString(16)).join(' ')}`);
   }

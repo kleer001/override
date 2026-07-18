@@ -107,11 +107,21 @@ export function beamGutterLines(merged) {
   return [`${merged.cards} card chain`];
 }
 
-// Tier-1 starting deck — the SCRIPT.COM + FORK.COM pair. Merged they seed a runner
-// swarm that branches off its tips — enough to crack an EASY block about half the
-// time; the deck grows from there.
+// Reference two-card deck (SCRIPT.COM + FORK.COM) for the balance harness and tests.
+// The GAME no longer hands this out — a new player authors their own first card
+// (cardFromGrammar) in the tutorial; see main.js.
 export function startingDeck() {
   return ['SCRIPT.COM', 'FORK.COM'].map((id) => ({ ...CARDS[id] }));
+}
+
+// The player's hand-authored first card. Its id is constant (AUTHORED_ID) so the deck
+// still persists as ids; the grammar rides alongside in localStorage and rehydrates
+// through here. Pace 1 to match the survival-mode tuning; SCATTER so it composes
+// cleanly once other cards are drafted in.
+export const AUTHORED_ID = 'PROG.COM';
+export function cardFromGrammar(grammar) {
+  return { id: AUTHORED_ID, name: AUTHORED_ID, grammar: sanitizeGrammar(grammar), pace: 1, connector: 'SCATTER',
+    desc: 'the program you wrote by hand — a self-avoiding line' };
 }
 
 // Cards always available in the draft-between-nodes pool (warez looted off breached
