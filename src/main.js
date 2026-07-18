@@ -414,7 +414,7 @@ function showResult() {
 
 function advance() {
   const won = game.node.outcome === 'win';
-  if (game.authoring && !won) { newAuthor(); return; }   // crashed mid-tutorial → revise (grammar kept)
+  if (game.authoring && !won) { newAuthor(); return; }   // crashed mid-tutorial → revise (fresh blank slate)
   game.authoring = false;
   if (won && hasCollision()) startDraft();               // a real breach → bank a card, then the shop
   else if (game.retried) { game.retried = false; newAssemble(); }   // retry token: re-run the block
