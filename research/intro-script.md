@@ -1,9 +1,19 @@
 # INTRO SCRIPT — the cold open / recruitment (working draft)
 
 *The first thing a new player sees. Doubles as the Tier-1 tutorial: the mysterious
-contact teaches the card grammar (shape · direction · probability · growth) and the
-LOADOUT/EXEC loop, then releases you into your first breach. Draft v0.1 — everything
-here is up for rewrite.*
+contact teaches the two channels the player actually acts on — **shape** (which
+program) and **direction** (where you aim it) — then releases you into your first
+breach. Draft v0.2 — everything here is up for rewrite.*
+
+> **⚠ Model note (read this).** `GAME-SHEET.md` / `SPEC-SHEET.md` still describe the
+> retired **bundled-quad** card model — `(shape, direction, probability, growth)` that
+> *merge order-independently*. **The shipped code implements a different model**
+> (`research/lsystem-growth.md`, live in `src/cards.js` + `src/beam.js`): a card is
+> `{ grammar (F/L/R/K), pace, connector }`, a program is a deterministic **L-system
+> turtle** that crawls the board, coverage is earned by **fork (`K`) density**, and the
+> deck is an **ordered connector chain** — *order matters now*. Crucially: **there is
+> no probability/odds channel at all.** This script follows the shipped model. The two
+> design sheets need a reconciliation pass (flagged; not done here).
 
 ## Design intent
 
@@ -128,23 +138,22 @@ register, anonymous):
   ok listen fast, i'm not on this wire long. that
   thing you call an operating system? it's a LEASH
   they let you name. i can chew through it — hand
-  you something that runs anything you're dumb
-  enough to feed it.
+  you the programs THEY made illegal.
 
-  but a program's not magic, kid. it's four parts
-  bolted together, and you're learning all four:
+  here's your first one. watch how it moves — crawls
+  up, feels for a gap, keeps going. that little
+  wiggle IS the program. that's its SHAPE. steal a
+  hundred of these and no two crawl the same.
 
-    SHAPE      — how the thing MOVES
-    DIRECTION  — where it REACHES
-    ODDS       — how often it BITES
-    GROWTH     — how mean it BREEDS
+  now point it. slide that turret along the bottom —
+  where you drop it is where it starts, and which way
+  it runs. that's DIRECTION. and tonight? that's the
+  whole trick. pick your shape, aim it, let it rip.
 
-  slap 'em together. they FUSE. don't sweat the
-  order — there isn't one. only what you scrounged.
+  (how they breed, how you chain a stack of 'em into
+  one nasty program — that's later. you'll steal it.)
 
-  so go on — bolt something ugly together. blow it
-  up. do it again. when it stops feeling like
-  homework, hit EXEC.
+  so quit reading. slide it. lock it. hit EXEC.
 
   then, kid? you're GONE.
 ```
@@ -157,13 +166,19 @@ The civilian machine is gone. You're jacked in.
 
 | Contact line | → teaches |
 |---|---|
-| "runs anything you're dumb enough to feed it" | the deck = forbidden programs you load |
-| "four parts bolted together" | the bundled quad — every card is `(shape, dir, prob, growth)` |
-| SHAPE / DIRECTION / ODDS / GROWTH | the four card aspects, named in player-facing words |
-| "slap 'em together. they FUSE. don't sweat the order" | the merge rule (adds/unions/sums; commutative) |
-| "bolt something ugly together. blow it up. do it again." | free play in the LOADOUT tray — slot cards, watch the merged-beam preview |
-| "when it stops feeling like homework, hit EXEC" | the one input: fire the packet |
+| "the programs THEY made illegal" | the deck = forbidden warez you load (cards) |
+| "watch how it moves — crawls up, feels for a gap" | **SHAPE** — the card's grammar; a program is a turtle that draws a path (`F` forward, `L`/`R` turn) |
+| "that little wiggle IS the program… no two crawl the same" | each card *is* a shape; you pick shapes, you don't tune numbers |
+| "slide that turret… where you drop it is where it starts, and which way it runs" | **DIRECTION** — the one live input: aim the turret, tap to fire one packet |
+| "how they breed… how you chain a stack of 'em… that's later" | deferred by design: forks (`K` = growth/area), pace, connectors, deck **order** — all future tutorial beats |
+| "slide it. lock it. hit EXEC" | the single tap that fires the packet |
 | "then, kid? you're GONE." | pun — released into the run / your first breach. "gone" = EXEC fires *and* you're out |
+
+*Deliberately teaches only the two channels the player acts on their first run —
+**shape** (which program) and **direction** (where you aim it). Everything numeric or
+compositional (fork density = area, pace, the SCATTER/SPROUT/OVERLAY connectors, and
+that deck **order** now matters) is held back for later beats. There is no
+"probability/odds" to teach — the sim has none (verified headless; see the note below).*
 
 ---
 
@@ -184,9 +199,12 @@ The civilian machine is gone. You're jacked in.
    Current draft is broad satire ("I am thankful for the cameras"). Dial up (funnier,
    more cartoon) or down (drier, creepier, more real)?
 
-2. **"ODDS" vs "PROBABILITY" vs "CHANCE."**
-   The spec calls it `probability`; the contact says **ODDS**. Lock one player-facing
-   word and make the HUD label match. (Recommend ODDS — punchy, era-fit, one syllable.)
+2. **Naming the two channels for the player.** SHAPE and DIRECTION are the picks.
+   Do we ever surface the F/L/R "grammar" letters to the player (flavor: the contact
+   flashes `FFKFK` on screen), or keep it fully wordless — a program is just "a shape
+   that crawls"? The preview sandbox types grammars, but the real game only picks/orders
+   cards. *(Resolved down from the old spec: there is no "odds/probability" channel to
+   name at all — the sim has none.)*
 
 3. **Skippable?** Returning players hit this every new run (it's the new-game screen).
    Full cinematic first time, then a tap-to-skip / abbreviated version after?
@@ -196,3 +214,31 @@ The civilian machine is gone. You're jacked in.
 
 5. **The unfinished word.** Essay cuts on `stopped asking questio_`. Is the missing
    "-ns" too cute, or exactly right? (It's the one place the machine "stops asking.")
+
+---
+
+## How it actually plays (headless findings, 2026-07-18)
+
+Ran the real sim headless (`src/beam.js` + `src/battle.js`, scanless TEST bench and
+seeded battles) to keep this script honest about the mechanics it introduces:
+
+- **A card carries no numbers to "tune."** It's `{ grammar, pace, connector }`. The
+  player's whole surface is: *which cards*, *what order*, and *where they aim*. There
+  is no probability, no reach, no reproduce level. → the tutorial teaches **picks +
+  aim**, never a stat.
+- **Shape and direction are the same channel** (the grammar). A turn-prefix *is* the
+  aim: `SCRIPT.SYS` (`RRFFFFFFKF`) runs east; `LOGICBOMB` (`RRRRFFFFKF`) turns to
+  face down and drills. So "SHAPE" (the crawl) and "DIRECTION" (which way / where you
+  drop the turret) are the two honest halves of one idea — exactly the two the intro
+  keeps.
+- **Growth is fork density, and it's dramatic.** On the scanless bench, forkless
+  `SCRIPT.COM` burns ~37% of the board; one `K` (`FORK.COM`) jumps to ~69%. That's the
+  whole area engine — and it's why "how they breed… that's later" is the right defer:
+  it's a real, load-bearing lesson that deserves its own beat, not a line.
+- **The battle is a genuine, lossy race.** Starting deck at aggression 0.30 over six
+  seeds: 3 wins / 3 losses, peaks from 9.7% to 67.2%; an EASY block still lost (one
+  seed peaked 9.7%). At 0.40 it mostly loses. So the opening breach the contact sends
+  you into is *not* a guaranteed win — matches the Candy-Crush "runs aren't all
+  winnable" pillar. The intro should not promise a victory; it promises a *shot*.
+
+(Harness lives in the session scratchpad, not committed — it's a throwaway probe.)
