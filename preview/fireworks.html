@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OVERRIDE — devices / combo / fireworks lab</title>
+  <link rel="icon" href="data:," />
+  <!-- link BOTH so the 80x40 grid uses the true uniform-advance GridMono (block/box
+       glyphs shear on generic monospace) — matches the real game shell. -->
+  <link rel="stylesheet" href="../grid-font.css" />
+  <link rel="stylesheet" href="../styles.css" />
+  <style>
+    /* override styles.css centering so the control panel sits beside the CRT */
+    html, body { height: auto; min-height: 100%; display: block; overflow: auto; }
+    .lay { display: flex; gap: 16px; padding: 14px; align-items: flex-start; flex-wrap: wrap; }
+    .panel { min-width: 300px; max-width: 340px; color: var(--amber);
+             font: 12px/1.2 "SFMono-Regular", Menlo, Consolas, monospace; }
+    h1 { font-size: 14px; margin: 0 0 10px; letter-spacing: 2px; }
+    h2 { font-size: 11px; margin: 12px 0 4px; letter-spacing: 1px; color: var(--amber-dim); }
+    .row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+    .row label { width: 104px; }
+    .row output { width: 40px; text-align: right; color: #ffd27a; }
+    input[type=range] { flex: 1; accent-color: var(--amber); }
+    input[type=checkbox] { accent-color: var(--amber); }
+    button { background: #2a1c00; color: var(--amber); border: 1px solid var(--amber-dim);
+             padding: 5px 9px; font: inherit; cursor: pointer; margin: 2px 3px 2px 0; }
+    button:hover { background: #3a2700; }
+    .stat { margin: 3px 0; }
+    .big { font-size: 15px; }
+    .win { color: #6cff6c; text-shadow: 0 0 6px #6cff6c88; }
+    .lose { color: #ff5c5c; text-shadow: 0 0 6px #ff5c5c88; }
+    .hint { color: var(--amber-dim); font-size: 11px; margin-top: 10px; }
+    code { color: #ffd27a; }
+  </style>
+</head>
+<body>
+  <div class="lay">
+    <div class="crt">
+      <pre id="screen" aria-label="fireworks field"></pre>
+      <div class="scanlines" aria-hidden="true"></div>
+      <div class="vignette" aria-hidden="true"></div>
+    </div>
+
+    <div class="panel">
+      <h1>DEVICES · COMBO · FIREWORKS</h1>
+
+      <h2>BOARD</h2>
+      <div class="row"><label>trigger col p</label><input id="p" type="range" min="0" max="61" value="30"><output id="p_o"></output></div>
+      <div class="row"><label>grammar F/L/R/K</label><input id="grammar" type="text" value="FFKFFKF" style="flex:1;background:#2a1c00;color:var(--amber);border:1px solid var(--amber-dim);font:inherit;padding:3px;"></div>
+      <div class="row"><label>pace</label><input id="pace" type="range" min="1" max="8" step="1" value="2"><output id="pace_o"></output></div>
+
+      <h2>DEVICE COUNTS (salted onto the board)</h2>
+      <div class="row"><label>lances</label><input id="lance" type="range" min="0" max="8" step="1" value="3"><output id="lance_o"></output></div>
+      <div class="row"><label>novas</label><input id="nova" type="range" min="0" max="8" step="1" value="2"><output id="nova_o"></output></div>
+      <div class="row"><label>freezes</label><input id="freeze" type="range" min="0" max="6" step="1" value="1"><output id="freeze_o"></output></div>
+      <div class="row"><label>chain lineup</label><input id="lineup" type="checkbox"> <span class="hint">devices in a row → forced cascade</span></div>
+
+      <h2>TRACE SCAN</h2>
+      <div class="row"><label>scan speed</label><input id="scanSpeed" type="range" min="0.1" max="4" step="0.02" value="0.3"><output id="scanSpeed_o"></output></div>
+      <div class="row"><label>rate (ms/tick)</label><input id="rate" type="range" min="20" max="300" step="10" value="120"><output id="rate_o"></output></div>
+
+      <h2>COMBO / DEVICE TUNING (live)</h2>
+      <div class="row"><label>combo window</label><input id="comboWindow" type="range" min="1" max="80" step="1" value="30"><output id="comboWindow_o"></output></div>
+      <div class="row"><label>combo max</label><input id="comboMax" type="range" min="1" max="20" step="1" value="8"><output id="comboMax_o"></output></div>
+      <div class="row"><label>lance base</label><input id="lanceBase" type="range" min="1" max="20" step="1" value="6"><output id="lanceBase_o"></output></div>
+      <div class="row"><label>lance step</label><input id="lanceStep" type="range" min="0" max="6" step="1" value="2"><output id="lanceStep_o"></output></div>
+      <div class="row"><label>lance max</label><input id="lanceMax" type="range" min="2" max="30" step="1" value="16"><output id="lanceMax_o"></output></div>
+      <div class="row"><label>nova base</label><input id="novaBase" type="range" min="1" max="8" step="1" value="2"><output id="novaBase_o"></output></div>
+      <div class="row"><label>nova max</label><input id="novaMax" type="range" min="1" max="12" step="1" value="5"><output id="novaMax_o"></output></div>
+      <div class="row"><label>freeze base</label><input id="freezeBase" type="range" min="0" max="30" step="1" value="8"><output id="freezeBase_o"></output></div>
+      <div class="row"><label>freeze max</label><input id="freezeMax" type="range" min="1" max="40" step="1" value="16"><output id="freezeMax_o"></output></div>
+
+      <h2>RUN</h2>
+      <div>
+        <button id="play">PLAY</button><button id="pause">PAUSE</button><button id="step">STEP</button>
+        <button id="reset">RESET</button><button id="reseed">RESEED</button>
+      </div>
+      <div class="row"><label>reduced motion</label><input id="reduce" type="checkbox"> <span class="hint">drop flashes/shake, keep the mechanic</span></div>
+
+      <div class="stat">seed <b id="seedval">—</b> · gen difficulty <b id="diff">—</b> · devices left <b id="devleft">0</b></div>
+      <div class="stat big">coverage <b id="cov">0</b>% <span id="covneed">/ 50%</span> · combo <b id="combo">0</b></div>
+      <div class="stat">strands <b id="strands">0</b> · scan <b id="scanrow">0 / 28</b> · fx <b id="fxcount">0</b> · tick <b id="tickval">0</b></div>
+      <div class="stat big" id="status">idle.</div>
+
+      <div class="hint">Drives the REAL render + juice pipeline (<code>buildScreen</code> → <code>composeBoard</code>,
+        <code>render.js</code> device telegraphs + <code>drawFx</code>, <code>juice.detonate</code>) plus the real
+        trauma shake + synth. Un-burned devices spin/pulse; a crawler burning one detonates it — LANCE drills
+        firewall, NOVA blasts a circle, FREEZE pins the scan. Combo sliders map to
+        <code>DEFAULT_DEVICE_TUNING</code> in <code>src/beam.js</code> — tune here, then bake the numbers in.
+        <code>?seed=1</code> in the URL. Click once to enable audio.</div>
+    </div>
+  </div>
+
+  <script type="module" src="fireworks.js"></script>
+</body>
+</html>

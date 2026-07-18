@@ -69,11 +69,16 @@ const MAX_TURTLES = 3000;    // compute guard against a runaway fork/branch proc
 // combo, which scales the NEXT device — bigger blast, longer bar. All deterministic
 // and RNG-free (drilled direction/size come from the burn, not chance), so a
 // (seed, params) pair still replays byte-for-byte.
-const COMBO_WINDOW = 30;                             // ticks a chain stays hot before combo cools
-const COMBO_MAX = 8;                                 // combo value cap for power scaling
-const LANCE_BASE = 6, LANCE_STEP = 2, LANCE_MAX = 16; // bar half-length, per side
-const NOVA_BASE = 2, NOVA_MAX = 5;                    // blast circle radius
-const FREEZE_BASE = 8, FREEZE_MAX = 16;               // ticks the trace scan halts
+// The knobs, in one place. Production never overrides them (defaults ARE the game);
+// the preview/fireworks.html tuning lab passes a live-mutated copy via
+// params.deviceTuning so you can feel the caps before baking new numbers in here.
+export const DEFAULT_DEVICE_TUNING = {
+  comboWindow: 30,   // ticks a chain stays hot before the combo cools
+  comboMax: 8,       // combo value cap for power scaling
+  lanceBase: 6, lanceStep: 2, lanceMax: 16,   // LANCE bar half-length, per side
+  novaBase: 2, novaMax: 5,                     // NOVA blast circle radius
+  freezeBase: 8, freezeMax: 16,                // ticks the trace scan halts
+};
 
 // Default parameter block (preview sandbox). DOM mutates a live copy so sliders
 // take effect on the running sim.
@@ -193,21 +198,22 @@ function detonateNova(sim, x, y, r) {
 // it replays identically. Each link bumps the combo and reads it back to scale the next
 // device, so a chain reaction escalates; the FX layer reads sim.lastDetonations.
 function drainDetonations(sim) {
+  const T = sim.params.deviceTuning || DEFAULT_DEVICE_TUNING;
   while (sim.pendingDet.length) {
     const d = sim.pendingDet.shift();
     sim.combo++;
-    sim.comboExpire = sim.tick + COMBO_WINDOW;
-    const cb = Math.min(sim.combo - 1, COMBO_MAX);   // a solo hit fires at base power
+    sim.comboExpire = sim.tick + T.comboWindow;
+    const cb = Math.min(sim.combo - 1, T.comboMax);   // a solo hit fires at base power
     if (d.type === LANCE) {
-      const len = Math.min(LANCE_MAX, LANCE_BASE + cb * LANCE_STEP);
+      const len = Math.min(T.lanceMax, T.lanceBase + cb * T.lanceStep);
       detonateLance(sim, d.x, d.y, d.heading, len);
       sim.lastDetonations.push({ type: 'LANCE', x: d.x, y: d.y, heading: d.heading, len, combo: sim.combo });
     } else if (d.type === NOVA) {
-      const r = Math.min(NOVA_MAX, NOVA_BASE + (cb >> 1));
+      const r = Math.min(T.novaMax, T.novaBase + (cb >> 1));
       detonateNova(sim, d.x, d.y, r);
       sim.lastDetonations.push({ type: 'NOVA', x: d.x, y: d.y, r, combo: sim.combo });
     } else {   // FREEZE
-      const dur = Math.min(FREEZE_MAX, FREEZE_BASE + cb);
+      const dur = Math.min(T.freezeMax, T.freezeBase + cb);
       sim.scanFreeze = Math.max(sim.scanFreeze, dur);
       sim.lastDetonations.push({ type: 'FREEZE', x: d.x, y: d.y, dur, combo: sim.combo });
     }
