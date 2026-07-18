@@ -11,7 +11,7 @@ import { SHOP_ITEMS, DECK_CARD, CARD_UNLOCK } from './shop.js';
 import { createNode, fire, stepBattle, coverage, aimColAt, REDRAW_COST, SLOTS,
   blankMachine, createTestSim, stepSim, coverageReward, SURVIVAL_REWARD,
   draftPicks, AGGRO_STEP, AGGRO_MIN, AGGRO_MAX, AGGRO_REDUCE_COST } from './battle.js';
-import { buildScreen } from './render.js';
+import { buildScreen, FX_MS } from './render.js';
 import { composeBoard, detonate, setReducedMotion } from './juice.js';
 import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
@@ -54,6 +54,7 @@ const game = {
   testSim: null, testMachine: null,
   authorGrammar: '', authorPreview: null, authoring: false,
   message: '', bannerLines: [], seed: 0, redrawCount: 0,
+  fx: [], reduceMotion,                       // device-detonation FX buffer (presentation-only)
 };
 
 // Lean start: a fresh player opens with 0 ROOT and authors their first card (no
@@ -82,7 +83,10 @@ const savePlays = (v) => localStorage.setItem(PLAYS_KEY, String(v));
 const loadWins = () => parseInt(localStorage.getItem(WINS_KEY) || '0', 10) || 0;
 const saveWins = (v) => localStorage.setItem(WINS_KEY, String(v));
 const clock = () => performance.now();
-const paint = (now) => { screen.innerHTML = composeBoard(buildScreen(game, now), game, now); };
+const paint = (now) => {
+  if (game.fx.length) game.fx = game.fx.filter((f) => now - f.at < FX_MS);   // drop spent detonation motion
+  screen.innerHTML = composeBoard(buildScreen(game, now), game, now);
+};
 const draw = () => paint(clock());
 
 // --- ROOT shop persistence ---
@@ -350,6 +354,7 @@ async function startExec() {
   game.message = hasCollision()
     ? 'WATCH — the strands grow; hold coverage through the breach.'
     : 'WATCH — keep your thread alive until the trace hits bottom.';
+  game.fx = [];
   await sleep(200);
   fire(node);
   kick(0.35);
@@ -359,6 +364,20 @@ async function startExec() {
   let lastHoney = 0, wasBreaching = false, breached = false;
   while (!node.outcome) {
     const snap = stepBattle(node);
+    // device detonations: the combo/fireworks payload. Each blast records grid-native
+    // motion (FX), a trauma kick and brightness surge scaled by the running combo, and
+    // fires its sound — the unused mult() arpeggio for a driller, an ice noise for FREEZE.
+    if (snap.detonations && snap.detonations.length) {
+      for (const d of snap.detonations) {
+        const combo = d.combo || 1;
+        if (!reduceMotion) {
+          game.fx.push({ ...d, at: clock() });
+          detonate(clock(), Math.min(1.5, 0.6 + combo * 0.15));
+        }
+        kick(Math.min(1, 0.35 + combo * 0.12));
+        if (d.type === 'FREEZE') sfx.ice(); else sfx.mult(Math.max(2, combo + 1));
+      }
+    }
     if (node.sim.honeyBurned > lastHoney) { lastHoney = node.sim.honeyBurned; sfx.honeypot(); kick(0.4); }
     if (snap.breachLeft >= 0 && !wasBreaching) {
       wasBreaching = true;

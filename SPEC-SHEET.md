@@ -413,8 +413,20 @@ counting.
 - **Honeypots bite:** burning a HONEY cell trips the trace scan — each
   newly-burned honeypot speeds the scan's descent (surfaced in the trace-scan
   meter). Honey sits in open reachable ground, so honey-dense blocks cost you time.
-- **All five terrain types on every block** (OPEN, HARD, WALL, BUS, HONEY),
+- **All five base terrain types on every block** (OPEN, HARD, WALL, BUS, HONEY),
   guaranteed.
+- **Burnable devices — the combo/fireworks payload (src/terrain.js › LANCE/NOVA/FREEZE,
+  src/beam.js › drainDetonations).** Three device cells seed onto reachable open ground
+  (the drillers gated hard against firewall, like honeypots but useful): a crawler that
+  burns one detonates it the same tick. **LANCE** (a spinning bar telegraph) drills a
+  straight line of firewall → OPEN along the crawler's heading and launches a fresh
+  strand out the tip; **NOVA** (a pulsing mark) blows a filled circle of firewall open;
+  **FREEZE** halts the trace scan for a spell. Drilled firewall becomes *claimable* OPEN,
+  so coverage stays honest as territory opens. Detonations **chain** — a blast can open
+  onto another device — and each link raises a **combo** that scales the *next* device
+  (longer bar, wider blast). The combo also drives the EXEC-phase spectacle (grid-native
+  motion, trauma shake, brightness surge, rising arpeggio), escalating with the chain.
+  All deterministic and RNG-free, so `(seed, params)` still replays byte-for-byte.
 
 **Win = coverage, held.** Breach the block by holding **≥ WIN_COVERAGE% (50%)** of its
 claimable cells through the breach timer before the trace scan reaches the bottom

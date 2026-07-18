@@ -2,7 +2,7 @@
 // phase; only their contents swap): FIELD (the memory block), GUTTER (run state +
 // controls), TRAY (cards). See src/layout.js for the geometry.
 
-import { FIELD_W, FIELD_H, WALL, idx, WIN_COVERAGE } from './terrain.js';
+import { FIELD_W, FIELD_H, WALL, idx, WIN_COVERAGE, LANCE, NOVA, FREEZE } from './terrain.js';
 import { crackPct, REDRAW_COST, rewardMult, draftPicks, AGGRO_REDUCE_COST, AGGRO_BASE, aimColAt, heatAt } from './battle.js';
 import { buildChain, beamGutterLines, cardLines, cardLabel, CARDS } from './cards.js';
 import {
@@ -13,9 +13,52 @@ import {
 } from './layout.js';
 export { COLS, ROWS };
 
-const TERRAIN_G = [' ', '▒', '▓', '═', '"'];       // OPEN HARD WALL BUS HONEY
+const TERRAIN_G = [' ', '▒', '▓', '═', '"', '|', 'o', '*'];   // OPEN HARD WALL BUS HONEY LANCE NOVA FREEZE (device fallbacks)
 const RAMP = ['·', ':', '=', '+', '*', '@', '%'];  // cold → hot burn strength
 const rampGlyph = (heat) => (heat <= 0 ? RAMP[0] : RAMP[Math.min(RAMP.length - 1, 1 + Math.floor(heat / 3))]);
+
+// Device telegraph: an un-burned device advertises itself before a crawler reaches it —
+// a LANCE bar spins, a NOVA / FREEZE mark pulses. Animated off wall-clock `now`; reduced
+// motion (or a still frame) falls back to the static glyph. All glyphs are ASCII, inside
+// the closed GridMono alphabet the render test enforces.
+const SPIN = ['|', '/', '-', '\\'];
+function deviceGlyph(type, now, reduce) {
+  if (reduce) return type === LANCE ? '|' : type === NOVA ? 'o' : '*';
+  if (type === LANCE) return SPIN[Math.floor(now / 120) % 4];
+  if (type === NOVA) return (Math.floor(now / 300) % 2) ? 'O' : 'o';
+  return (Math.floor(now / 260) % 2) ? '*' : '+';   // FREEZE twinkle
+}
+
+// Grid-native fireworks: each detonation records a wall-clock stamp in game.fx, and this
+// replays its motion over FX_MS — a LANCE front racing out the drilled bar, a NOVA ring
+// blowing outward, a FREEZE frost twinkle. Presentation only; the sim never sees it.
+export const FX_MS = 460;
+const HDIRS = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];   // == beam.js HEADINGS
+function putField(g, x, y, ch) {
+  if (x < 0 || x >= FIELD_W || y < 0 || y >= FIELD_H) return;
+  g[FIELD_OY + y][FIELD_OX + x] = ch;
+}
+function drawFx(g, fx, now) {
+  for (const f of fx) {
+    const p = (now - f.at) / FX_MS;
+    if (p < 0 || p >= 1) continue;
+    if (f.type === 'LANCE') {
+      const front = Math.round(p * f.len);
+      for (const h of [f.heading & 7, (f.heading + 4) & 7]) {
+        const [dx, dy] = HDIRS[h];
+        putField(g, f.x + dx * front, f.y + dy * front, '@');            // bright tip
+        if (front - 1 >= 1) putField(g, f.x + dx * (front - 1), f.y + dy * (front - 1), '*');
+        if (front - 2 >= 1) putField(g, f.x + dx * (front - 2), f.y + dy * (front - 2), '+');   // cooling trail
+      }
+    } else if (f.type === 'NOVA') {
+      const ri = Math.round(p * (f.r + 0.5));
+      for (let a = 0; a < 8; a++) { const [dx, dy] = HDIRS[a]; putField(g, f.x + dx * ri, f.y + dy * ri, (a & 1) ? '+' : '*'); }
+    } else {   // FREEZE frost twinkle
+      putField(g, f.x, f.y, (Math.floor(now / 80) % 2) ? '*' : '+');
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) putField(g, f.x + dx, f.y + dy, '·');
+    }
+  }
+}
 
 function blank() { return Array.from({ length: ROWS }, () => new Array(COLS).fill(' ')); }
 function stamp(g, x, y, s) { if (y < 0 || y >= ROWS) return; for (let i = 0; i < s.length; i++) if (x + i >= 0 && x + i < COLS) g[y][x + i] = s[i]; }
@@ -64,16 +107,18 @@ function drawCard(g, x, y, key, card, spent, w = 15) {
 }
 
 // --- FIELD: the memory block (idle terrain, or live burn), or the shop list ---
-function drawBlockCells(g, machine, sim) {
+function drawBlockCells(g, machine, sim, now = 0, reduce = false) {
   const params = sim ? sim.params : null;
   for (let y = 0; y < FIELD_H; y++) {
     for (let x = 0; x < FIELD_W; x++) {
       const c = idx(x, y);
+      const terr = machine.t[c];
       let ch;
       if (sim && sim.params.scanSpeed > 0 && y === sim.scanRow && sim.scanRow < FIELD_H) ch = '#';   // scan line (none on the scanless test bench)
       else if (sim && sim.reclaimed && sim.reclaimed.has(c)) ch = 'X';                 // reclaim flash
       else if (machine.burned[c]) ch = sim ? rampGlyph(heatAt(sim, c)) : '#';
-      else ch = TERRAIN_G[machine.t[c]];
+      else if (terr >= LANCE) ch = deviceGlyph(terr, now, reduce);                     // un-burned device telegraph
+      else ch = TERRAIN_G[terr];
       g[FIELD_OY + y][FIELD_OX + x] = ch;
     }
   }
@@ -124,17 +169,19 @@ function drawAim(g, now) {
 
 function drawField(g, game, now) {
   const { phase, run, node } = game;
+  const reduce = !!game.reduceMotion;
   if (phase === 'shop') { drawShop(g, game); return; }
   if (phase === 'test') {   // the bench: blank block while charging, then the live burn
-    drawBlockCells(g, game.testSim ? game.testSim.machine : game.testMachine, game.testSim);
+    drawBlockCells(g, game.testSim ? game.testSim.machine : game.testMachine, game.testSim, now, reduce);
     return;
   }
   if (phase === 'author') {   // the tutorial: the literal turtle's drawn path (static preview)
-    drawBlockCells(g, game.authorPreview ? game.authorPreview.machine : run.machine, game.authorPreview);
+    drawBlockCells(g, game.authorPreview ? game.authorPreview.machine : run.machine, game.authorPreview, now, reduce);
     return;
   }
   const sim = node && node.sim;
-  drawBlockCells(g, run.machine, sim);
+  drawBlockCells(g, run.machine, sim, now, reduce);
+  if (game.fx && game.fx.length) drawFx(g, game.fx, now);   // detonation motion over the live burn
   if (phase === 'target') drawAim(g, now);
   // result banner over the block
   if (phase === 'result') {

@@ -215,6 +215,20 @@ headless browser, same as the existing slice.
 
 ---
 
+## 5b. Shipped: burnable devices + the combo chain
+
+The "combo chain" foreseen below (and the glyph-spray row in §2) now exists as a
+*mechanic*, not just a visual: three burnable field devices — **LANCE** (drills a bar
+of firewall open), **NOVA** (blows a circle open), **FREEZE** (halts the trace scan) —
+detonate when a crawler burns them (`src/terrain.js` device types, `src/beam.js ›
+drainDetonations`). Detonations **chain** (a blast can open onto another device) and each
+link raises a **combo** that scales the next device *and* the spectacle: grid-native
+motion in `render.js › drawFx` (a LANCE front racing out, a NOVA ring, a FREEZE
+twinkle — all in the closed alphabet), combo-scaled `detonate()` brightness + `kick()`
+shake + the previously-unused `sfx.mult(n)` arpeggio, driven from `main.js › startExec`.
+This realizes the §2 "glyph sprays" upgrade on the grid-native path (no overlay canvas
+yet) and gives the "long combo chain" concern below a concrete subject to tune.
+
 ## 6. Open dials / questions
 
 - **How far off the grid do we go?** The stance here (§2) is "grid as substrate,
