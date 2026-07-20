@@ -33,6 +33,19 @@ python3 -m http.server 8099
 # open http://localhost:8099/index.html
 ```
 
+### Sandboxes
+
+The same server also serves the standalone tuning labs under `preview/` — open them
+at the same origin, e.g. `http://localhost:8099/preview/<page>.html`:
+
+- **`preview/fireworks.html`** — the field-device / combo / fireworks lab. Watch
+  LANCE / NOVA / FREEZE detonate live, force a cascade with **chain lineup**, and tune
+  the combo caps and device power with sliders (they map straight to
+  `DEFAULT_DEVICE_TUNING` in `src/beam.js`). Drives the real render + juice pipeline, so
+  it looks and sounds like the game.
+- **`preview/beam.html`** — the L-system growth lab (grammar / pace / connector chain vs. the trace scan).
+- **`preview/textures.html`** — the terrain-texture lab.
+
 **Play (mouse / touch / keyboard):** pick a **jack-in character** (sets your
 ignition style), build a 3-card program (tap hand cards), tap **TARGET**, tap a
 sector — matching your program's **heat** to the terrain — then **aim your

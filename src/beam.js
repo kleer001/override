@@ -15,6 +15,7 @@ import { mulberry32 } from './rng.js';
 import {
   generateMachine, reclaimRow,
   FIELD_W, FIELD_H, COST, idx, WALL, HONEY, SECTORS,
+  OPEN, LANCE, NOVA, FREEZE, DEVICE_MIN,
 } from './terrain.js';
 
 export { FIELD_W, FIELD_H, SECTORS, WALL, idx };
@@ -62,6 +63,23 @@ const HEAT_NEW = 18;         // a fresh turtle burn is brightest (the searching 
 const HEAT_DECAY = 2;        // burn brightness cools each tick → frontier bright, body cool
 const MAX_TURTLES = 3000;    // compute guard against a runaway fork/branch process
 
+// --- burnable field devices + combo (the combo/fireworks payload) ------------
+// A device detonates the first time a crawler burns it. Detonations chain: a LANCE
+// or NOVA can open ground onto another device, and each link in the chain raises the
+// combo, which scales the NEXT device — bigger blast, longer bar. All deterministic
+// and RNG-free (drilled direction/size come from the burn, not chance), so a
+// (seed, params) pair still replays byte-for-byte.
+// The knobs, in one place. Production never overrides them (defaults ARE the game);
+// the preview/fireworks.html tuning lab passes a live-mutated copy via
+// params.deviceTuning so you can feel the caps before baking new numbers in here.
+export const DEFAULT_DEVICE_TUNING = {
+  comboWindow: 30,   // ticks a chain stays hot before the combo cools
+  comboMax: 8,       // combo value cap for power scaling
+  lanceBase: 6, lanceStep: 2, lanceMax: 16,   // LANCE bar half-length, per side
+  novaBase: 2, novaMax: 5,                     // NOVA blast circle radius
+  freezeBase: 8, freezeMax: 16,                // ticks the trace scan halts
+};
+
 // Default parameter block (preview sandbox). DOM mutates a live copy so sliders
 // take effect on the running sim.
 export function defaultParams() {
@@ -102,6 +120,11 @@ export function createSimOn(machine, sectorIndex, params, rng) {
     reTread: 0,                                          // count of F-onto-already-F-burned (must stay 0)
     outcome: null,                                       // null | 'win' | 'traced'
     tick: 0,
+    scanFreeze: 0,                                       // ticks the trace scan is held (FREEZE device)
+    combo: 0, comboExpire: 0,                            // live detonation chain + the tick it lapses
+    detonated: new Set(),                                // device cells already fired (never twice)
+    pendingDet: [],                                      // detonations queued this tick, drained after the pass
+    lastDetonations: [],                                 // detonations resolved on the LAST tick (FX readout)
   };
   seedSwarm(sim);
   return sim;
@@ -120,13 +143,81 @@ export function createSim(seed, sectorIndex, params) {
 // the tripwire that must stay 0 (seed placements may legitimately overlap, so they
 // pass fromF=false). Area comes entirely from the strands' own branching skeleton
 // (fork density) — no smolder fill — so coverage is earned by the grammar.
-function burn(sim, x, y, fromF = false) {
+function burn(sim, x, y, fromF = false, heading = SEED_HEADING) {
   const c = idx(x, y);
   const was = sim.machine.burned[c];
-  if (!was) { sim.cellsBurned++; if (sim.machine.t[c] === HONEY) sim.honeyBurned++; }   // fresh cell (bait tripped)
+  const terr = sim.machine.t[c];
+  if (!was) { sim.cellsBurned++; if (terr === HONEY) sim.honeyBurned++; }   // fresh cell (bait tripped)
   if (fromF && was) sim.reTread++;                             // F landed on burned ground → re-tread
   sim.machine.burned[c] = 1;
   sim.heat[c] = sim.tick;
+  // a device fires the first time it's burned. Queued (not run here) so it can't
+  // mutate the turtle list mid-iteration; `heading` is the burning crawler's aim,
+  // which a LANCE drills along. Chain reactions are welcome (drained in a loop).
+  if (!was && terr >= DEVICE_MIN && !sim.detonated.has(c)) {
+    sim.detonated.add(c);
+    sim.pendingDet.push({ type: terr, x, y, heading: heading & 7 });
+  }
+}
+
+// Turn a firewall cell into open ground and burn it — the claimable denominator grows
+// in lockstep (createSimOn's `claim` count), so drilled territory reads honestly in
+// coverage instead of inflating the %. Non-firewall cells are simply burned. May queue
+// a chained detonation if the opened cell is itself a device.
+function openBurn(sim, x, y) {
+  if (x < 0 || x >= FIELD_W || y < 0 || y >= FIELD_H) return;
+  const c = idx(x, y);
+  if (sim.machine.t[c] === WALL) { sim.machine.t[c] = OPEN; sim.claim++; }
+  burn(sim, x, y, false);
+}
+
+// LANCE: drill a straight bar of firewall open through the device, both ways along the
+// crawler's heading, then launch a fresh strand out the forward tip so embers pour into
+// the new corridor.
+function detonateLance(sim, x, y, heading, len) {
+  for (const h of [heading & 7, (heading + 4) & 7]) {
+    const [dx, dy] = HEADINGS[h];
+    for (let d = 1; d <= len; d++) openBurn(sim, x + dx * d, y + dy * d);
+  }
+  const [fx, fy] = HEADINGS[heading & 7];
+  const tx = x + fx * len, ty = y + fy * len;
+  if (tx >= 0 && tx < FIELD_W && ty >= 0 && ty < FIELD_H
+    && sim.machine.t[idx(tx, ty)] !== WALL && sim.turtles.length < MAX_TURTLES) {
+    sim.turtles.push({ x: tx, y: ty, heading: heading & 7, pc: 0, seg: 0, clock: 0 });
+  }
+}
+
+// NOVA: blow a filled circle of firewall open around the device.
+function detonateNova(sim, x, y, r) {
+  for (let dy = -r; dy <= r; dy++)
+    for (let dx = -r; dx <= r; dx++)
+      if (dx * dx + dy * dy <= r * r) openBurn(sim, x + dx, y + dy);
+}
+
+// Resolve every device detonation queued during the turtle pass. FIFO and RNG-free, so
+// it replays identically. Each link bumps the combo and reads it back to scale the next
+// device, so a chain reaction escalates; the FX layer reads sim.lastDetonations.
+function drainDetonations(sim) {
+  const T = sim.params.deviceTuning || DEFAULT_DEVICE_TUNING;
+  while (sim.pendingDet.length) {
+    const d = sim.pendingDet.shift();
+    sim.combo++;
+    sim.comboExpire = sim.tick + T.comboWindow;
+    const cb = Math.min(sim.combo - 1, T.comboMax);   // a solo hit fires at base power
+    if (d.type === LANCE) {
+      const len = Math.min(T.lanceMax, T.lanceBase + cb * T.lanceStep);
+      detonateLance(sim, d.x, d.y, d.heading, len);
+      sim.lastDetonations.push({ type: 'LANCE', x: d.x, y: d.y, heading: d.heading, len, combo: sim.combo });
+    } else if (d.type === NOVA) {
+      const r = Math.min(T.novaMax, T.novaBase + (cb >> 1));
+      detonateNova(sim, d.x, d.y, r);
+      sim.lastDetonations.push({ type: 'NOVA', x: d.x, y: d.y, r, combo: sim.combo });
+    } else {   // FREEZE
+      const dur = Math.min(T.freezeMax, T.freezeBase + cb);
+      sim.scanFreeze = Math.max(sim.scanFreeze, dur);
+      sim.lastDetonations.push({ type: 'FREEZE', x: d.x, y: d.y, dur, combo: sim.combo });
+    }
+  }
 }
 
 // --- seeding (§7 connector chain) --------------------------------------------
@@ -156,7 +247,7 @@ function anchorPoints(valid) {
 function spawnTurtle(sim, x, y, heading, seg) {
   if (sim.turtles.length >= MAX_TURTLES) return;
   sim.turtles.push({ x, y, heading: heading & 7, pc: 0, seg, clock: 0 });
-  burn(sim, x, y);   // the launch/tip cell (seed — overlaps allowed, not re-tread)
+  burn(sim, x, y, false, heading);   // the launch/tip cell (seed — overlaps allowed, not re-tread)
 }
 
 function seedSwarm(sim) {
@@ -200,7 +291,7 @@ function advance(sim, t) {
       const c = idx(nx, ny);
       if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;   // firebreak / trail
       t.x = nx; t.y = ny; t.heading = h;
-      burn(sim, nx, ny, true);
+      burn(sim, nx, ny, true, h);
       return true;
     }
     return false;
@@ -211,7 +302,7 @@ function advance(sim, t) {
   const c = idx(nx, ny);
   if (sim.machine.t[c] === WALL || sim.machine.burned[c]) return false;   // crashed into a wall / own trail
   t.x = nx; t.y = ny;
-  burn(sim, nx, ny, true);
+  burn(sim, nx, ny, true, t.heading);
   return true;
 }
 
@@ -230,7 +321,7 @@ function fork(sim, t, spawned) {
     const c = idx(nx, ny);
     if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;
     spawned.push({ x: nx, y: ny, heading: h, pc: 0, seg: t.seg, clock: 0 });
-    burn(sim, nx, ny, true);
+    burn(sim, nx, ny, true, h);
     break;
   }
   t.heading = (t.heading + 7) & 7;   // parent −1
@@ -253,7 +344,7 @@ function handoff(sim, t, spawned) {
     const c = idx(nx, ny);
     if (sim.machine.t[c] === WALL || sim.machine.burned[c]) continue;
     spawned.push({ x: nx, y: ny, heading: h, pc: 0, seg: next, clock: 0 });
-    burn(sim, nx, ny, true);
+    burn(sim, nx, ny, true, h);
     return;
   }
 }
@@ -286,6 +377,7 @@ function stepTurtles(sim) {
 function advanceScan(sim) {
   const p = sim.params;
   sim.reclaimed.clear();
+  if (sim.scanFreeze > 0) { sim.scanFreeze--; sim.honeySpike = 0; return; }   // FREEZE device holds the trace
   sim.scanAcc += p.scanSpeed + sim.honeySpike;
   sim.honeySpike = 0;
   while (sim.scanAcc >= 1 && sim.scanRow < FIELD_H) {
@@ -326,9 +418,12 @@ export function coverage(sim) {
 export function stepSim(sim) {
   if (sim.outcome) return snapshot(sim);
   sim.tick++;
+  sim.lastDetonations.length = 0;                                  // FX buffer holds only THIS tick's blasts
+  if (sim.combo > 0 && sim.tick > sim.comboExpire) sim.combo = 0;  // chain cooled between detonations
 
   const honeyBefore = sim.honeyBurned;
   stepTurtles(sim);
+  drainDetonations(sim);                                           // resolve devices burned this pass (may chain)
   if (sim.honeyBurned > honeyBefore) sim.honeySpike += (sim.honeyBurned - honeyBefore);
   advanceScan(sim);
 
@@ -360,5 +455,7 @@ export function snapshot(sim) {
     scanRow: sim.scanRow,
     breachLeft: sim.breachLeft,
     outcome: sim.outcome,
+    combo: sim.combo,
+    detonations: sim.lastDetonations,   // live ref: main.js reads it synchronously each tick
   };
 }

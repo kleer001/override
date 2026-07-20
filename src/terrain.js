@@ -16,10 +16,16 @@ import { mulberry32, randInt } from './rng.js';
 // 64-wide field panel beside the status gutter (see src/layout.js): 62×28 interior.
 export const FIELD_W = 62, FIELD_H = 28;
 export const OPEN = 0, HARD = 1, WALL = 2, BUS = 3, HONEY = 4;
+// Burnable field devices (the combo/fireworks payload). Seeded like honeypots, they
+// look inert until a crawler burns them, then detonate: LANCE drills a bar of firewall
+// open, NOVA blasts a circle open, FREEZE stalls the trace scan. `t[c] >= DEVICE_MIN`
+// is the "is a device" test; they traverse/burn like OPEN (cost 1).
+export const LANCE = 5, NOVA = 6, FREEZE = 7;
+export const DEVICE_MIN = LANCE;
 // REACH a beam ember SPENDS to infect each cell (ember-model.md §4). WALL is
 // unaffordable; BUS refunds (accelerant). OPEN must cost >=1 or the free flood
-// returns.
-export const COST = [1, 6, Infinity, -1, 1];
+// returns. Devices sit on open ground, so they cost like OPEN.
+export const COST = [1, 6, Infinity, -1, 1, 1, 1, 1];
 export const idx = (x, y) => y * FIELD_W + x;
 export const WIN_COVERAGE = 50; // % of a sector's claimable cells to breach it
 
@@ -108,6 +114,17 @@ function ensureType(t, s, type, minN, rng) {
   while (n < minN && opens.length) { t[opens.splice(randInt(rng, 0, opens.length - 1), 1)[0]] = type; n++; }
 }
 
+// True if any 4-neighbour of (x,y) is firewall — a driller device is only worth
+// placing where its blast actually opens sealed ground.
+function wallAdjacent(t, x, y, x0, x1) {
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const nx = x + dx, ny = y + dy;
+    if (nx < x0 || nx > x1 || ny < 0 || ny >= FIELD_H) continue;
+    if (t[idx(nx, ny)] === WALL) return true;
+  }
+  return false;
+}
+
 function bfs(t, start, x0, x1) {
   const dist = new Int16Array(FIELD_W * FIELD_H).fill(-1);
   dist[start] = 0; const q = [start];
@@ -178,6 +195,31 @@ function genSector(t, s, rng) {
   let honey = 0;
   for (let k = 0; k < wantHoney && cand.length; k++) { t[cand[randInt(rng, 0, cand.length - 1)]] = HONEY; honey++; }
   if (honey === 0) { const c = idx(Math.min(x1, entry.x + 3), entry.y); t[c] = HONEY; }
+
+  // Burnable devices (combo/fireworks payload). Seed onto reachable OPEN ground;
+  // the drillers (LANCE/NOVA) prefer cells hard against firewall so detonating them
+  // opens sealed territory, FREEZE just needs to be reachable. Deterministic (this
+  // rng), placed AFTER honeypots so terrain generation for a seed is unchanged.
+  const reachable = [], drillers = [];
+  for (let y = 0; y < FIELD_H; y++) for (let x = x0; x <= x1; x++) {
+    const c = idx(x, y);
+    if (t[c] !== OPEN || dist[c] < 2) continue;
+    reachable.push(c);
+    if (wallAdjacent(t, x, y, x0, x1)) drillers.push(c);
+  }
+  const place = (pool, type) => {
+    if (!pool.length) return;
+    const c = pool.splice(randInt(rng, 0, pool.length - 1), 1)[0];
+    t[c] = type;
+    let j = reachable.indexOf(c); if (j >= 0) reachable.splice(j, 1);
+    j = drillers.indexOf(c); if (j >= 0) drillers.splice(j, 1);
+  };
+  const wantLance = 1 + Math.floor(rng() * 2);   // 1-2 lances
+  for (let k = 0; k < wantLance; k++) place(drillers.length ? drillers : reachable, LANCE);
+  const wantNova = Math.floor(rng() * 2);        // 0-1 novas
+  for (let k = 0; k < wantNova; k++) place(drillers.length ? drillers : reachable, NOVA);
+  const wantFreeze = Math.floor(rng() * 2);      // 0-1 freezes
+  for (let k = 0; k < wantFreeze; k++) place(reachable, FREEZE);
 
   return { ...s, entry, difficulty: null };
 }

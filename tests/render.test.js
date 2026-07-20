@@ -75,6 +75,18 @@ test('slotting the authored card renders (its desc feeds the gutter explainer)',
   assert.doesNotThrow(() => buildScreen(game, 0));
 });
 
+test('detonation FX motion stays inside the closed glyph alphabet', () => {
+  const g = execGame();
+  // mid-animation FX of every device type (stamped at ~40% of their FX_MS lifetime)
+  g.fx = [
+    { type: 'LANCE', x: 20, y: 14, heading: 0, len: 10, combo: 3, at: 800 },
+    { type: 'NOVA', x: 34, y: 12, r: 4, combo: 5, at: 820 },
+    { type: 'FREEZE', x: 46, y: 8, dur: 10, combo: 1, at: 840 },
+  ];
+  const bad = offenders(buildScreen(g, 1000));
+  assert.deepEqual(bad, [], `FX emitted glyphs outside GridMono: ${bad.map((c) => 'U+' + c.codePointAt(0).toString(16)).join(' ')}`);
+});
+
 test('closed glyph alphabet: the renderer only emits glyphs the embedded font covers', () => {
   const titleGame = { phase: 'title', titleWins: 3, run: null, node: null };
   for (const [name, game] of [['title', titleGame], ['author', authorGame()], ['assemble', assembleGame()], ['target', { ...assembleGame(), phase: 'target' }], ['exec', execGame()], ['test', testGame()]]) {
