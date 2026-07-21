@@ -87,10 +87,17 @@ test('detonation FX motion stays inside the closed glyph alphabet', () => {
   assert.deepEqual(bad, [], `FX emitted glyphs outside GridMono: ${bad.map((c) => 'U+' + c.codePointAt(0).toString(16)).join(' ')}`);
 });
 
+// the cold-open cinematic: every beat, sampled mid-type (partial reveal + cursor) and
+// fully revealed, so an out-of-alphabet glyph in the essay/monologue/corruption can't ship.
+const coldOpen = (beat, now) => ['coldopen:' + beat + '@' + now, { phase: 'coldopen', run: null, node: null, reduceMotion: false, cine: { beat, startedAt: 0 } }];
+const COLD_OPEN_CASES = [];
+for (const beat of ['citizen', 'blackout', 'question', 'refusal', 'contact']) for (const now of [400, 6000, 999999]) COLD_OPEN_CASES.push(coldOpen(beat, now));
+COLD_OPEN_CASES.push(['coldopen:ready@999999', { phase: 'coldopen', run: null, node: null, reduceMotion: false, cineReady: true, cine: { beat: 'contact', startedAt: 0 } }]);
+
 test('closed glyph alphabet: the renderer only emits glyphs the embedded font covers', () => {
   const titleGame = { phase: 'title', titleWins: 3, run: null, node: null };
-  for (const [name, game] of [['title', titleGame], ['author', authorGame()], ['assemble', assembleGame()], ['target', { ...assembleGame(), phase: 'target' }], ['exec', execGame()], ['test', testGame()]]) {
-    const bad = offenders(buildScreen(game, 1000));
+  for (const [name, game] of [['title', titleGame], ['author', authorGame()], ['assemble', assembleGame()], ['target', { ...assembleGame(), phase: 'target' }], ['exec', execGame()], ['test', testGame()], ...COLD_OPEN_CASES]) {
+    const bad = offenders(buildScreen(game, name.startsWith('coldopen') ? +name.split('@')[1] : 1000));
     assert.deepEqual(bad, [], `phase ${name} emitted glyphs outside GridMono: ${bad.map((c) => 'U+' + c.codePointAt(0).toString(16)).join(' ')}`);
   }
 });

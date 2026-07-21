@@ -9,8 +9,9 @@ import {
   COLS, ROWS, FIELD, GUTTER, TRAY, FIELD_OX, FIELD_OY,
   HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_TEST, BTN_TEST_RESET, BTN_TEST_PLAY,
   BTN_START, BTN_FIRE, BTN_CONTINUE, AUTHOR_SYMS, BTN_AUTHOR_DEL, BTN_AUTHOR_RUN,
-  BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, BTN_TITLE_CONTINUE, BTN_TITLE_NEW,
+  BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, BTN_TITLE_CONTINUE, BTN_TITLE_NEW, BTN_SKIP, BTN_READY,
 } from './layout.js';
+import { ESSAY, KIDCODE, STATUS_CIVIL, FILES, QUESTION, REFUSAL, CITIZEN_CORRUPT, MONOLOGUE, CINE } from './intro.js';
 export { COLS, ROWS };
 
 const TERRAIN_G = [' ', '▒', '▓', '═', '"', '|', 'o', '*'];   // OPEN HARD WALL BUS HONEY LANCE NOVA FREEZE (device fallbacks)
@@ -262,11 +263,12 @@ function drawGutter(g, game) {
     drawButton(g, BTN_AGGRO_DOWN, run.root < AGGRO_REDUCE_COST);
     drawButton(g, BTN_AGGRO_UP, false);
   } else if (phase === 'author') {
-    L('WRITE A PROGRAM'); gap();
+    // all copy kept <=13 cols so the narrow gutter never clips a word mid-instruction.
+    L('WRITE A LINE'); gap();
     L('GRAMMAR'); L((game.authorGrammar || '—').slice(0, GUTTER.w - 3)); gap();
-    L('GOAL: keep your'); L('thread alive to'); L('the trace-bottom.'); gap();
-    L('tip: 3+ turns,'); L('balance L and R.'); gap();
-    legend(L);
+    L('GOAL'); L('stay alive to'); L('trace-bottom.'); gap();
+    L('tip: 3+ turns'); L('balance L/R.'); gap();
+    L('KEYS'); L('F step+burn'); L('L/R turn 45');   // author has only F/L/R — no K
   }
 
   // transient feedback flows right below the stats (above the fixed buttons).
@@ -357,10 +359,47 @@ function drawTitle(g, game) {
   drawButton(g, BTN_TITLE_NEW, false);
 }
 
+// --- COLD OPEN (research/intro-script.md) ---
+// Typewriter: reveal `budget` pacing-chars across `lines` from (x,y). A blinking `_`
+// cursor rides the reveal head. Reduced motion (budget === Infinity) shows it all.
+// `xOf` maps a line to its left column (centering); defaults to a fixed x.
+function typeLines(g, lines, y, budget, blinkOn, xOf) {
+  let rem = budget;
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i], x = xOf(i, ln);
+    if (rem >= ln.length) { stamp(g, x, y + i, ln); rem -= ln.length + 1; }   // +1 tick per line break
+    else { stamp(g, x, y + i, ln.slice(0, Math.max(0, rem)) + (blinkOn ? '_' : ' ')); return; }
+  }
+  if (blinkOn) { const last = lines[lines.length - 1] || ''; stamp(g, xOf(lines.length - 1, last) + last.length, y + lines.length - 1, '_'); }
+}
+const leftAt = (x) => () => x;
+const centerAt = () => (_i, ln) => Math.max(0, Math.floor((COLS - ln.length) / 2));
+
+// BEAT 1: the civilian machine wearing the play-screen's own three panels.
+function drawCivilian(g, budget, blinkOn) {
+  panelBox(g, FIELD, 'CIVICS.TXT');
+  panelBox(g, GUTTER, 'STATUS');
+  panelBox(g, TRAY, 'FILES');
+  typeLines(g, ESSAY, 3, budget, blinkOn, leftAt(3));
+  frame(g, 38, 15, 24, 4);                                  // the half-covered back window
+  KIDCODE.forEach((ln, i) => stamp(g, 40, 16 + i, ln));
+  STATUS_CIVIL.forEach((ln, i) => stamp(g, GUTTER.x + 2, 2 + i, ln.slice(0, GUTTER.w - 3)));
+  FILES.forEach((ln, i) => stamp(g, 4, 32 + i, ln));
+}
+
+// BEAT 2: power-down sweep top->bottom, then true black. `front` is how far the
+// darkness has fallen; STATUS reads SIGNAL LOST for the last stretch before it goes.
+function drawBlackout(g, front) {
+  drawCivilian(g, Infinity, false);
+  for (let y = 0; y < ROWS; y++) if (y < front) for (let x = 0; x < COLS; x++) g[y][x] = ' ';
+  if (front > 2 && front < ROWS) stamp(g, GUTTER.x + 2, Math.max(front, 1), 'SIGNAL LOST');
+}
+
 export function buildScreen(game, now = 0) {
   const g = blank();
   const { phase } = game;
   if (phase === 'title') { drawTitle(g, game); return g.map((r) => r.join('')).join('\n'); }
+  if (phase === 'coldopen') { drawColdOpen(g, game, now); return g.map((r) => r.join('')).join('\n'); }
   const t = titles(phase);
   panelBox(g, FIELD, t.field);
   panelBox(g, GUTTER, 'STATUS');
@@ -371,4 +410,29 @@ export function buildScreen(game, now = 0) {
   drawTray(g, game);
 
   return g.map((r) => r.join('')).join('\n');
+}
+
+// Dispatch a cold-open beat off game.cine {beat, startedAt}. Text reveal is a pure
+// function of elapsed wall-clock, so the anim loop drives the typewriter with no timers.
+function drawColdOpen(g, game, now) {
+  const c = game.cine || { beat: 'citizen', startedAt: now };
+  const elapsed = Math.max(0, now - c.startedAt);
+  const blink = Math.floor(now / 400) % 2 === 0;
+  const reveal = (msPerChar) => (game.reduceMotion ? Infinity : Math.floor(elapsed / msPerChar));
+  if (c.beat === 'citizen') {
+    drawCivilian(g, reveal(CINE.essayMs), blink);
+  } else if (c.beat === 'blackout') {
+    const front = Math.min(ROWS, Math.ceil((elapsed / CINE.powerMs) * ROWS));
+    drawBlackout(g, front);
+  } else if (c.beat === 'question') {
+    typeLines(g, QUESTION, 17, reveal(CINE.qMs), blink, centerAt());
+  } else if (c.beat === 'refusal') {
+    typeLines(g, QUESTION, 14, Infinity, false, centerAt());              // question stays up
+    typeLines(g, [REFUSAL], 19, reveal(CINE.noMs), blink, centerAt());
+    if (reveal(CINE.noMs) >= REFUSAL.length) center(g, 22, CITIZEN_CORRUPT);   // compliance corrupts
+  } else if (c.beat === 'contact') {
+    typeLines(g, MONOLOGUE, 8, reveal(CINE.monoMs), blink, leftAt(8));
+  }
+  if (game.cineReady) drawButton(g, BTN_READY, false);        // contact done — read, then advance
+  else if (c.beat !== 'refusal') drawButton(g, BTN_SKIP, false);   // SKIP live through the cinematic
 }

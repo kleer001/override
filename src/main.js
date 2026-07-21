@@ -17,9 +17,10 @@ import { createTrauma } from './shake.js';
 import { installPointer } from './input.js';
 import { HAND_CARDS, DRAFT_CARDS, BTN_REDRAW, BTN_TEST, BTN_TEST_RESET, BTN_TEST_PLAY,
   BTN_START, BTN_FIRE, AUTHOR_SYMS, BTN_AUTHOR_DEL, BTN_AUTHOR_RUN,
-  BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, BTN_TITLE_CONTINUE, BTN_TITLE_NEW, inRect } from './layout.js';
+  BTN_AGGRO_DOWN, BTN_AGGRO_UP, shopRow, BTN_JACKIN, BTN_TITLE_CONTINUE, BTN_TITLE_NEW, BTN_SKIP, BTN_READY, inRect } from './layout.js';
 import { generateMachineUpTo, FIELD_W } from './terrain.js';
 import { sfx, resumeAudio } from './audio.js';
+import { ESSAY, QUESTION, REFUSAL, MONOLOGUE, VOICE, CINE, blockChars } from './intro.js';
 
 const screen = document.getElementById('screen');
 const crtEl = document.querySelector('.crt');
@@ -53,6 +54,7 @@ const game = {
   program: new Array(SLOTS).fill(null), selection: [], hand: [], draft: [],
   testSim: null, testMachine: null,
   authorGrammar: '', authorPreview: null, authoring: false,
+  cine: null, cineSkip: false, cineReady: false,   // cold-open cinematic beat state
   message: '', bannerLines: [], seed: 0, redrawCount: 0,
   fx: [], reduceMotion,                       // device-detonation FX buffer (presentation-only)
 };
@@ -149,7 +151,58 @@ function startRun() {
   game.node = null;
   game.bannerLines = [];
   if (isAuthored()) newAssemble();                 // returning player → the loadout
-  else newAuthor();                                // first ever run → author your first card
+  else playColdOpen();                             // first ever run → the recruitment cinematic → author
+}
+
+// --- COLD OPEN (research/intro-script.md): the fresh-save-only recruitment cinematic.
+// Sequences the beats with sleeps; each beat's on-screen text reveals itself from the
+// wall clock (drawColdOpen), so the anim loop drives the typewriter. A deliberate SKIP
+// (button / Esc / Enter) aborts the chain and drops straight into the author tutorial.
+async function playColdOpen() {
+  game.node = null;
+  game.cineSkip = false; game.cineReady = false;
+  game.message = ''; game.bannerLines = [];
+  resumeAudio();
+  const rm = game.reduceMotion;
+  const typeDur = (lines, ms) => (rm ? 600 : blockChars(lines) * ms);
+  sfx.ui();
+  if (!await cineBeat('citizen', typeDur(ESSAY, CINE.essayMs) + (rm ? 400 : CINE.holdShort))) return;
+  sfx.flatline();
+  if (!await cineBeat('blackout', (rm ? 500 : CINE.powerMs) + CINE.holdBlack)) return;
+  sfx.ui();
+  if (!await cineBeat('question', typeDur(QUESTION, CINE.qMs) + CINE.qHold)) return;
+  sfx.crack();
+  if (!await cineBeat('refusal', (rm ? 400 : REFUSAL.length * CINE.noMs) + CINE.holdBlack)) return;
+  sfx.exec();
+  if (!await cineBeat('contact', typeDur(MONOLOGUE, CINE.monoMs) + (rm ? 300 : 500))) return;
+  game.cineReady = true;                         // contact done — the player reads, then taps I'M READY
+  sfx.ui();
+  draw();
+}
+// Hold on one beat for durMs, bailing early if the player skipped. The anim loop
+// repaints (needsAnim covers 'coldopen'); we only pace and watch for the skip.
+async function cineBeat(beat, durMs) {
+  game.phase = 'coldopen';
+  game.cine = { beat, startedAt: clock() };
+  draw();
+  const end = clock() + durMs;
+  while (clock() < end) {
+    if (game.cineSkip) return false;
+    await sleep(60);
+  }
+  return true;
+}
+function relightToAuthor() {
+  game.cine = null; game.cineReady = false;
+  newAuthor();
+  game.message = VOICE.V1;   // the contact's parting line greets the author screen
+  draw();
+}
+function skipColdOpen() {
+  if (game.phase !== 'coldopen' || game.cineSkip) return;
+  game.cineSkip = true;
+  sfx.ui();
+  relightToAuthor();
 }
 
 // The boot / title screen. CONTINUE resumes saved progress; NEW wipes it.
@@ -433,7 +486,7 @@ function showResult() {
 
 function advance() {
   const won = game.node.outcome === 'win';
-  if (game.authoring && !won) { newAuthor(); return; }   // crashed mid-tutorial → revise (fresh blank slate)
+  if (game.authoring && !won) { newAuthor(); game.message = VOICE.Vc; draw(); return; }   // crashed mid-tutorial → the contact talks you back into the editor
   game.authoring = false;
   if (won && hasCollision()) startDraft();               // a real breach → bank a card, then the shop
   else if (game.retried) { game.retried = false; newAssemble(); }   // retry token: re-run the block
@@ -497,6 +550,9 @@ function onTapCell(col, row) {
   if (game.phase === 'title') {
     if (inRect(col, row, BTN_TITLE_CONTINUE)) return startRun();
     if (inRect(col, row, BTN_TITLE_NEW)) { resetSave(); return startRun(); }
+  } else if (game.phase === 'coldopen') {
+    if (game.cineReady) return relightToAuthor();          // the I'M READY gate — tap to fight
+    if (inRect(col, row, BTN_SKIP)) return skipColdOpen();
   } else if (game.phase === 'assemble') {
     for (let i = 0; i < HAND_CARDS.length; i++) if (inRect(col, row, HAND_CARDS[i])) return toggleSlot(i);
     if (inRect(col, row, BTN_REDRAW)) return redraw();
@@ -531,6 +587,9 @@ window.addEventListener('keydown', (e) => {
   if (game.phase === 'title') {
     if (k === 'Enter' || k === 'c' || k === 'C') startRun();
     else if (k === 'n' || k === 'N') { resetSave(); startRun(); }
+  } else if (game.phase === 'coldopen') {
+    if (game.cineReady && (k === 'Enter' || k === ' ')) relightToAuthor();
+    else if (k === 'Escape' || k === 'Enter' || k === ' ' || k === 's' || k === 'S') skipColdOpen();
   } else if (game.phase === 'assemble') {
     if (k >= '1' && k <= '5') toggleSlot(+k - 1);          // press again to unload
     else if (k === 'r' || k === 'R') redraw();
@@ -560,7 +619,7 @@ window.addEventListener('keydown', (e) => {
 
 // pulse loop: repaint while the field is live so captures breathe; shake every frame.
 // repaint continuously during AIM (the turret pulses) and the live watch
-const needsAnim = () => game.phase === 'target' || game.phase === 'test' || (game.node && (game.phase === 'exec' || game.phase === 'result'));
+const needsAnim = () => game.phase === 'coldopen' || game.phase === 'target' || game.phase === 'test' || (game.node && (game.phase === 'exec' || game.phase === 'result'));
 let lastPaint = 0, lastFrame = 0, shaking = false;
 function applyShake(dt) {
   trauma.decay(dt);

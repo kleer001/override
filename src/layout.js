@@ -65,6 +65,13 @@ export const BTN_AGGRO_UP = { ...GBTN(23), label: 'HARDER ▶' };
 export const BTN_CONTINUE = { x: 21, y: 19, w: 22, h: 7, label: 'CONTINUE ▶' };
 export const BTN_JACKIN = { x: 23, y: 26, w: 18, h: 3, label: 'JACK IN ▶' };
 
+// cold-open cinematic: a small persistent SKIP, live through every beat (Esc/Enter also
+// skips). Low-right, over empty space so it never clobbers the civilian STATUS panel.
+export const BTN_SKIP = { x: 66, y: 26, w: 13, h: 3, label: 'SKIP ▶' };
+// after the contact finishes, a chunky centered gate to read at your own pace before
+// the tutorial (Enter/Space/tap also advance).
+export const BTN_READY = { x: 27, y: 24, w: 26, h: 5, label: "I'M READY ▶" };
+
 // title / boot screen (a full-screen takeover): CONTINUE resumes saved progress,
 // NEW wipes the save and starts fresh. Chunky, thumb-sized buttons.
 export const BTN_TITLE_CONTINUE = { x: 14, y: 24, w: 24, h: 5, label: '[C]ONTINUE' };
